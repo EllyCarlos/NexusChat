@@ -1,0 +1,264 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+        
+
+enum CallStatus {
+  MISSED
+  COMPLETED
+  REJECTED
+  INTERRUPTED
+  RINGING
+}
+
+model ChatMembers {
+  id     String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+  chat   Chat   @relation(fields: [chatId], references: [id])
+  chatId String
+}
+
+model Chat {
+  id                       String   @id @default(cuid())
+  name                     String?
+  isGroupChat              Boolean  @default(false)
+  avatar                   String   @default("https://res.cloudinary.com/dh5fjdce9/image/upload/v1717842288/defaultAvatar_q2y2az.png")
+  avatarCloudinaryPublicId String?
+  admin                    User?    @relation(fields: [adminId], references: [id])
+  adminId                  String?
+  latestMessage            Message? @relation("latestMessage", fields: [latestMessageId], references: [id])
+  latestMessageId          String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  messages       Message[]
+  UnreadMessages UnreadMessages[]
+  ChatMembers    ChatMembers[]
+
+  PinnedMessages PinnedMessages[]
+}
+
+model Friends {
+  id        String   @id @default(cuid())
+  user1     User     @relation("UserAsFriend1", fields: [user1Id], references: [id])
+  user1Id   String
+  user2     User     @relation("UserAsFriend2", fields: [user2Id], references: [id])
+  user2Id   String
+  createdAt DateTime @default(now())
+
+  @@unique([user1Id, user2Id])
+}
+
+model Attachment {
+  id                 String  @id @default(cuid())
+  secureUrl          String
+  cloudinaryPublicId String
+  message            Message @relation(fields: [messageId], references: [id])
+  messageId          String
+}
+
+model Vote {
+  id          String @id @default(cuid())
+  user        User   @relation(fields: [userId], references: [id])
+  userId      String
+  optionIndex Int
+  poll        Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  pollId      String
+
+  @@unique([userId, pollId, optionIndex])
+}
+
+model Poll {
+  id              String    @id @default(cuid())
+  question        String
+  options         String[]
+  votes           Vote[]
+  multipleAnswers Boolean   @default(false)
+  Message         Message[]
+}
+
+model Reactions {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  reaction  String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, messageId])
+}
+
+model Message {
+  id                 String       @id @default(cuid())
+  isTextMessage      Boolean      @default(true)
+  textMessageContent String?
+  sender             User         @relation(fields: [senderId], references: [id])
+  senderId           String
+  chat               Chat         @relation(fields: [chatId], references: [id])
+  chatId             String
+  attachments        Attachment[]
+  url                String?
+  poll               Poll?        @relation(fields: [pollId], references: [id])
+  pollId             String?
+  isPollMessage      Boolean      @default(false)
+  audioUrl           String?
+  audioPublicId      String?
+  isEdited           Boolean      @default(false)
+
+  replyToMessage     Message?    @relation("replyOf",fields: [replyToMessageId], references: [id])
+  replyToMessageId   String?
+
+  isPinned           Boolean      @default(false)
+
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  UnreadMessages UnreadMessages[]
+  Chat           Chat[]           @relation("latestMessage")
+  reactions      Reactions[]
+
+  Message Message[]  @relation("replyOf")
+
+  PinnedMessages PinnedMessages[]
+}
+
+model Otp {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  hashedOtp String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model PrivateKeyRecoveryToken {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  hashedToken String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+}
+
+model FriendRequest {
+  id         String   @id @default(cuid())
+  sender     User     @relation("SentRequests", fields: [senderId], references: [id])
+  senderId   String
+  receiver   User     @relation("ReceivedRequests", fields: [receiverId], references: [id])
+  receiverId String
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([senderId, receiverId])
+}
+
+model ResetPasswordToken {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  hashedToken String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+}
+
+model UnreadMessages {
+  id        String    @id @default(cuid())
+  user      User      @relation("UnreadMessagesUser", fields: [userId], references: [id])
+  userId    String
+  chat      Chat      @relation(fields: [chatId], references: [id])
+  chatId    String
+  sender    User      @relation("UnreadMessagesSender", fields: [senderId], references: [id])
+  senderId  String
+  message   Message   @relation(fields: [messageId], references: [id])
+  messageId String
+  count     Int       @default(0)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([userId, chatId])
+}
+
+model CallHistory {
+  id        String   @id @default(cuid())
+  caller    User     @relation("caller", fields: [callerId], references: [id])
+  callerId  String
+  callee    User     @relation("callee", fields: [calleeId], references: [id])
+  calleeId  String
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+  duration  Int?
+  status   CallStatus @default(RINGING)
+}
+
+model PinnedMessages {
+  id String @id @default(cuid())
+  chat Chat @relation(fields: [chatId], references: [id])
+  chatId String
+  message Message @relation(fields: [messageId], references: [id])
+  messageId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([chatId, messageId])
+}
+
+model User {
+  id                       String    @id @default(cuid())
+  name                     String
+  username                 String    @unique
+  avatar                   String    @default("https://res.cloudinary.com/dh5fjdce9/image/upload/v1717842288/defaultAvatar_q2y2az.png")
+  avatarCloudinaryPublicId String?
+  email                    String    @unique
+  isOnline                 Boolean   @default(false)
+  fcmToken                 String?
+  notificationsEnabled     Boolean   @default(false)
+  publicKey                String?
+  privateKey               String?
+  hashedPassword           String
+  lastSeen                 DateTime?
+  emailVerified            Boolean   @default(false)
+  verificationBadge        Boolean   @default(false)
+  googleId                 String?
+  oAuthSignup              Boolean   @default(false)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  Chat                    Chat[]
+  Vote                    Vote[]
+  Reactions               Reactions[]
+  Message                 Message[]
+  Otp                     Otp[]
+  PrivateKeyRecoveryToken PrivateKeyRecoveryToken[]
+
+  resetPasswordToken ResetPasswordToken[]
+
+  UnreadMessagesReceived UnreadMessages[] @relation("UnreadMessagesUser")
+  UnreadMessagesSent     UnreadMessages[] @relation("UnreadMessagesSender")
+
+  FriendRequestSent     FriendRequest[] @relation("SentRequests")
+  FriendRequestReceived FriendRequest[] @relation("ReceivedRequests")
+
+  friendsAsUser1      Friends[]     @relation("UserAsFriend1")
+  friendsAsUser2      Friends[]     @relation("UserAsFriend2")
+  ChatMembers         ChatMembers[]
+  ToWhomUserCalled    CallHistory[] @relation("caller")
+  WhomUserWasCalledBy CallHistory[] @relation("callee")
+}
