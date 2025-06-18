@@ -4,13 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "db:push:dev": "dotenv -e .env.development -- npx prisma db push",
     "db:push:prod": "dotenv -e .env.production -- npx prisma db push",
     "migrate:dev": "dotenv -e .env.development -- npx prisma migrate deploy",
-    "migrate:prod": "dotenv -e .env.production -- npx prisma migrate deploy"
+    "migrate:prod": "dotenv -e .env.production -- npx prisma migrate deploy",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
