@@ -9,6 +9,7 @@ const publicRoutes = [
   "/auth/forgot-password",
   "/auth/reset-password",
 ];
+
 const protectedRoutes = [
   "/",
   "/auth/verification",
@@ -19,7 +20,7 @@ const ignoredPaths = ["/_next", "/favicon.ico", "/api"];
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
-
+  
   // Ignore Next.js assets & API routes
   if (ignoredPaths.some(ignoredPath => path.startsWith(ignoredPath))) {
     return NextResponse.next();
@@ -27,7 +28,6 @@ export async function middleware(req: NextRequest) {
 
   const isProtectedRoute = protectedRoutes.includes(path);
   const isPublicRoute = publicRoutes.includes(path);
-
   const token = req.cookies.get("token")?.value;
 
   // Decrypt session from token
@@ -35,52 +35,71 @@ export async function middleware(req: NextRequest) {
   
   // If session is invalid, redirect for protected routes
   if (!session?.userId && isProtectedRoute) {
-    const redirectResponse =  NextResponse.redirect(new URL("/auth/login", req.url));
-    redirectResponse.cookies.set("token","", {expires: new Date(0), path: "/"});
+    const redirectResponse = NextResponse.redirect(new URL("/auth/login", req.url));
+    redirectResponse.cookies.set("token", "", {expires: new Date(0), path: "/"});
     return redirectResponse;
   }
+
   // Redirect logged-in users away from public routes
   if (session?.userId && isPublicRoute) {
     return NextResponse.redirect(new URL("/", req.nextUrl));
   }
   
   let userInfo: FetchUserInfoResponse | null = null;
-
+  
   // Only fetch user info if necessary
   if (isProtectedRoute && session?.userId) {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/auth/user`, {
-        headers: { "Cookie": `token=${token}` },
+      // Fix: Build the API URL dynamically
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 
+                     `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+      
+      const res = await fetch(`${baseUrl}/api/auth/user`, {
+        headers: { 
+          "Cookie": `token=${token}`,
+          "User-Agent": req.headers.get("user-agent") || "",
+        },
+        // Add timeout to prevent hanging builds
+        signal: AbortSignal.timeout(5000),
       });
+
       if (res.ok) {
         userInfo = await res.json() as FetchUserInfoResponse;
-      }
-      else {
-        const redirectResponse =  NextResponse.redirect(new URL("/auth/login", req.url))
-        redirectResponse.cookies.set("token","", {expires: new Date(0), path: "/"});
+      } else {
+        const redirectResponse = NextResponse.redirect(new URL("/auth/login", req.url));
+        redirectResponse.cookies.set("token", "", {expires: new Date(0), path: "/"});
         return redirectResponse;
       }
     } catch (error) {
       console.error("Error fetching user info in middleware:", error);
-      return NextResponse.redirect(new URL("/auth/login", req.url)).cookies.set("token","", {expires: new Date(0), path: "/"});
+      
+      // During build time, skip the API call
+      if (process.env.NODE_ENV === "production" && !process.env.VERCEL_URL) {
+        return NextResponse.next();
+      }
+      
+      const redirectResponse = NextResponse.redirect(new URL("/auth/login", req.url));
+      redirectResponse.cookies.set("token", "", {expires: new Date(0), path: "/"});
+      return redirectResponse;
     }
   }
 
   // Redirect unverified users to verification page (unless already there)
   if (userInfo && !userInfo.emailVerified) {
-
     let response = null;
-
-    if(path !== "/auth/verification") response = NextResponse.redirect(new URL("/auth/verification", req.url));
-    else response = NextResponse.next();
-
+    if (path !== "/auth/verification") {
+      response = NextResponse.redirect(new URL("/auth/verification", req.url));
+    } else {
+      response = NextResponse.next();
+    }
+    
     response.cookies.set("tempUserInfo", JSON.stringify(userInfo), {
       httpOnly: true,
       sameSite: "strict",
       path: "/",
       secure: process.env.NODE_ENV === "production",
     });
-    return response
+    return response;
   }
 
   if (session?.userId) {
@@ -95,5 +114,4 @@ export async function middleware(req: NextRequest) {
   }
 
   return NextResponse.next();
-
 }
