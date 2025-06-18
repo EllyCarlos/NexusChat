@@ -7,8 +7,8 @@ const developmentConfig:IConfig = {
 }
 
 const productionConfig:IConfig = {
-    clientUrl:"https://NexusChat.in",
-    callbackUrl:"https://aesehi.online/api/v1/auth/google/callback"
+    clientUrl:"https://nexus-chat-flame.vercel.app",
+    callbackUrl:"https://nexus-chat-flame.vercel.app/api/v1/auth/google/callback"
 }
 
 export const config = env.NODE_ENV==='DEVELOPMENT'?developmentConfig:productionConfig
