@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Verify Email - NexusChat",
     description: "Enter the OTP sent to your email to verify your account on NexusChat.",
-    url: "https://NexusChat.in/auth/verify-email",
+    url: "https://nexuswebapp.vercel.app/auth/verify-email",
     siteName: "NexusChat",
     type: "website",
   },
