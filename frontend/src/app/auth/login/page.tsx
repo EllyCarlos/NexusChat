@@ -15,12 +15,12 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Login - NexusChat",
     description: "Securely log in to NexusChat, a privacy-focused encrypted chat app.",
-    url: "https://NexusChat.in/auth/login",
+    url: "https://nexuswebapp.vercel.app/auth/login",
     siteName: "NexusChat",
     type: "website",
     images: [
       {
-        url: "https://NexusChat.in/images/og/og-image.png", // Update with your actual OG image
+        url: "https://nexuswebapp.vercel.app/images/og/og-image.png", // Update with your actual OG image
         width: 1200,
         height: 630,
         alt: "NexusChat - Secure & Encrypted Chat App",
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Login - NexusChat",
     description: "Securely log in to NexusChat, a privacy-focused encrypted chat app.",
-    images: ["https://NexusChat.in/images/og/og-image.png"], // Update with your actual Twitter image
+    images: ["https://nexuswebapp.vercel.app/images/og/og-image.png"], // Update with your actual Twitter image
   },
 };
 
