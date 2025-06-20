@@ -6,26 +6,26 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     // Core pages
     {
-      url: "https://mernchat.in",
+      url: "https://nexuswebapp.vercel.app",
       lastModified,
       changeFrequency: "daily",
       priority: 1.0, // Highest priority (homepage)
     },
     // Auth routes that should be indexed
     {
-      url: "https://mernchat.in/auth/forgot-password",
+      url: "https://nexuswebapp.vercel.app/auth/forgot-password",
       lastModified,
       changeFrequency: "yearly",
       priority: 0.4,
     },
     {
-      url: "https://mernchat.in/auth/login",
+      url: "https://nexuswebapp.vercel.app/auth/login",
       lastModified,
       changeFrequency: "yearly",
       priority: 0.6,
     },
     {
-      url: "https://mernchat.in/auth/signup",
+      url: "https://nexuswebapp.vercel.app/auth/signup",
       lastModified,
       changeFrequency: "yearly",
       priority: 0.7,
