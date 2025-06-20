@@ -24,18 +24,19 @@ import registerSocketHandlers from './socket/socket.js'
 
 // environment variables validation
 checkEnvVariables();
+// Create CORS origins array
+const corsOrigins = process.env.NODE_ENV === 'PRODUCTION' 
+    ? [config.clientUrl, process.env.VERCEL_URL].filter((url): url is string => Boolean(url))
+    : [config.clientUrl, 'http://localhost:3000'];
 
 const app=express()
 const server=createServer(app)
 const io = new Server(server, {
     cors: {
         credentials: true,
-        origin: process.env.NODE_ENV === 'PRODUCTION' 
-            ? [config.clientUrl, process.env.VERCEL_URL].filter(Boolean)
-            : [config.clientUrl, 'http://localhost:3000']
+        origin: corsOrigins
     }
 })
-
 // global
 app.set("io",io)
 
@@ -45,9 +46,7 @@ export const userSocketIds = new Map<string,string>()
 // middlewares
 app.use(cors({
     credentials: true,
-    origin: process.env.NODE_ENV === 'PRODUCTION' 
-        ? [config.clientUrl, process.env.VERCEL_URL].filter(Boolean)
-        : [config.clientUrl, 'http://localhost:3000']
+    origin: corsOrigins
 }))
 app.use(passport.initialize())
 app.use(express.json())
