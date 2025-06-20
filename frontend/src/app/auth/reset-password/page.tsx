@@ -18,7 +18,7 @@ const metadata: Metadata = {
   openGraph: {
     title: "Reset Password - NexusChat",
     description: "Securely reset your password on NexusChat and regain access to your account.",
-    url: "https://NexusChat.in/auth/reset-password",
+    url: "https://nexuswebapp.vercel.app/auth/reset-password",
     siteName: "NexusChat",
     type: "website",
   },
