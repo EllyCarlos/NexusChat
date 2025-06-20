@@ -24,19 +24,19 @@ const jsonLd = {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "NexusChat",
-      "url": "https://NexusChat.in",
+      "url": "https://nexuswebapp.vercel.app",
       "author": {
         "@type": "Person",
         "name": "Elly Carlos",
-        "url": "https://rishibakshii.github.io/portfolio"
+        "url": "https://ellycarlos.vercel.app"
       },
       "sameAs": [
-        "https://github.com/RishiBakshii/nextjs-chat-app",
-        "https://twitter.com/rishibakshii",
-        "https://www.linkedin.com/in/rishi-bakshi/",
-        "https://leetcode.com/u/rishibakshii/",
-        "https://hashnode.com/@RishiBakshi",
-        "https://rishibakshi.hashnode.dev/",
+        "https://github.com/EllyCarlos/NexusChat",
+        "https://twitter.com",
+        "https://www.linkedin.com",
+        "https://leetcode.com",
+        "https://hashnode.com",
+        "https://hashnode.com",
       ],
     "applicationCategory": "SocialNetworkingApplication",
     "operatingSystem": "All"
@@ -50,13 +50,13 @@ export const metadata:Metadata = {
   keywords: ["NexusChat","secure chat","end-to-end encryption","private messaging","chat app","encrypted chat app","secure messaging","privacy-focused chat","real-time chat","secure communication","instant messaging","chat application","E2EE messaging","secure group chats","encrypted conversations","safe messaging app"],
   generator:"Next.js",
   applicationName: "NexusChat",
-  authors: [{ name: "Elly Carlos", url: "https://rishibakshii.github.io/portfolio" }],
+  authors: [{ name: "Elly Carlos", url: "ellycarlos.vercel.app" }],
   creator: "Elly Carlos",
   publisher: "Elly Carlos",
-  metadataBase: new URL("https://NexusChat.in"),
+  metadataBase: new URL("https://nexuswebapp.vercel.app"),
   icons:{
     apple:{
-      url:"https://NexusChat.in/images/apple-touch-icon/apple-touch-icon.png",
+      url:"https://nexuswebapp.vercel.app/images/apple-touch-icon/apple-touch-icon.png",
     },
   },
   
@@ -64,11 +64,11 @@ export const metadata:Metadata = {
   openGraph: {
     title: "NexusChat - Secure & Encrypted Chat App",
     description: "NexusChat is a privacy-first chat app offering end-to-end encryption for private chats and secure real-time messaging.",
-    url: "https://NexusChat.in",
+    url: "https://nexuswebapp.vercel.app/",
     siteName: "NexusChat",
     images: [
       {
-        url: "https://NexusChat.in/images/og/og-image.png", // Static path from public folder
+        url: "https://nexuswebapp.vercel.app/images/og/og-image.png", // Static path from public folder
         width: 1200,
         height: 630,
         alt: "NexusChat - Secure & Encrypted Chat App",
@@ -81,35 +81,35 @@ export const metadata:Metadata = {
     card: "summary_large_image",
     title: "NexusChat - Secure & Encrypted Chat App",
     description: "NexusChat is a privacy-first chat app offering end-to-end encryption for private chats and secure real-time messaging.",
-    images: ["https://NexusChat.in/images/og/og-image.png"],
-    creator:"@rishibakshii",
-    site: "@rishibakshii",
+    images: ["https://nexuswebapp.vercel.app/images/og/og-image.png"],
+    creator:"@ellycarlos",
+    site: "@ellycarlos",
   },
   robots: {
     index: true,
     follow: true,
   },
   alternates: {
-    canonical: "https://NexusChat.in",
+    canonical: "https://nexuswebapp.vercel.app",
   },
   other: {
     jsonLd: JSON.stringify({
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "NexusChat",
-      "url": "https://NexusChat.in",
+      "url": "https://nexuswebapp.vercel.app",
       "author": {
         "@type": "Person",
         "name": "Elly Carlos",
-        "url": "https://rishibakshii.github.io/portfolio"
+        "url": "ellycarlos.vercel.app"
       },
       "sameAs": [
-        "https://github.com/RishiBakshii/nextjs-chat-app",
-        "https://twitter.com/rishibakshii",
-        "https://www.linkedin.com/in/rishi-bakshi/",
-        "https://leetcode.com/u/rishibakshii/",
-        "https://hashnode.com/@RishiBakshi",
-        "https://rishibakshi.hashnode.dev/"
+        "https://github.com/EllyCarlos/NexusChat",
+        "https://twitter.com",
+        "https://www.linkedin.com",
+        "https://leetcode.com",
+        "https://hashnode.com",
+        "https://hashnode.dev"
       ],
       "applicationCategory": "SocialNetworkingApplication",
       "operatingSystem": "All"
@@ -126,7 +126,7 @@ export default function RootLayout({
   return (
     <>
     <Head>
-      <link rel="preload" href="https://NexusChat.in/images/og/og-image.png" as="image" />
+      <link rel="preload" href="https://nexuswebapp.vercel.app/images/og/og-image.png" as="image" />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd)}}
