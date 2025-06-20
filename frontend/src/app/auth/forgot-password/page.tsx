@@ -16,12 +16,12 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Forgot Password - NexusChat",
     description: "Forgot your password? Reset it securely on NexusChat and regain access to your account.",
-    url: "https://NexusChat.in/auth/forgot-password",
+    url: "https://nexuswebapp.vercel.app/auth/forgot-password",
     siteName: "NexusChat",
     type: "website",
     images: [
       {
-        url: "https://NexusChat.in/images/og/og-image.png", // Update with your actual OG image
+        url: "https://nexuswebapp.vercel.app/images/og/og-image.png", // Update with your actual OG image
         width: 1200,
         height: 630,
         alt: "NexusChat - Secure & Encrypted Chat App",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Forgot Password - NexusChat",
     description: "Forgot your password? Reset it securely on NexusChat and regain access to your account.",
-    images: ["https://NexusChat.in/images/og/og-image.png"], // Update with your actual Twitter image
+    images: ["https://nexuswebapp.vercel.app/images/og/og-image.png"], // Update with your actual Twitter image
   },
 };
 
