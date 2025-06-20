@@ -8,7 +8,7 @@ const developmentConfig:IConfig = {
 
 const productionConfig:IConfig = {
     clientUrl:"https://nexuswebapp.vercel.app",
-    callbackUrl:"https://nexuswebapp.vercel.app/api/v1/auth/google/callback"
+    callbackUrl:"https://nexuschat-4slv.onrender.com/api/v1/auth/google/callback"
 }
 
 export const config = env.NODE_ENV==='DEVELOPMENT'?developmentConfig:productionConfig
