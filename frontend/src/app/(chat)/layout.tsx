@@ -10,19 +10,19 @@ export const metadata:Metadata = {
   keywords: ["NexusChat","secure chat","end-to-end encryption","private messaging","chat app","encrypted chat app","secure messaging","privacy-focused chat","real-time chat","secure communication","instant messaging","chat application","E2EE messaging","secure group chats","encrypted conversations","safe messaging app"],
   generator:"Next.js",
   applicationName: "NexusChat",
-  authors: [{ name: "Elly Carlos", url: "https://rishibakshii.github.io/portfolio" }],
+  authors: [{ name: "Elly Carlos", url: "ellycarlos.vercel.app" }],
   creator: "Elly Carlos",
   publisher: "Elly Carlos",
-  metadataBase: new URL("https://NexusChat.in"),
+  metadataBase: new URL("https://nexuswebapp.vercel.app"),
 
   openGraph: {
     title: "NexusChat - Secure & Encrypted Chat App",
     description: "NexusChat is a privacy-first chat app offering end-to-end encryption for private chats and secure real-time messaging.",
-    url: "https://NexusChat.in",
+    url: "https://nexuswebapp.vercel.app",
     siteName: "NexusChat",
     images: [
       {
-        url: "https://NexusChat.in/images/og/og-image.png", // Static path from public folder
+        url: "https://nexuswebapp.vercel.app/images/og/og-image.png", // Static path from public folder
         width: 1200,
         height: 630,
         alt: "NexusChat - Secure & Encrypted Chat App",
@@ -35,16 +35,16 @@ export const metadata:Metadata = {
     card: "summary_large_image",
     title: "NexusChat - Secure & Encrypted Chat App",
     description: "NexusChat is a privacy-first chat app offering end-to-end encryption for private chats and secure real-time messaging.",
-    images: ["https://NexusChat.in/images/og/og-image.png"],
-    creator:"@rishibakshii",
-    site: "@rishibakshii",
+    images: ["https://nexuswebapp.vercel.app/images/og/og-image.png"],
+    creator:"@ellycarlos",
+    site: "@ellycarlos",
   },
   robots: {
     index: true,
     follow: true,
   },
   alternates: {
-    canonical: "https://NexusChat.in",
+    canonical: "https://nexuswebapp.vercel.app",
   },
 };
 
