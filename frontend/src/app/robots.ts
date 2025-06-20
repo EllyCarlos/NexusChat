@@ -20,6 +20,6 @@ export default function robots(): MetadataRoute.Robots {
         ],
       },
     ],
-    sitemap: "https://NexusChat.in/sitemap.xml",
+    sitemap: "https://nexuswebapp.vercel.app/sitemap.xml",
   };
 }
