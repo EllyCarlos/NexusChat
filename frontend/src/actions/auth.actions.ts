@@ -7,6 +7,7 @@ import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import { createSession, decrypt, deleteSession, encrypt, SessionPayload } from "@/lib/server/session";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
+import jwt from "jsonwebtoken";
 
 export async function login(prevState: any, formData: FormData) {
   const email = formData.get("email") as string;
@@ -334,7 +335,7 @@ export async function verifyOAuthToken(prevState: any, token: string) {
       // or make an API call to your backend to verify the token
       
       // Option 1: Verify JWT directly (requires jsonwebtoken package)
-      const jwt = require('jsonwebtoken');
+      
       decodedInfo = jwt.verify(token, process.env.JWT_SECRET) as { 
         user: string, 
         oAuthNewUser: boolean 
