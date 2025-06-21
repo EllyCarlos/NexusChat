@@ -212,7 +212,7 @@ model User {
   lastSeen                 DateTime?
   emailVerified            Boolean                   @default(false)
   verificationBadge        Boolean                   @default(false)
-  googleId                 String?
+  googleId                 String?                   @unique
   oAuthSignup              Boolean                   @default(false)
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
