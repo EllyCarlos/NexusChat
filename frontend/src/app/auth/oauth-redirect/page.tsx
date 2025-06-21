@@ -40,7 +40,7 @@ function OAuthRedirectPageContent() {
   useEffect(() => {
     if (state) {
       console.log('OAuth verification state received:', {
-        hasError: !!state.error,
+        hasError: !!state.errors?.message,
         hasUser: !!state?.data?.user,
         hasCombinedSecret: !!state?.data?.combinedSecret,
         isNewUser: state?.data?.isNewUser
