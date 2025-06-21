@@ -327,15 +327,24 @@ export async function verifyOAuthToken(prevState: any, token: string) {
       };
     }
 
-    // Decrypt the token
+    // ✅ Use JWT verification instead of session decrypt
     let decodedInfo;
     try {
-      decodedInfo = await decrypt(token) as { user: string, oAuthNewUser: boolean };
-    } catch (decryptError) {
-      console.error('verifyOAuthToken: Token decryption failed:', decryptError);
+      // You'll need to install and import jsonwebtoken in your frontend
+      // or make an API call to your backend to verify the token
+      
+      // Option 1: Verify JWT directly (requires jsonwebtoken package)
+      const jwt = require('jsonwebtoken');
+      decodedInfo = jwt.verify(token, process.env.JWT_SECRET) as { 
+        user: string, 
+        oAuthNewUser: boolean 
+      };
+      
+    } catch (jwtError) {
+      console.error('verifyOAuthToken: JWT verification failed:', jwtError);
       return {
         errors: {
-          message: 'Invalid token'
+          message: 'Invalid or expired token'
         },
         data: null
       };
@@ -368,16 +377,26 @@ export async function verifyOAuthToken(prevState: any, token: string) {
     // Log for debugging (remove in production)
     console.log('verifyOAuthToken: Processing token for userId:', userId, 'isNewUser:', oAuthNewUser);
 
-    // Find the user by ID
+    // Find the user by ID and get full user data for response
     let existingUser;
     try {
       existingUser = await prisma.user.findUnique({
         where: { id: userId },
         select: {
           id: true,
+          name: true,
+          username: true,
+          avatar: true,
+          email: true,
+          createdAt: true,
+          updatedAt: true,
+          emailVerified: true,
+          publicKey: true,
+          notificationsEnabled: true,
+          verificationBadge: true,
+          fcmToken: true,
+          oAuthSignup: true,
           googleId: true,
-          email: true, // Add email for additional logging
-          name: true,  // Add name for additional logging
         }
       });
     } catch (prismaError) {
@@ -421,9 +440,40 @@ export async function verifyOAuthToken(prevState: any, token: string) {
       };
     }
 
-    // Prepare response payload
-    const responsePayload: { combinedSecret?: string, user: { id: string } } = {
-      user: { id: existingUser.id }
+    // Prepare response payload with full user data
+    const responsePayload: { 
+      combinedSecret?: string, 
+      user: {
+        id: string;
+        name: string;
+        username: string;
+        avatar: string | null;
+        email: string;
+        createdAt: Date;
+        updatedAt: Date;
+        emailVerified: boolean;
+        publicKey: string | null;
+        notificationsEnabled: boolean;
+        verificationBadge: boolean;
+        fcmToken: string | null;
+        oAuthSignup: boolean;
+      }
+    } = {
+      user: {
+        id: existingUser.id,
+        name: existingUser.name,
+        username: existingUser.username,
+        avatar: existingUser.avatar,
+        email: existingUser.email,
+        createdAt: existingUser.createdAt,
+        updatedAt: existingUser.updatedAt,
+        emailVerified: existingUser.emailVerified,
+        publicKey: existingUser.publicKey,
+        notificationsEnabled: existingUser.notificationsEnabled,
+        verificationBadge: existingUser.verificationBadge,
+        fcmToken: existingUser.fcmToken,
+        oAuthSignup: existingUser.oAuthSignup,
+      }
     };
 
     // Add combined secret for new users
@@ -450,24 +500,40 @@ export async function verifyOAuthToken(prevState: any, token: string) {
     console.error('verifyOAuthToken: Unexpected error:', error);
     
     // Log specific error types for debugging
-   if (error instanceof Error) {
-  if (error.name === 'PrismaClientValidationError') {
-    console.error('verifyOAuthToken: Prisma validation error - check your where clause:', error.message);
-  } else if (error.name === 'PrismaClientUnknownRequestError') {
-    console.error('verifyOAuthToken: Prisma database error - check connection:', error.message);
-  } else {
-    console.error('verifyOAuthToken: Unexpected error:', error.message);
-  }
-} else {
-  console.error('verifyOAuthToken: Unknown error type:', error);
-}
+    if (error instanceof Error) {
+      if (error.name === 'JsonWebTokenError') {
+        console.error('verifyOAuthToken: JWT error - invalid token:', error.message);
+        return {
+          errors: {
+            message: 'Invalid token'
+          },
+          data: null
+        };
+      } else if (error.name === 'TokenExpiredError') {
+        console.error('verifyOAuthToken: JWT expired:', error.message);
+        return {
+          errors: {
+            message: 'Token expired'
+          },
+          data: null
+        };
+      } else if (error.name === 'PrismaClientValidationError') {
+        console.error('verifyOAuthToken: Prisma validation error - check your where clause:', error.message);
+      } else if (error.name === 'PrismaClientUnknownRequestError') {
+        console.error('verifyOAuthToken: Prisma database error - check connection:', error.message);
+      } else {
+        console.error('verifyOAuthToken: Unexpected error:', error.message);
+      }
+    } else {
+      console.error('verifyOAuthToken: Unknown error type:', error);
+    }
 
-return {
-  errors: {
-    message: 'Error verifying oAuth token'
-  },
-  data: null
-};
+    return {
+      errors: {
+        message: 'Error verifying OAuth token'
+      },
+      data: null
+    };
   }
 }
 export async function sendResetPasswordLink(prevState:any,email:string){
