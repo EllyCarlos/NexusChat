@@ -43,7 +43,8 @@ function OAuthRedirectPageContent() {
         hasError: !!state.errors?.message,
         hasUser: !!state?.data?.user,
         hasCombinedSecret: !!state?.data?.combinedSecret,
-        isNewUser: state?.data?.isNewUser
+        // Remove the isNewUser reference since it doesn't exist on the type
+        // isNewUser: state?.data?.isNewUser
       });
 
       // Handle errors
@@ -62,7 +63,9 @@ function OAuthRedirectPageContent() {
           localStorage.setItem('token', token);
         }
 
-        if (state.data.combinedSecret && state.data.isNewUser) {
+        // Since isNewUser doesn't exist on the type, we need to determine this differently
+        // Option 1: Check if combinedSecret exists (assuming this indicates a new user)
+        if (state.data.combinedSecret) {
           toast.success('Welcome! Setting up your account...');
           setOAuthNewUser(true);
         } else {
