@@ -98,6 +98,17 @@ const redirectHandler = asyncErrorHandler(async(req:OAuthAuthenticatedRequest,re
 })
 
 // ✅ Add a token verification function for your frontend to use
+
+
+const generateSessionToken = (userId: string) => {
+    return jwt.sign({
+        userId: userId,
+        type: 'session',
+        iat: Math.floor(Date.now() / 1000)
+    }, env.JWT_SECRET, {expiresIn: "7d"}); // 7 days instead of 5 minutes
+};
+
+// ✅ UPDATED: verifyOAuthToken function
 const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, next: NextFunction) => {
     try {
         const { token } = req.body;
@@ -108,7 +119,7 @@ const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, ne
 
         console.log('Verifying OAuth token...');
         
-        // Decode and verify the token
+        // Decode and verify the TEMPORARY token
         const decoded = jwt.verify(token, env.JWT_SECRET) as any;
         
         console.log('Decoded token payload:', {
@@ -135,6 +146,9 @@ const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, ne
             return next(new CustomError("Invalid token: user not found", 401));
         }
 
+        // ✅ FIXED: Generate a proper session token (not the temp token)
+        const sessionToken = generateSessionToken(user.id);
+
         // Prepare response data
         const responseData: any = {
             user: {
@@ -151,7 +165,9 @@ const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, ne
                 verificationBadge: user.verificationBadge,
                 fcmToken: user.fcmToken,
                 oAuthSignup: user.oAuthSignup
-            }
+            },
+            // ✅ FIXED: Return the session token, not the temp token
+            sessionToken: sessionToken
         };
 
         // If this is a new user, include the combined secret
@@ -179,10 +195,12 @@ const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, ne
     }
 });
 
+// ✅ Don't forget to export the new function
 export {
     checkAuth, 
     getUserInfo,
     redirectHandler,
     updateFcmToken,
-    verifyOAuthToken  // ✅ Export the new verification function
+    verifyOAuthToken,
+    generateSessionToken  // ← Add this export
 };
