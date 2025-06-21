@@ -450,18 +450,24 @@ export async function verifyOAuthToken(prevState: any, token: string) {
     console.error('verifyOAuthToken: Unexpected error:', error);
     
     // Log specific error types for debugging
-    if (error.name === 'PrismaClientValidationError') {
-      console.error('verifyOAuthToken: Prisma validation error - check your where clause:', error.message);
-    } else if (error.name === 'PrismaClientUnknownRequestError') {
-      console.error('verifyOAuthToken: Prisma database error - check connection:', error.message);
-    }
+   if (error instanceof Error) {
+  if (error.name === 'PrismaClientValidationError') {
+    console.error('verifyOAuthToken: Prisma validation error - check your where clause:', error.message);
+  } else if (error.name === 'PrismaClientUnknownRequestError') {
+    console.error('verifyOAuthToken: Prisma database error - check connection:', error.message);
+  } else {
+    console.error('verifyOAuthToken: Unexpected error:', error.message);
+  }
+} else {
+  console.error('verifyOAuthToken: Unknown error type:', error);
+}
 
-    return {
-      errors: {
-        message: 'Error verifying oAuth token'
-      },
-      data: null
-    };
+return {
+  errors: {
+    message: 'Error verifying oAuth token'
+  },
+  data: null
+};
   }
 }
 export async function sendResetPasswordLink(prevState:any,email:string){
