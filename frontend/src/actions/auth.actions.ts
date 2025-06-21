@@ -313,20 +313,48 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
   }
 
 }
-export async function verifyOAuthToken(prevState: any, token: string) {
+// ✅ Update your auth.actions.ts verifyOAuthToken function
+
+export const verifyOAuthToken = async (prevState: any, token: string) => {
   try {
-    // Validate token exists
-    if (!token) {
-      console.error('verifyOAuthToken: No token provided');
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/verify-oauth-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
       return {
         errors: {
-          message: 'No token provided'
-        },
-        data: null
+          message: data.message || 'Authentication failed'
+        }
       };
     }
 
-    // ✅ Use your existing decrypt function instead of JWT
+    // ✅ Return the response data including sessionToken
+    return {
+      data: {
+        user: data.user,
+        sessionToken: data.sessionToken,  // ← Include session token
+        combinedSecret: data.combinedSecret,
+        // Remove isNewUser since it's not in the response
+      }
+    };
+
+  } catch (error) {
+    console.error('OAuth token verification error:', error);
+    return {
+      errors: {
+        message: 'Network error during authentication'
+      }
+    };
+  }
+};    
+// ✅ Use your existing decrypt function instead of JWT
     let decodedInfo;
     try {
       // Use the existing decrypt function from your session management
