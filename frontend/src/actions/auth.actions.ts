@@ -7,7 +7,6 @@ import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import { createSession, decrypt, deleteSession, encrypt, SessionPayload } from "@/lib/server/session";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import jwt from "jsonwebtoken";
 
 export async function login(prevState: any, formData: FormData) {
   const email = formData.get("email") as string;
@@ -314,7 +313,6 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
   }
 
 }
-
 export async function verifyOAuthToken(prevState: any, token: string) {
   try {
     // Validate token exists
@@ -328,21 +326,17 @@ export async function verifyOAuthToken(prevState: any, token: string) {
       };
     }
 
-    // ✅ Use JWT verification instead of session decrypt
+    // ✅ Use your existing decrypt function instead of JWT
     let decodedInfo;
     try {
-      // You'll need to install and import jsonwebtoken in your frontend
-      // or make an API call to your backend to verify the token
-      
-      // Option 1: Verify JWT directly (requires jsonwebtoken package)
-      
-      decodedInfo = jwt.verify(token, process.env.JWT_SECRET) as { 
+      // Use the existing decrypt function from your session management
+      decodedInfo = await decrypt(token) as { 
         user: string, 
         oAuthNewUser: boolean 
       };
       
-    } catch (jwtError) {
-      console.error('verifyOAuthToken: JWT verification failed:', jwtError);
+    } catch (decryptError) {
+      console.error('verifyOAuthToken: Token decryption failed:', decryptError);
       return {
         errors: {
           message: 'Invalid or expired token'
@@ -499,36 +493,6 @@ export async function verifyOAuthToken(prevState: any, token: string) {
 
   } catch (error) {
     console.error('verifyOAuthToken: Unexpected error:', error);
-    
-    // Log specific error types for debugging
-    if (error instanceof Error) {
-      if (error.name === 'JsonWebTokenError') {
-        console.error('verifyOAuthToken: JWT error - invalid token:', error.message);
-        return {
-          errors: {
-            message: 'Invalid token'
-          },
-          data: null
-        };
-      } else if (error.name === 'TokenExpiredError') {
-        console.error('verifyOAuthToken: JWT expired:', error.message);
-        return {
-          errors: {
-            message: 'Token expired'
-          },
-          data: null
-        };
-      } else if (error.name === 'PrismaClientValidationError') {
-        console.error('verifyOAuthToken: Prisma validation error - check your where clause:', error.message);
-      } else if (error.name === 'PrismaClientUnknownRequestError') {
-        console.error('verifyOAuthToken: Prisma database error - check connection:', error.message);
-      } else {
-        console.error('verifyOAuthToken: Unexpected error:', error.message);
-      }
-    } else {
-      console.error('verifyOAuthToken: Unknown error type:', error);
-    }
-
     return {
       errors: {
         message: 'Error verifying OAuth token'
