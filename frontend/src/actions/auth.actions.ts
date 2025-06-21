@@ -314,56 +314,156 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
 
 }
 
-export async function verifyOAuthToken(prevState:any,token:string){
-
+export async function verifyOAuthToken(prevState: any, token: string) {
   try {
-    
-    const decodedInfo =  await decrypt(token) as {user:string,oAuthNewUser:boolean}
-    const {oAuthNewUser,user} = decodedInfo;
-    
-    const existingUser =  await prisma.user.findUnique({
-        where:{id:user},
-        select:{
-            id:true,
-            googleId:true,
-        }
-    })
-    if(!existingUser){
-        return {
-            errors:{
-                message:'User not found'
-            },
-            data:null
-        }
+    // Validate token exists
+    if (!token) {
+      console.error('verifyOAuthToken: No token provided');
+      return {
+        errors: {
+          message: 'No token provided'
+        },
+        data: null
+      };
     }
-    
-    await createSession(existingUser.id);
-  
-    const responsePayload:{combinedSecret?:string,user:{id:string}} = {user:{id:existingUser.id}};
-  
-    if(oAuthNewUser){
-        const combinedSecret = existingUser.googleId+process.env.PRIVATE_KEY_RECOVERY_SECRET;
-        responsePayload['combinedSecret'] = combinedSecret
+
+    // Decrypt the token
+    let decodedInfo;
+    try {
+      decodedInfo = await decrypt(token) as { user: string, oAuthNewUser: boolean };
+    } catch (decryptError) {
+      console.error('verifyOAuthToken: Token decryption failed:', decryptError);
+      return {
+        errors: {
+          message: 'Invalid token'
+        },
+        data: null
+      };
+    }
+
+    // Validate decoded info structure
+    if (!decodedInfo || typeof decodedInfo !== 'object') {
+      console.error('verifyOAuthToken: Invalid decoded token structure:', decodedInfo);
+      return {
+        errors: {
+          message: 'Invalid token format'
+        },
+        data: null
+      };
+    }
+
+    const { oAuthNewUser, user: userId } = decodedInfo;
+
+    // Validate userId exists and is not empty
+    if (!userId || typeof userId !== 'string') {
+      console.error('verifyOAuthToken: Invalid or missing userId in token:', { userId, type: typeof userId });
+      return {
+        errors: {
+          message: 'Invalid user identifier in token'
+        },
+        data: null
+      };
+    }
+
+    // Log for debugging (remove in production)
+    console.log('verifyOAuthToken: Processing token for userId:', userId, 'isNewUser:', oAuthNewUser);
+
+    // Find the user by ID
+    let existingUser;
+    try {
+      existingUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          googleId: true,
+          email: true, // Add email for additional logging
+          name: true,  // Add name for additional logging
+        }
+      });
+    } catch (prismaError) {
+      console.error('verifyOAuthToken: Prisma query failed:', prismaError);
+      return {
+        errors: {
+          message: 'Database error during user lookup'
+        },
+        data: null
+      };
+    }
+
+    // Check if user exists
+    if (!existingUser) {
+      console.error('verifyOAuthToken: User not found for ID:', userId);
+      return {
+        errors: {
+          message: 'User not found'
+        },
+        data: null
+      };
+    }
+
+    // Log successful user lookup
+    console.log('verifyOAuthToken: User found:', {
+      id: existingUser.id,
+      hasGoogleId: !!existingUser.googleId,
+      email: existingUser.email
+    });
+
+    // Create session
+    try {
+      await createSession(existingUser.id);
+    } catch (sessionError) {
+      console.error('verifyOAuthToken: Session creation failed:', sessionError);
+      return {
+        errors: {
+          message: 'Failed to create session'
+        },
+        data: null
+      };
+    }
+
+    // Prepare response payload
+    const responsePayload: { combinedSecret?: string, user: { id: string } } = {
+      user: { id: existingUser.id }
+    };
+
+    // Add combined secret for new users
+    if (oAuthNewUser) {
+      if (!existingUser.googleId) {
+        console.warn('verifyOAuthToken: New OAuth user missing googleId:', existingUser.id);
+        // You might want to handle this case differently
+        // For now, we'll continue without the combined secret
+      } else {
+        const combinedSecret = existingUser.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
+        responsePayload['combinedSecret'] = combinedSecret;
+        console.log('verifyOAuthToken: Added combined secret for new user');
+      }
     }
 
     return {
-      errors:{
-        message:null
+      errors: {
+        message: null
       },
-      data:responsePayload
-    }
+      data: responsePayload
+    };
 
   } catch (error) {
-    console.log('error verifying oAuth token',error);
-    return {
-      errors:{
-        message:'Error verifying oAuth token'
-      },
-      data:null
+    console.error('verifyOAuthToken: Unexpected error:', error);
+    
+    // Log specific error types for debugging
+    if (error.name === 'PrismaClientValidationError') {
+      console.error('verifyOAuthToken: Prisma validation error - check your where clause:', error.message);
+    } else if (error.name === 'PrismaClientUnknownRequestError') {
+      console.error('verifyOAuthToken: Prisma database error - check connection:', error.message);
     }
+
+    return {
+      errors: {
+        message: 'Error verifying oAuth token'
+      },
+      data: null
+    };
   }
 }
-
 export async function sendResetPasswordLink(prevState:any,email:string){
 
   try {
