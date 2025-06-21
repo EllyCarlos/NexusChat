@@ -36,49 +36,48 @@ function OAuthRedirectPageContent() {
     }
   }, [token, verifyOAuthTokenAction, isProcessing]);
 
-  // Step 2: Handle response and store token
-  useEffect(() => {
-    if (state) {
-      console.log('OAuth verification state received:', {
-        hasError: !!state.errors?.message,
-        hasUser: !!state?.data?.user,
-        hasCombinedSecret: !!state?.data?.combinedSecret,
-        // Remove the isNewUser reference since it doesn't exist on the type
-        // isNewUser: state?.data?.isNewUser
-      });
 
-      // Handle errors
-      if (state.errors?.message) {
-        console.error('OAuth verification failed:', state.errors.message);
-        toast.error(`Authentication failed: ${state.errors.message}`);
-        // Redirect to login with error
-        router.push(`/auth/login?error=${encodeURIComponent(state.errors.message)}`);
-        return;
-      }
+// Step 2: Handle response and store token
+useEffect(() => {
+  if (state) {
+    console.log('OAuth verification state received:', {
+      hasError: !!state.errors?.message,
+      hasUser: !!state?.data?.user,
+      hasCombinedSecret: !!state?.data?.combinedSecret,
+      hasSessionToken: !!state?.data?.sessionToken // ← Check for session token
+    });
 
-      // Handle successful authentication
-      if (state?.data?.user) {
-        // ✅ Store JWT token in localStorage
-        if (token) {
-          localStorage.setItem('token', token);
-        }
+    // Handle errors
+    if (state.errors?.message) {
+      console.error('OAuth verification failed:', state.errors.message);
+      toast.error(`Authentication failed: ${state.errors.message}`);
+      router.push(`/auth/login?error=${encodeURIComponent(state.errors.message)}`);
+      return;
+    }
 
-        // Since isNewUser doesn't exist on the type, we need to determine this differently
-        // Option 1: Check if combinedSecret exists (assuming this indicates a new user)
-        if (state.data.combinedSecret) {
-          toast.success('Welcome! Setting up your account...');
-          setOAuthNewUser(true);
-        } else {
-          toast.success('Welcome back!');
-          // For existing users, redirect immediately
-          setTimeout(() => {
-            router.push('/');
-          }, 1000);
-        }
+    // Handle successful authentication
+    if (state?.data?.user && state?.data?.sessionToken) {
+      // ✅ FIXED: Store the session token, not the temp token
+      localStorage.setItem('token', state.data.sessionToken);
+      
+      // Clear the temp token from URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+
+      // Check if this is a new user (has combinedSecret)
+      if (state.data.combinedSecret) {
+        toast.success('Welcome! Setting up your account...');
+        setOAuthNewUser(true);
+      } else {
+        toast.success('Welcome back!');
+        // For existing users, redirect immediately
+        setTimeout(() => {
+          router.push('/');
+        }, 1000);
       }
     }
-  }, [state, token, router]);
-
+  }
+}, [state, router]); // ✅ Removed 'token' dependency since we're not using temp token anymore
   // Step 3: If new user, generate and encrypt key pair using combinedSecret
   const password = state?.data?.combinedSecret;
   const userId = state?.data?.user?.id;
