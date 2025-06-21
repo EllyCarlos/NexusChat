@@ -186,14 +186,19 @@ export const requestPasswordReset = asyncErrorHandler(async (req, res, next) => 
             const resetUrl = `${baseUrl}/auth/reset-password?token=${resetToken}`;
             
             // Store reset token in database (optional but recommended)
-            await prisma.user.update({
-                where: { id: user.id },
-                data: {
-                    resetPasswordToken: resetToken,
-                    resetPasswordExpires: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-                }
-            });
-            
+           // Delete any existing reset tokens for this user
+await prisma.resetPasswordToken.deleteMany({
+    where: { userId: user.id }
+});
+
+// Create a new reset token
+await prisma.resetPasswordToken.create({
+    data: {
+        userId: user.id,
+        hashedToken: resetToken, // Consider hashing this for security
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+    }
+});            
             await sendMail(
                 email, 
                 user.username, 
