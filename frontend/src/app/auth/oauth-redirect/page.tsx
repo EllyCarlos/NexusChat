@@ -48,11 +48,11 @@ function OAuthRedirectPageContent() {
       });
 
       // Handle errors
-      if (state.error) {
-        console.error('OAuth verification failed:', state.error);
-        toast.error(`Authentication failed: ${state.error}`);
+      if (state.errors?.message) {
+        console.error('OAuth verification failed:', state.errors.message);
+        toast.error(`Authentication failed: ${state.errors.message}`);
         // Redirect to login with error
-        router.push(`/auth/login?error=${encodeURIComponent(state.error)}`);
+        router.push(`/auth/login?error=${encodeURIComponent(state.errors.message)}`);
         return;
       }
 
@@ -140,9 +140,9 @@ function OAuthRedirectPageContent() {
            isOAuthNewUser ? 'Setting up your account...' : 
            'Redirecting, please wait...'}
         </p>
-        {state?.error && (
+        {state?.errors?.message && (
           <p className="text-red-500 mt-2 text-sm">
-            Error: {state.error}
+            Error: {state.errors.message}
           </p>
         )}
       </div>
