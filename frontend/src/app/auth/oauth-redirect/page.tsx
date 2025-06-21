@@ -56,10 +56,12 @@ useEffect(() => {
     }
 
     // Handle successful authentication
-    if (state?.data?.user && state?.data?.sessionToken) {
-      // ✅ FIXED: Store the session token, not the temp token
-      localStorage.setItem('token', state.data.sessionToken);
-      
+// Most robust solution
+if (state?.data?.user && state?.data && 'sessionToken' in state.data) {
+  const sessionToken = (state.data as any).sessionToken;
+  if (sessionToken) {
+    localStorage.setItem('token', sessionToken);
+  }      
       // Clear the temp token from URL
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
