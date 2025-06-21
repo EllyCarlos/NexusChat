@@ -315,54 +315,44 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
 }
 // ✅ Update your auth.actions.ts verifyOAuthToken function
 
+// Fixed verifyOAuthToken function - replace the existing implementation
 export const verifyOAuthToken = async (prevState: any, token: string) => {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/verify-oauth-token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ token }),
-    });
+    // First try the API approach
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/verify-oauth-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      return {
-        errors: {
-          message: data.message || 'Authentication failed'
-        }
-      };
+      if (response.ok) {
+        return {
+          errors: {
+            message: null
+          },
+          data: {
+            user: data.user,
+            sessionToken: data.sessionToken,
+            combinedSecret: data.combinedSecret,
+          }
+        };
+      }
+    } catch (apiError) {
+      console.log('API verification failed, falling back to local verification:', apiError);
     }
 
-    // ✅ Return the response data including sessionToken
-    return {
-      data: {
-        user: data.user,
-        sessionToken: data.sessionToken,  // ← Include session token
-        combinedSecret: data.combinedSecret,
-        // Remove isNewUser since it's not in the response
-      }
-    };
-
-  } catch (error) {
-    console.error('OAuth token verification error:', error);
-    return {
-      errors: {
-        message: 'Network error during authentication'
-      }
-    };
-  }
-};    
-// ✅ Use your existing decrypt function instead of JWT
+    // Fallback to local token verification
     let decodedInfo;
     try {
-      // Use the existing decrypt function from your session management
       decodedInfo = await decrypt(token) as { 
         user: string, 
         oAuthNewUser: boolean 
       };
-      
     } catch (decryptError) {
       console.error('verifyOAuthToken: Token decryption failed:', decryptError);
       return {
@@ -503,8 +493,6 @@ export const verifyOAuthToken = async (prevState: any, token: string) => {
     if (oAuthNewUser) {
       if (!existingUser.googleId) {
         console.warn('verifyOAuthToken: New OAuth user missing googleId:', existingUser.id);
-        // You might want to handle this case differently
-        // For now, we'll continue without the combined secret
       } else {
         const combinedSecret = existingUser.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
         responsePayload['combinedSecret'] = combinedSecret;
@@ -528,7 +516,7 @@ export const verifyOAuthToken = async (prevState: any, token: string) => {
       data: null
     };
   }
-}
+};
 export async function sendResetPasswordLink(prevState:any,email:string){
 
   try {
