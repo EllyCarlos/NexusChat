@@ -44,7 +44,7 @@ useEffect(() => {
       hasError: !!state.errors?.message,
       hasUser: !!state?.data?.user,
       hasCombinedSecret: !!state?.data?.combinedSecret,
-      hasSessionToken: !!state?.data?.sessionToken // ← Check for session token
+      hasSessionToken: !!(state?.data && 'sessionToken' in state.data && state.data.sessionToken)// ← Check for session token
     });
 
     // Handle errors
