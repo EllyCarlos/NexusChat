@@ -129,8 +129,7 @@ const redirectHandler = asyncErrorHandler(async(req: OAuthAuthenticatedRequest, 
         }
         
         console.log('❌ No user data in OAuth request');
-        return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?token=${tempToken}`);
-        
+        return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?error=no_user_data`);        
     } catch (error) {
         console.error('🚨 OAuth redirect error:', error);
         return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?error=oauth_failed`);
