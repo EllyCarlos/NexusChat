@@ -16,7 +16,7 @@ export async function login(prevState: any, formData: FormData) {
     if (!email || !password) {
       return {
         errors: {
-          message: "Invalid Credentails",
+          message: "Invalid Credentials",
         },
         redirect:false
       };
@@ -318,35 +318,7 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
 // Fixed verifyOAuthToken function - replace the existing implementation
 export const verifyOAuthToken = async (prevState: any, token: string) => {
   try {
-    // First try the API approach
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/verify-oauth-token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        return {
-          errors: {
-            message: null
-          },
-          data: {
-            user: data.user,
-            sessionToken: data.sessionToken,
-            combinedSecret: data.combinedSecret,
-          }
-        };
-      }
-    } catch (apiError) {
-      console.log('API verification failed, falling back to local verification:', apiError);
-    }
-
-    // Fallback to local token verification
+    // Remove the API call - go straight to local verification
     let decodedInfo;
     try {
       decodedInfo = await decrypt(token) as { 
@@ -386,9 +358,6 @@ export const verifyOAuthToken = async (prevState: any, token: string) => {
         data: null
       };
     }
-
-    // Log for debugging (remove in production)
-    console.log('verifyOAuthToken: Processing token for userId:', userId, 'isNewUser:', oAuthNewUser);
 
     // Find the user by ID and get full user data for response
     let existingUser;
@@ -433,13 +402,6 @@ export const verifyOAuthToken = async (prevState: any, token: string) => {
       };
     }
 
-    // Log successful user lookup
-    console.log('verifyOAuthToken: User found:', {
-      id: existingUser.id,
-      hasGoogleId: !!existingUser.googleId,
-      email: existingUser.email
-    });
-
     // Create session
     try {
       await createSession(existingUser.id);
@@ -456,48 +418,15 @@ export const verifyOAuthToken = async (prevState: any, token: string) => {
     // Prepare response payload with full user data
     const responsePayload: { 
       combinedSecret?: string, 
-      user: {
-        id: string;
-        name: string;
-        username: string;
-        avatar: string | null;
-        email: string;
-        createdAt: Date;
-        updatedAt: Date;
-        emailVerified: boolean;
-        publicKey: string | null;
-        notificationsEnabled: boolean;
-        verificationBadge: boolean;
-        fcmToken: string | null;
-        oAuthSignup: boolean;
-      }
+      user: typeof existingUser
     } = {
-      user: {
-        id: existingUser.id,
-        name: existingUser.name,
-        username: existingUser.username,
-        avatar: existingUser.avatar,
-        email: existingUser.email,
-        createdAt: existingUser.createdAt,
-        updatedAt: existingUser.updatedAt,
-        emailVerified: existingUser.emailVerified,
-        publicKey: existingUser.publicKey,
-        notificationsEnabled: existingUser.notificationsEnabled,
-        verificationBadge: existingUser.verificationBadge,
-        fcmToken: existingUser.fcmToken,
-        oAuthSignup: existingUser.oAuthSignup,
-      }
+      user: existingUser
     };
 
     // Add combined secret for new users
-    if (oAuthNewUser) {
-      if (!existingUser.googleId) {
-        console.warn('verifyOAuthToken: New OAuth user missing googleId:', existingUser.id);
-      } else {
-        const combinedSecret = existingUser.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
-        responsePayload['combinedSecret'] = combinedSecret;
-        console.log('verifyOAuthToken: Added combined secret for new user');
-      }
+    if (oAuthNewUser && existingUser.googleId) {
+      const combinedSecret = existingUser.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
+      responsePayload.combinedSecret = combinedSecret;
     }
 
     return {
