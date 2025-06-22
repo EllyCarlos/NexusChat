@@ -318,6 +318,8 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
 
 // Fixed verifyOAuthToken function - replace the existing implementation
 // Enhanced verifyOAuthToken with comprehensive debugging
+// Replace your existing verifyOAuthToken function with this cleaned up version:
+
 export async function verifyOAuthToken(prevState: any, token: string) {
   try {
     if (!token) {
@@ -331,10 +333,6 @@ export async function verifyOAuthToken(prevState: any, token: string) {
 
     console.log('🔍 Verifying OAuth token...');
     
-    // You'll need to import jwt at the top of your file
-    // import jwt from 'jsonwebtoken';
-    const jwt = require('jsonwebtoken');
-    
     if (!process.env.JWT_SECRET) {
       console.error('❌ JWT_SECRET is not configured');
       return {
@@ -345,6 +343,7 @@ export async function verifyOAuthToken(prevState: any, token: string) {
       };
     }
 
+    // Use the jwt import from the top of the file (remove the require inside)
     const decoded = jwt.verify(token, process.env.JWT_SECRET) as any;
     
     console.log('🔍 Decoded token structure:', {
@@ -415,7 +414,7 @@ export async function verifyOAuthToken(prevState: any, token: string) {
 
     const responseData: any = {
       user,
-      sessionToken: token // You might want to generate a new session token here
+      sessionToken: token
     };
 
     if (decoded.isNewUser) {
@@ -434,23 +433,25 @@ export async function verifyOAuthToken(prevState: any, token: string) {
   } catch (error) {
     console.error('🚨 OAuth token verification error:', error);
     
-    if (error.name === 'JsonWebTokenError') {
-      console.error('JWT Error details:', error.message);
-      return {
-        errors: {
-          message: "Invalid token format"
-        },
-        data: null
-      };
-    }
-    if (error.name === 'TokenExpiredError') {
-      console.error('Token expired at:', error.expiredAt);
-      return {
-        errors: {
-          message: "Token expired"
-        },
-        data: null
-      };
+    if (error instanceof Error) {
+      if (error.name === 'JsonWebTokenError') {
+        console.error('JWT Error details:', error.message);
+        return {
+          errors: {
+            message: "Invalid token format"
+          },
+          data: null
+        };
+      }
+      if (error.name === 'TokenExpiredError') {
+        console.error('Token expired');
+        return {
+          errors: {
+            message: "Token expired"
+          },
+          data: null
+        };
+      }
     }
     
     console.error('Unexpected error:', error);
