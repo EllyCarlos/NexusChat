@@ -20,7 +20,7 @@ import userRoutes from './routes/user.router.js'
 
 import { socketAuthenticatorMiddleware } from './middlewares/socket-auth.middleware.js'
 import registerSocketHandlers from './socket/socket.js'
-
+import { prisma } from './lib/prisma.lib.js'
 
 // environment variables validation
 checkEnvVariables();
@@ -131,15 +131,32 @@ server.listen(env.PORT, () => {
     } else {
         console.log('🛠️  Development mode');
     }
-});    // Graceful shutdown handling
-const gracefulShutdown = () => {
-    console.log('Received shutdown signal, closing server gracefully...');
-    server.close(() => {
-        console.log('HTTP server closed');
-        // Close database connections if any
-        process.exit(0);
-    });
-};
+});   
+// Graceful shutdown handler
+const gracefulShutdown = async () => {
+  console.log('Received shutdown signal, closing database connections...')
+  try {
+    await prisma.$disconnect()
+    console.log('Database connections closed successfully')
+    process.exit(0)
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error)
+    process.exit(1)
+  }
+}
 
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+// Handle various shutdown signals
+process.on('SIGTERM', gracefulShutdown)
+process.on('SIGINT', gracefulShutdown)
+process.on('beforeExit', gracefulShutdown)
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error)
+  gracefulShutdown()
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason)
+  gracefulShutdown()
+})
