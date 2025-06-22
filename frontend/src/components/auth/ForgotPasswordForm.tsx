@@ -14,7 +14,7 @@ import { CircleLoading } from "../shared/CircleLoading";
 export const ForgotPasswordForm = () => {
 
   const {register,handleSubmit,formState: { errors },setValue,} = useForm<forgotPasswordSchemaType>({resolver: zodResolver(forgotPasswordSchema)});
-
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [state,resetPasswordAction] =  useActionState(resetPassword,undefined);
 
   const onSubmit: SubmitHandler<forgotPasswordSchemaType> = ({ email }) => {
