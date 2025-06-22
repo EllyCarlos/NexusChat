@@ -377,7 +377,7 @@ export async function forgotPassword(prevState: any, email: string) {
 
     // Send email (you'll need to add this email type to your sendEmail function)
     await sendEmail({
-      emailType: "passwordReset",
+      emailType: "resetPassword",
       to: user.email,
       username: user.username,
       verificationUrl: resetUrl
