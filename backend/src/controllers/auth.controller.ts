@@ -77,36 +77,46 @@ const checkAuth = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,
     return next(new CustomError("Token missing, please login again",401))
 })
 
-const redirectHandler = asyncErrorHandler(async(req:OAuthAuthenticatedRequest,res:Response,next:NextFunction)=>{
+const redirectHandler = asyncErrorHandler(async(req: OAuthAuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-        if(req.user){
-            console.log('OAuth redirect - User data:', {
+        if (req.user) {
+            console.log('🔄 OAuth redirect - User data:', {
                 userId: req.user.id,
                 isNewUser: req.user.newUser,
-                userEmail: req.user.email
+                userEmail: req.user.email,
+                userType: typeof req.user.id,
+                newUserType: typeof req.user.newUser
             });
 
-            const tempToken = jwt.sign({
-                userId: req.user.id,
-                type: req.user.newUser ? 'new' : 'existing',
-                isNewUser: req.user.newUser,
+            // Ensure proper types before creating token
+            const userId = String(req.user.id);
+            const isNewUser = Boolean(req.user.newUser);
+
+            const tokenPayload = {
+                userId: userId,
+                type: isNewUser ? 'new' : 'existing',
+                isNewUser: isNewUser,
                 iat: Math.floor(Date.now() / 1000)
-            }, env.JWT_SECRET, {expiresIn:"5m"});
+            };
 
-            console.log('Generated OAuth token payload:', {
-                userId: req.user.id,
-                type: req.user.newUser ? 'new' : 'existing',
-                isNewUser: req.user.newUser
-            });
+            console.log('🎫 Creating OAuth token with payload:', tokenPayload);
+
+            const tempToken = jwt.sign(tokenPayload, env.JWT_SECRET, { expiresIn: "5m" });
+
+            console.log('✅ Generated OAuth token successfully');
+            console.log('🔗 Redirecting to:', `${config.clientUrl}/auth/oauth-redirect`);
 
             return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?token=${tempToken}`);
         }
+        
+        console.log('❌ No user in OAuth request, redirecting to login');
         return res.redirect(`${config.clientUrl}/auth/login`);
+        
     } catch (error) {
-        console.error('Error during oauth redirect handler:', error);
+        console.error('🚨 Error during OAuth redirect handler:', error);
         return res.redirect(`${config.clientUrl}/auth/login?error=${encodeURIComponent('OAuth processing failed')}`);
     }
-})
+});
 
 const generateSessionToken = (userId: string) => {
   return jwt.sign({

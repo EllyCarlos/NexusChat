@@ -316,136 +316,103 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
 // ✅ Update your auth.actions.ts verifyOAuthToken function
 
 // Fixed verifyOAuthToken function - replace the existing implementation
-export const verifyOAuthToken = async (prevState: any, token: string) => {
-  try {
-    // Remove the API call - go straight to local verification
-    let decodedInfo;
+// Enhanced verifyOAuthToken with comprehensive debugging
+const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, next: NextFunction) => {
     try {
-      decodedInfo = await decrypt(token) as { 
-        user: string, 
-        oAuthNewUser: boolean 
-      };
-    } catch (decryptError) {
-      console.error('verifyOAuthToken: Token decryption failed:', decryptError);
-      return {
-        errors: {
-          message: 'Invalid or expired token'
-        },
-        data: null
-      };
-    }
-
-    // Validate decoded info structure
-    if (!decodedInfo || typeof decodedInfo !== 'object') {
-      console.error('verifyOAuthToken: Invalid decoded token structure:', decodedInfo);
-      return {
-        errors: {
-          message: 'Invalid token format'
-        },
-        data: null
-      };
-    }
-
-    const { oAuthNewUser, user: userId } = decodedInfo;
-
-    // Validate userId exists and is not empty
-    if (!userId || typeof userId !== 'string') {
-      console.error('verifyOAuthToken: Invalid or missing userId in token:', { userId, type: typeof userId });
-      return {
-        errors: {
-          message: 'Invalid user identifier in token'
-        },
-        data: null
-      };
-    }
-
-    // Find the user by ID and get full user data for response
-    let existingUser;
-    try {
-      existingUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          avatar: true,
-          email: true,
-          createdAt: true,
-          updatedAt: true,
-          emailVerified: true,
-          publicKey: true,
-          notificationsEnabled: true,
-          verificationBadge: true,
-          fcmToken: true,
-          oAuthSignup: true,
-          googleId: true,
+        const { token } = req.body;
+        
+        if (!token) {
+            return next(new CustomError("Token is required", 400));
         }
-      });
-    } catch (prismaError) {
-      console.error('verifyOAuthToken: Prisma query failed:', prismaError);
-      return {
-        errors: {
-          message: 'Database error during user lookup'
-        },
-        data: null
-      };
+
+        console.log('🔍 Verifying OAuth token...');
+        console.log('Token received:', token.substring(0, 50) + '...');
+
+        const decoded = jwt.verify(token, env.JWT_SECRET) as any;
+        
+        // Enhanced debugging - log the complete decoded token
+        console.log('🔍 Decoded token structure:', {
+            keys: Object.keys(decoded),
+            userId: decoded.userId,
+            isNewUser: decoded.isNewUser,
+            type: decoded.type,
+            fullPayload: decoded
+        });
+           
+        // More detailed validation with better error messages
+        if (!decoded.userId) {
+            console.error('❌ Missing userId in token. Available fields:', Object.keys(decoded));
+            return next(new CustomError("Invalid user identifier in token", 401));
+        }
+
+        if (typeof decoded.isNewUser !== 'boolean') {
+            console.error('❌ Invalid isNewUser type:', typeof decoded.isNewUser, 'Value:', decoded.isNewUser);
+            return next(new CustomError("Invalid token structure - isNewUser must be boolean", 401));
+        }
+
+        console.log('✅ Token validation passed:', {
+            userId: decoded.userId,
+            isNewUser: decoded.isNewUser
+        });
+
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.userId },
+            select: {
+                id: true,
+                name: true,
+                username: true,
+                avatar: true,
+                email: true,
+                createdAt: true,
+                updatedAt: true,
+                emailVerified: true,
+                publicKey: true,
+                notificationsEnabled: true,
+                verificationBadge: true,
+                fcmToken: true,
+                oAuthSignup: true
+            }
+        });
+
+        if (!user) {
+            console.error('❌ User not found in database for ID:', decoded.userId);
+            return next(new CustomError("User not found", 404));
+        }
+
+        console.log('✅ User found in database:', user.id);
+
+        const sessionToken = generateSessionToken(user.id);
+        setAuthCookie(res, sessionToken);
+
+        const responseData: any = {
+            user,
+            sessionToken
+        };
+
+        if (decoded.isNewUser) {
+            responseData.combinedSecret = `${user.id}_${user.email}_${Date.now()}`;
+            console.log('🆕 New user - added combinedSecret');
+        }
+
+        console.log('✅ OAuth verification successful for user:', user.id);
+        return res.status(200).json(responseData);
+
+    } catch (error) {
+        console.error('🚨 OAuth token verification error:', error);
+        
+        if (error instanceof jwt.JsonWebTokenError) {
+            console.error('JWT Error details:', error.message);
+            return next(new CustomError("Invalid token format", 401));
+        }
+        if (error instanceof jwt.TokenExpiredError) {
+            console.error('Token expired at:', error.expiredAt);
+            return next(new CustomError("Token expired", 401));
+        }
+        
+        console.error('Unexpected error:', error);
+        return next(new CustomError("Token verification failed", 500));
     }
-
-    // Check if user exists
-    if (!existingUser) {
-      console.error('verifyOAuthToken: User not found for ID:', userId);
-      return {
-        errors: {
-          message: 'User not found'
-        },
-        data: null
-      };
-    }
-
-    // Create session
-    try {
-      await createSession(existingUser.id);
-    } catch (sessionError) {
-      console.error('verifyOAuthToken: Session creation failed:', sessionError);
-      return {
-        errors: {
-          message: 'Failed to create session'
-        },
-        data: null
-      };
-    }
-
-    // Prepare response payload with full user data
-    const responsePayload: { 
-      combinedSecret?: string, 
-      user: typeof existingUser
-    } = {
-      user: existingUser
-    };
-
-    // Add combined secret for new users
-    if (oAuthNewUser && existingUser.googleId) {
-      const combinedSecret = existingUser.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
-      responsePayload.combinedSecret = combinedSecret;
-    }
-
-    return {
-      errors: {
-        message: null
-      },
-      data: responsePayload
-    };
-
-  } catch (error) {
-    console.error('verifyOAuthToken: Unexpected error:', error);
-    return {
-      errors: {
-        message: 'Error verifying OAuth token'
-      },
-      data: null
-    };
-  }
-};
+});
 export async function sendResetPasswordLink(prevState:any,email:string){
 
   try {
