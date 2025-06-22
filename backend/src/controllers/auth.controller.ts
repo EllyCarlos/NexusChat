@@ -1,11 +1,26 @@
 import { NextFunction, Request, Response } from "express";
 import jwt from 'jsonwebtoken';
+import { v4 as uuidV4 } from 'uuid'; // Added for JTI
 import { config } from "../config/env.config.js";
 import type { AuthenticatedRequest, OAuthAuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from '../lib/prisma.lib.js';
 import type { fcmTokenSchemaType } from "../schemas/auth.schema.js";
 import { env } from "../schemas/env.schema.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
+
+// Cookie configuration utility
+const setAuthCookie = (res: Response, token: string) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.cookie('sessionToken', token, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    domain: isProduction ? config.cookieDomain : undefined,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: '/',
+    partitioned: true // For Chrome's new cookie partitioning
+  });
+};
 
 const getUserInfo = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
     const user = req.user
@@ -68,14 +83,13 @@ const redirectHandler = asyncErrorHandler(async(req:OAuthAuthenticatedRequest,re
             console.log('OAuth redirect - User data:', {
                 userId: req.user.id,
                 isNewUser: req.user.newUser,
-                userEmail: req.user.email // for debugging
+                userEmail: req.user.email
             });
 
-            // ✅ Fixed: Use consistent field names that match your frontend expectations
             const tempToken = jwt.sign({
-                userId: req.user.id,        // Changed from 'user' to 'userId'
-                type: req.user.newUser ? 'new' : 'existing',  // Changed from 'oAuthNewUser' to 'type'
-                isNewUser: req.user.newUser, // Keep both for backward compatibility
+                userId: req.user.id,
+                type: req.user.newUser ? 'new' : 'existing',
+                isNewUser: req.user.newUser,
                 iat: Math.floor(Date.now() / 1000)
             }, env.JWT_SECRET, {expiresIn:"5m"});
 
@@ -87,28 +101,27 @@ const redirectHandler = asyncErrorHandler(async(req:OAuthAuthenticatedRequest,re
 
             return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?token=${tempToken}`);
         }
-        else{
-            console.log('OAuth redirect - No user found, redirecting to login');
-            return res.redirect(`${config.clientUrl}/auth/login`);
-        }
+        return res.redirect(`${config.clientUrl}/auth/login`);
     } catch (error) {
         console.error('Error during oauth redirect handler:', error);
         return res.redirect(`${config.clientUrl}/auth/login?error=${encodeURIComponent('OAuth processing failed')}`);
     }
 })
 
-// ✅ Add a token verification function for your frontend to use
-
-
 const generateSessionToken = (userId: string) => {
-    return jwt.sign({
-        userId: userId,
-        type: 'session',
-        iat: Math.floor(Date.now() / 1000)
-    }, env.JWT_SECRET, {expiresIn: "7d"}); // 7 days instead of 5 minutes
+  return jwt.sign({
+    userId: userId,
+    type: 'session',
+    iat: Math.floor(Date.now() / 1000),
+    iss: config.jwtIssuer,
+    aud: config.jwtAudience,
+    jti: uuidV4()
+  }, env.JWT_SECRET, {
+    expiresIn: "7d",
+    algorithm: 'HS256'
+  });
 };
 
-// ✅ UPDATED: verifyOAuthToken function
 const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, next: NextFunction) => {
     try {
         const { token } = req.body;
@@ -117,68 +130,47 @@ const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, ne
             return next(new CustomError("Token is required", 400));
         }
 
-        console.log('Verifying OAuth token...');
-        
-        // Decode and verify the TEMPORARY token
         const decoded = jwt.verify(token, env.JWT_SECRET) as any;
-        
-        console.log('Decoded token payload:', {
-            userId: decoded.userId,
-            type: decoded.type,
-            isNewUser: decoded.isNewUser,
-            iat: decoded.iat,
-            exp: decoded.exp
-        });
-
-        // Validate required fields
-        if (!decoded.userId) {
-            console.error('Token validation failed: missing userId');
-            return next(new CustomError("Invalid token: missing user identifier", 401));
+           
+        if (!decoded.userId || typeof decoded.isNewUser !== 'boolean') {
+            return next(new CustomError("Invalid token structure", 401));
         }
 
-        // Fetch user from database
         const user = await prisma.user.findUnique({
-            where: { id: decoded.userId }
+            where: { id: decoded.userId },
+            select: {
+                id: true,
+                name: true,
+                username: true,
+                avatar: true,
+                email: true,
+                createdAt: true,
+                updatedAt: true,
+                emailVerified: true,
+                publicKey: true,
+                notificationsEnabled: true,
+                verificationBadge: true,
+                fcmToken: true,
+                oAuthSignup: true
+            }
         });
 
         if (!user) {
-            console.error('Token validation failed: user not found');
-            return next(new CustomError("Invalid token: user not found", 401));
+            return next(new CustomError("User not found", 404));
         }
 
-        // ✅ FIXED: Generate a proper session token (not the temp token)
         const sessionToken = generateSessionToken(user.id);
+        setAuthCookie(res, sessionToken);
 
-        // Prepare response data
         const responseData: any = {
-            user: {
-                id: user.id,
-                name: user.name,
-                username: user.username,
-                avatar: user.avatar,
-                email: user.email,
-                createdAt: user.createdAt,
-                updatedAt: user.updatedAt,
-                emailVerified: user.emailVerified,
-                publicKey: user.publicKey,
-                notificationsEnabled: user.notificationsEnabled,
-                verificationBadge: user.verificationBadge,
-                fcmToken: user.fcmToken,
-                oAuthSignup: user.oAuthSignup
-            },
-            // ✅ FIXED: Return the session token, not the temp token
-            sessionToken: sessionToken
+            user,
+            sessionToken
         };
 
-        // If this is a new user, include the combined secret
         if (decoded.isNewUser) {
-            // Generate a combined secret for key generation
-            const combinedSecret = `${user.id}_${user.email}_${Date.now()}`;
-            responseData.combinedSecret = combinedSecret;
-            console.log('New user detected, including combinedSecret');
+            responseData.combinedSecret = `${user.id}_${user.email}_${Date.now()}`;
         }
 
-        console.log('Token verification successful for user:', user.id);
         return res.status(200).json(responseData);
 
     } catch (error) {
@@ -195,12 +187,26 @@ const verifyOAuthToken = asyncErrorHandler(async(req: Request, res: Response, ne
     }
 });
 
-// ✅ Don't forget to export the new function
+const logoutHandler = asyncErrorHandler(async(req: AuthenticatedRequest, res: Response) => {
+  res.clearCookie('sessionToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    domain: process.env.NODE_ENV === 'production' ? config.cookieDomain : undefined
+  });
+
+  return res.status(200).json({ 
+    success: true,
+    message: 'Logged out successfully' 
+  });
+});
+
 export {
     checkAuth, 
     getUserInfo,
     redirectHandler,
     updateFcmToken,
     verifyOAuthToken,
-    generateSessionToken  // ← Add this export
+    logoutHandler,
+    generateSessionToken
 };
