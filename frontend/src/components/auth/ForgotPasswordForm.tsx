@@ -1,5 +1,5 @@
 "use client";
-import { ResetPassword } from "@/actions/auth.actions";
+import { resetPassword } from "@/actions/auth.actions";
 import {
   forgotPasswordSchema,
   forgotPasswordSchemaType,
@@ -15,10 +15,10 @@ export const ForgotPasswordForm = () => {
 
   const {register,handleSubmit,formState: { errors },setValue,} = useForm<forgotPasswordSchemaType>({resolver: zodResolver(forgotPasswordSchema)});
 
-  const [state,ResetPasswordAction] =  useActionState(ResetPassword,undefined);
+  const [state,resetPasswordAction] =  useActionState(resetPassword,undefined);
 
   const onSubmit: SubmitHandler<forgotPasswordSchemaType> = ({ email }) => {
-    startTransition(()=>{ResetPasswordAction(email)})
+    startTransition(()=>{resetPasswordAction(email)})
     setValue("email", "");
   };
 
