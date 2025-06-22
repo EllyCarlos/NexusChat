@@ -319,8 +319,8 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
 // Fixed verifyOAuthToken function - replace the existing implementation
 // Enhanced verifyOAuthToken with comprehensive debugging
 // Replace your existing verifyOAuthToken function with this cleaned up version:
-
-/* export async function verifyOAuthToken(prevState: any, token: string) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function verifyOAuthToken(prevState: any, token: string) {
   try {
     if (!token) {
       return {
@@ -462,7 +462,7 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
       data: null
     };
   }
-}*/
+}
 export async function resetPassword(prevState:any,data:{token:string,newPassword:string}){
   try {
     const {newPassword,token} = data;
