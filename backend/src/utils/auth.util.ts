@@ -66,20 +66,36 @@ export const uploadAudioToCloudinary = async ({buffer}: {buffer: Uint8Array<Arra
     }
 };
 
-export const getSecureUserInfo = (user:Prisma.UserSelect):any=>{
+export const getSecureUserInfo = (user: Prisma.UserGetPayload<{
+    select: {
+        id: true,
+        name: true,
+        username: true,
+        avatar: true,
+        email: true,
+        createdAt: true,
+        updatedAt: true,
+        verified: true,
+        publicKey: true,
+        notificationsEnabled: true,
+        verificationBadge: true,
+        fcmToken: true,
+        oAuthSignup: true
+    }
+}>): any => {
     return {
-        id:user.id,
-        name:user.name,
-        username:user.username,
-        avatar:user.avatar?.secureUrl,
-        email:user.email,
-        createdAt:user.createdAt,
-        updatedAt:user.updatedAt,
-        verified:user.verified,
-        publicKey:user?.publicKey,
-        notificationsEnabled:user.notificationsEnabled,
-        verificationBadge:user.verificationBadge,
-        fcmTokenExists:user.fcmToken?.length?true:false,
-        oAuthSignup:user.oAuthSignup
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        avatar: user.avatar?.secureUrl, // Now properly typed
+        email: user.email,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        verified: user.verified, // Now properly typed
+        publicKey: user?.publicKey,
+        notificationsEnabled: user.notificationsEnabled,
+        verificationBadge: user.verificationBadge,
+        fcmTokenExists: user.fcmToken?.length ? true : false, // Now properly typed
+        oAuthSignup: user.oAuthSignup
     }
 }
