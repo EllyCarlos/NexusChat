@@ -1,3 +1,5 @@
+// Add this import at the top of auth.util.ts
+import { Prisma } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import { convertBufferToBase64 } from './generic.js';
 
