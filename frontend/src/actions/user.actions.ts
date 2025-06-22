@@ -1,5 +1,5 @@
 "use server";
-export const runtime = 'nodejs';
+
 import { prisma } from "@/lib/server/prisma";
 
 export async function searchUser(prevState:any,data:{username:string}){
