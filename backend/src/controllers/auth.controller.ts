@@ -122,7 +122,7 @@ const redirectHandler = asyncErrorHandler(async(req: OAuthAuthenticatedRequest, 
 
             console.log('✅ OAuth token created successfully');
             
-            const redirectUrl = `${config.clientUrl}/auth/oauth-callback?token=${tempToken}`;
+            const redirectUrl = `${config.clientUrl}/auth/oauth-redirect?token=${tempToken}`;
             console.log('🔗 Redirecting to:', redirectUrl);
 
             return res.redirect(307, redirectUrl);
