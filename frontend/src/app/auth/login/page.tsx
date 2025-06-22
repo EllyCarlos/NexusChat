@@ -1,51 +1,39 @@
+'use client';
+
 import { LoginForm } from "@/components/auth/LoginForm";
 import { SocialLogin } from "@/components/auth/SocialLogin";
-import { Metadata } from "next";
+import { useSearchParams } from "next/navigation";
+import { useEffect, Suspense } from "react";
+import toast from "react-hot-toast";
 
-export const metadata: Metadata = { 
-  title: "Login - NexusChat",
-  description: "Securely log in to NexusChat, a privacy-focused encrypted chat app.",
-  keywords: [
-    "NexusChat login", 
-    "secure chat login", 
-    "encrypted messaging", 
-    "private chat login", 
-    "end-to-end encryption login"
-  ],
-  openGraph: {
-    title: "Login - NexusChat",
-    description: "Securely log in to NexusChat, a privacy-focused encrypted chat app.",
-    url: "https://nexuswebapp.vercel.app/auth/login",
-    siteName: "NexusChat",
-    type: "website",
-    images: [
-      {
-        url: "https://nexuswebapp.vercel.app/images/og/og-image.png", // Update with your actual OG image
-        width: 1200,
-        height: 630,
-        alt: "NexusChat - Secure & Encrypted Chat App",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Login - NexusChat",
-    description: "Securely log in to NexusChat, a privacy-focused encrypted chat app.",
-    images: ["https://nexuswebapp.vercel.app/images/og/og-image.png"], // Update with your actual Twitter image
-  },
-};
-
-
-export default function LoginPage() {
-
+function LoginPageContent() {
+  const searchParams = useSearchParams();
+ 
+  // Handle OAuth errors redirected from oauth-redirect page
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) {
+      toast.error(`Authentication failed: ${decodeURIComponent(error)}`);
+      // Clean up URL
+      window.history.replaceState({}, '', '/auth/login');
+    }
+  }, [searchParams]);
 
   return (
     <>
-    <div className="flex flex-col gap-y-8">
-      <h3 className="text-4xl font-bold text-fluid-h3">Login</h3>
-      <SocialLogin googleLink={`${process.env.NEXT_PUBLIC_BASE_URL}/auth/google`} />
-    </div>
-    <LoginForm/>
+      <div className="flex flex-col gap-y-8">
+        <h3 className="text-4xl font-bold text-fluid-h3">Login</h3>
+        <SocialLogin googleLink={`${process.env.NEXT_PUBLIC_BASE_URL}/auth/google`} />
+      </div>
+      <LoginForm />
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
