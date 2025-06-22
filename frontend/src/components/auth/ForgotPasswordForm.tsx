@@ -1,5 +1,5 @@
 "use client";
-import { resetPassword } from "@/actions/auth.actions";
+import { forgotPassword } from '@/actions/auth.actions';
 import {
   forgotPasswordSchema,
   forgotPasswordSchemaType,
@@ -18,8 +18,8 @@ export const ForgotPasswordForm = () => {
   const [state,resetPasswordAction] =  useActionState(resetPassword,undefined);
 
   const onSubmit: SubmitHandler<forgotPasswordSchemaType> = ({ email }) => {
-    startTransition(()=>{resetPasswordAction(email)})
-    setValue("email", "");
+  startTransition(() => { forgotPassword(null, email) }); // Use forgotPassword instead of resetPasswordAction
+  setValue("email", "");
   };
 
   useEffect(()=>{

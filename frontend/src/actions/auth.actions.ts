@@ -314,6 +314,96 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
   }
 
 }
+// Add this function to your auth.actions.ts file
+export async function forgotPassword(prevState: any, email: string) {
+  try {
+    if (!email) {
+      return {
+        errors: {
+          message: "Email is required"
+        },
+        success: {
+          message: null
+        }
+      };
+    }
+
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        username: true
+      }
+    });
+
+    if (!user) {
+      // For security, don't reveal if email exists or not
+      return {
+        errors: {
+          message: null
+        },
+        success: {
+          message: "If an account with that email exists, we've sent a password reset link."
+        }
+      };
+    }
+
+    // Generate reset token
+    const resetPasswordToken = await encrypt({
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24) // 24 hours
+    });
+    
+    const hashedResetToken = await bcrypt.hash(resetPasswordToken, 10);
+
+    // Delete any existing reset tokens for this user
+    await prisma.resetPasswordToken.deleteMany({
+      where: { userId: user.id }
+    });
+
+    // Create new reset token
+    await prisma.resetPasswordToken.create({
+      data: {
+        userId: user.id,
+        hashedToken: hashedResetToken,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24) // 24 hours
+      }
+    });
+
+    // Create reset URL
+    const resetUrl = `${process.env.NEXT_PUBLIC_CLIENT_URL}/auth/reset-password?token=${resetPasswordToken}`;
+
+    // Send email (you'll need to add this email type to your sendEmail function)
+    await sendEmail({
+      emailType: "passwordReset",
+      to: user.email,
+      username: user.username,
+      verificationUrl: resetUrl
+    });
+
+    return {
+      errors: {
+        message: null
+      },
+      success: {
+        message: "If an account with that email exists, we've sent a password reset link."
+      }
+    };
+
+  } catch (error) {
+    console.log('Error sending password reset email:', error);
+    return {
+      errors: {
+        message: "Error sending password reset email"
+      },
+      success: {
+        message: null
+      }
+    };
+  }
+}
 // ✅ Update your auth.actions.ts verifyOAuthToken function
 
 // Fixed verifyOAuthToken function - replace the existing implementation
