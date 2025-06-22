@@ -1,4 +1,5 @@
 "use server";
+export const runtime = 'nodejs';
 import { DEFAULT_AVATAR } from "@/constants";
 import { sendEmail } from "@/lib/server/email/SendEmail";
 import { generateOtp } from "@/lib/server/helpers";
