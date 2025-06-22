@@ -64,9 +64,9 @@ export const uploadAudioToCloudinary = async ({buffer}: {buffer: Uint8Array<Arra
     }
 };
 
-export const getSecureUserInfo = (user:any):any=>{
+export const getSecureUserInfo = (user:Prisma.UserSelect):any=>{
     return {
-        id:user._id,
+        id:user.id,
         name:user.name,
         username:user.username,
         avatar:user.avatar?.secureUrl,
