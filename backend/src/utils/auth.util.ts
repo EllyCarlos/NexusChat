@@ -87,7 +87,7 @@ export const getSecureUserInfo = (user: Prisma.UserGetPayload<{
         id: user.id,
         name: user.name,
         username: user.username,
-        avatar: user.avatar?.secureUrl, // Now properly typed
+        avatar: user.avatar, // Now properly typed
         email: user.email,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
