@@ -320,7 +320,7 @@ export async function verifyPassword(prevState:any,data:{userId:string,password:
 // Enhanced verifyOAuthToken with comprehensive debugging
 // Replace your existing verifyOAuthToken function with this cleaned up version:
 
-export async function verifyOAuthToken(prevState: any, token: string) {
+/* export async function verifyOAuthToken(prevState: any, token: string) {
   try {
     if (!token) {
       return {
@@ -462,7 +462,7 @@ export async function verifyOAuthToken(prevState: any, token: string) {
       data: null
     };
   }
-}
+}*/
 export async function resetPassword(prevState:any,data:{token:string,newPassword:string}){
   try {
     const {newPassword,token} = data;
