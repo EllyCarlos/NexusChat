@@ -553,6 +553,7 @@ export async function verifyOAuthToken(prevState: any, token: string) {
     };
   }
 }
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function resetPassword(prevState:any,data:{token:string,newPassword:string}){
   try {
     const {newPassword,token} = data;
