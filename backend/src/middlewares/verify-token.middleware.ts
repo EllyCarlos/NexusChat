@@ -15,7 +15,7 @@ export const verifyToken=asyncErrorHandler(async(req:AuthenticatedRequest,res:Re
 
         let {token} = req.cookies
 
-        const secretKey = "helloWorld@123";
+        const secretKey = process.env.JWT_SECRET;
 
         if (!token && req.headers.authorization) {
             const authHeader = req.headers.authorization;
