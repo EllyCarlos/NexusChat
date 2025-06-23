@@ -109,7 +109,7 @@ export async function middleware(req: NextRequest) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     
-    const res = await fetch(`${baseUrl}/api/auth/user`, {
+    const res = await fetch(`${baseUrl}/api/v1/auth/user`, {
       headers: {
         "Cookie": `token=${token}`,
         "User-Agent": req.headers.get("user-agent") || "",
