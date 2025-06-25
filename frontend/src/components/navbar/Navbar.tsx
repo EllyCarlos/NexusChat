@@ -30,9 +30,9 @@ export const Navbar = () => {
 
       <div className="flex items-center gap-x-2 justify-center">
         <h4 className="text-3xl font-Shantell-Sans font-medium max-sm:text-xl">
-          Mern Chat
+          Nexus Chat
         </h4>
-        <a href="https://github.com/RishiBakshii/mern-chat" target="_blank">
+        <a href="https://github.com/EllyCarlos/NexusChat" target="_blank">
           <GithubIcon/>
         </a>
       </div>

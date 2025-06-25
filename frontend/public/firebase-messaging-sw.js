@@ -5,13 +5,13 @@ importScripts(
 
 // Replace these with your own Firebase config keys...
 const firebaseConfig = {
-    apiKey: "AIzaSyD6AtIZYC2mkzGBHk5FiZEPDew74PWI0QA",
-    authDomain: "mern-chat-fcm.firebaseapp.com",
-    projectId: "mern-chat-fcm",
-    storageBucket: "mern-chat-fcm.firebasestorage.app",
-    messagingSenderId: "632598085392",
-    appId: "1:632598085392:web:b8a93911dd995264b2ef95",
-    measurementId: "G-ZRJKFBJFNR"
+ apiKey: "AIzaSyD_1EheygGdPq6bCLJ1Rb2oYQVKue5KBzE",
+  authDomain: "chatwebapp-64284.firebaseapp.com",
+  projectId: "chatwebapp-64284",
+  storageBucket: "chatwebapp-64284.firebasestorage.app",
+  messagingSenderId: "789288147434",
+  appId: "1:789288147434:web:a6ebd4d88b923a15db7a93",
+  measurementId: "G-XSTQ3E1MFE"
 };
 
 firebase.initializeApp(firebaseConfig);
