@@ -44,7 +44,7 @@ const getUserInfo = asyncErrorHandler(async(req:AuthenticatedRequest,res:Respons
 
 const updateFcmToken = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
     const {fcmToken}:fcmTokenSchemaType = req.body
-    const user =  await .user.update({
+    const user =  await prisma.user.update({
         where:{
             id:req.user.id
         },
