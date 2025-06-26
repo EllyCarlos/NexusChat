@@ -11,19 +11,18 @@ import { ServerDownMessage } from "@/components/ui/ServerDownMessage";
 import { fetchUserCallHistory } from "@/lib/server/services/callService";
 import { fetchUserChats, fetchUserFriendRequest, fetchUserFriends, fetchUserInfo } from "@/lib/server/services/userService";
 import { cookies } from "next/headers";
-import { redirect } from 'next/navigation'; // Import redirect
+import { redirect } from 'next/navigation';
 
 export default async function ChatPage() {
-
     // 1. More robust authentication check
     const cookieStore = await cookies();
-const loggedInUserId = cookieStore.get("loggedInUserId")?.value;
-
+    const loggedInUserId = cookieStore.get("loggedInUserId")?.value;
+    
     if (!loggedInUserId) {
         // If no user ID, redirect to the login page.
-        redirect('/login'); 
+        redirect('/login');
     }
-
+    
     try {
         // 2. Fetch data concurrently
         const [user, friends, friendRequest, chats, callHistory] = await Promise.all([
@@ -33,14 +32,14 @@ const loggedInUserId = cookieStore.get("loggedInUserId")?.value;
             fetchUserChats({ loggedInUserId }),
             fetchUserCallHistory({ loggedInUserId }) // This is where the original Prisma error likely occurred
         ]);
-
+        
         // 3. More granular check. The most critical data is the user and friends/chats.
         // Call history or friend requests being empty shouldn't break the whole page.
         if (!user || !friends || !chats || !friendRequest) {
             // This indicates a more serious problem than just empty data.
-            return <ServerDownMessage message="Failed to load critical user data. Please try again later." />;
+            return <ServerDownMessage />; // Removed message prop
         }
-
+        
         return (
             <ChatWrapper
                 // Pass all data, even if it's an empty array (e.g., callHistory).
@@ -55,7 +54,6 @@ const loggedInUserId = cookieStore.get("loggedInUserId")?.value;
                     <ChatListClientWrapper>
                         <ChatListSkeletonWrapper />
                     </ChatListClientWrapper>
-
                     <ChatAreaWrapper>
                         <div className="flex flex-col gap-y-3 h-full justify-between relative">
                             <ChatHeaderWrapper />
@@ -63,19 +61,17 @@ const loggedInUserId = cookieStore.get("loggedInUserId")?.value;
                             <MessageInputAreaWrapper />
                         </div>
                     </ChatAreaWrapper>
-
                     <ChatDetailsWrapper>
                         <ChatDetailsSkeletonWrapper loggedInUser={user} />
                     </ChatDetailsWrapper>
                 </div>
             </ChatWrapper>
         );
-
     } catch (error) {
         // 4. Catch errors from Promise.all (e.g., database connection issues)
         console.error("Failed to fetch chat page data:", error);
         // This will be caught by the nearest error.js boundary.
         // Or you can return a specific error component here.
-        return <ServerDownMessage message="A server error occurred while loading your data."/>;
+        return <ServerDownMessage />; // Removed message prop
     }
 }
