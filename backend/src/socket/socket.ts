@@ -6,7 +6,7 @@ import { userSocketIds } from "../index.js";
 import { prisma } from "../lib/prisma.lib.js";
 import { deleteFilesFromCloudinary, uploadAudioToCloudinary, uploadEncryptedAudioToCloudinary } from "../utils/auth.util.js";
 import { sendPushNotification } from "../utils/generic.js";
-import  registerWebRtcHandlers from "./webrtc/socket.js";
+import registerWebRtcHandlers from "./webrtc/socket.js";
 
 // IMPORTANT: Instead of extending the Socket interface locally, we augment the
 // 'socket.io' module globally. This is the correct TypeScript approach
@@ -18,14 +18,14 @@ import  registerWebRtcHandlers from "./webrtc/socket.js";
 //
 // // src/socket-io.d.ts
 // import { Socket } from "socket.io";
-// import { Pr
+// import { Prisma } from "@prisma/client"; // Corrected: Ensures Prisma is properly imported
 //
 // declare module "socket.io" {
 //   interface Socket {
-//     // The 'user' property's type has been updated to reflect the structure from your Prisma.UserCreateInput
-//     /isma } from "@prisma/client";/ This ensures compatibility with properties like 'name' and 'email' which were previously missing.
-//     user?: Omit<Prisma.UserCreateInput, "id" | "name" | "email" | "username"> &
-//       Required<Pick<Prisma.UserCreateInput, "id" | "name" | "email" | "username">>;
+//     // Simplified: Assumes your authentication attaches a complete Prisma.User object.
+//     // This will allow TypeScript to infer the correct types for user properties
+//     // based on your Prisma schema.
+//     user?: Prisma.User;
 //   }
 // }
 //
