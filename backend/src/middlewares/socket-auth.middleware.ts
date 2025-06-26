@@ -9,14 +9,6 @@ type SessionPayload = {
     userId: string;
     expiresAt: Date;
 };
-
-// Extend Socket interface to include user property
-declare module "socket.io" {
-    interface Socket {
-        user?: any; // Replace 'any' with your User type
-    }
-}
-
 export const socketAuthenticatorMiddleware = async (socket: Socket, next: NextFunction) => {
     try {
         const token = socket.handshake.query.token as string;
