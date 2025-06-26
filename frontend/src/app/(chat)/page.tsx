@@ -16,7 +16,8 @@ import { redirect } from 'next/navigation'; // Import redirect
 export default async function ChatPage() {
 
     // 1. More robust authentication check
-    const loggedInUserId = cookies().get("loggedInUserId")?.value;
+    const cookieStore = await cookies();
+const loggedInUserId = cookieStore.get("loggedInUserId")?.value;
 
     if (!loggedInUserId) {
         // If no user ID, redirect to the login page.
