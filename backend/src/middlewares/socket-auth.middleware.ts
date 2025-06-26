@@ -19,7 +19,7 @@ export const socketAuthenticatorMiddleware = async(socket:Socket,next:NextFuncti
                 return next(new CustomError("Token missing, please login again", 401));
             } 
 
-            const secret = 'helloWorld@123'
+            const secret = process.env.JWT_SECRET
             const decodedInfo=jwt.verify(token,secret,{algorithms:["HS256"]}) as SessionPayload;
         
             if(!decodedInfo || !decodedInfo.userId){
