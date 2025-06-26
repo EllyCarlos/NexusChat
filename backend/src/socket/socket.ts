@@ -6,7 +6,7 @@ import { userSocketIds } from "../index.js";
 import { prisma } from "../lib/prisma.lib.js";
 import { deleteFilesFromCloudinary, uploadAudioToCloudinary, uploadEncryptedAudioToCloudinary } from "../utils/auth.util.js";
 import { sendPushNotification } from "../utils/generic.js";
-import { registerWebRtcHandlers } from "./webrtc/socket.js";
+import  registerWebRtcHandlers from "./webrtc/socket.js";
 
 // IMPORTANT: Instead of extending the Socket interface locally, we augment the
 // 'socket.io' module globally. This is the correct TypeScript approach
