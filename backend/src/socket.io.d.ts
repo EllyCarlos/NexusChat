@@ -1,4 +1,5 @@
 import { Socket } from "socket.io";
+import { Prisma } from "@prisma/client";
 
 declare module "socket.io" {
   interface Socket {

@@ -6,22 +6,31 @@ import { userSocketIds } from "../index.js";
 import { prisma } from "../lib/prisma.lib.js";
 import { deleteFilesFromCloudinary, uploadAudioToCloudinary, uploadEncryptedAudioToCloudinary } from "../utils/auth.util.js";
 import { sendPushNotification } from "../utils/generic.js";
-import registerWebRtcHandlers from "./webrtc/socket.js";
+import { registerWebRtcHandlers } from "./webrtc/socket.js";
 
-// Define a type for your user object that's attached to the socket
-interface CustomSocketUser {
-    id: string;
-    username: string;
-    avatar: string | null; // avatar might be nullable based on `socket.user.avatar!`
-    isOnline: boolean; // Based on prisma.user.update data
-    notificationsEnabled: boolean; // Based on currentChatMembers loop
-    fcmToken: string | null; // Based on currentChatMembers loop
-}
-
-// Extend the Socket type to include the custom user property
-interface SocketWithUser extends Socket {
-    user: CustomSocketUser;
-}
+// IMPORTANT: Instead of extending the Socket interface locally, we augment the
+// 'socket.io' module globally. This is the correct TypeScript approach
+// to add custom properties to the Socket object provided by socket.io.
+//
+// You should create a file named, for example, `src/socket-io.d.ts`
+// placed directly in your `src` directory with the following content,
+// and ensure your `tsconfig.json` includes it.
+//
+// // src/socket-io.d.ts
+// import { Socket } from "socket.io";
+// import { Pr
+//
+// declare module "socket.io" {
+//   interface Socket {
+//     // The 'user' property's type has been updated to reflect the structure from your Prisma.UserCreateInput
+//     /isma } from "@prisma/client";/ This ensures compatibility with properties like 'name' and 'email' which were previously missing.
+//     user?: Omit<Prisma.UserCreateInput, "id" | "name" | "email" | "username"> &
+//       Required<Pick<Prisma.UserCreateInput, "id" | "name" | "email" | "username">>;
+//   }
+// }
+//
+// With the above declaration file, the 'Socket' type will automatically include
+// the 'user' property, resolving the type compatibility issues.
 
 type MessageEventReceivePayload = {
     chatId: string
@@ -188,7 +197,8 @@ type PinLimitReachedEventSendPayload = {
 
 const registerSocketHandlers = (io: Server) => {
 
-    io.on("connection", async (socket: SocketWithUser) => { // Use SocketWithUser here
+    // Now, 'socket: Socket' will implicitly include the 'user' property due to module augmentation.
+    io.on("connection", async (socket: Socket) => {
 
         // Ensure socket.user is defined before proceeding.
         // If socket.user is not guaranteed to be set at this point in your authentication flow,
@@ -437,12 +447,14 @@ const registerSocketHandlers = (io: Server) => {
 
                 io.to(chatId).emit(Events.MESSAGE, { ...message, isNew: true })
 
-                const currentChatMembers = currentChat.ChatMembers.filter(({ user: { id } }) => id != socket.user!.id) // Use ! as socket.user is confirmed
+                // Using non-null assertion (!) here since socket.user is confirmed to be defined above.
+                const currentChatMembers = currentChat.ChatMembers.filter(({ user: { id } }) => id != socket.user!.id)
 
                 const updateOrCreateUnreadMessagePromises = currentChatMembers.map(async (member) => {
 
                     if (!member.user.isOnline && member.user.notificationsEnabled && member.user.fcmToken) {
-                        sendPushNotification({ fcmToken: member.user.fcmToken, body: `New message from ${socket.user.username}` })
+                        // Using non-null assertion (!) for socket.user.username here.
+                        sendPushNotification({ fcmToken: member.user.fcmToken, body: `New message from ${socket.user!.username}` })
                     }
 
                     const isExistingUnreadMessage = await prisma.unreadMessages.findUnique({
@@ -476,7 +488,8 @@ const registerSocketHandlers = (io: Server) => {
                                 userId: member.user.id,
                                 chatId: chatId,
                                 count: 1,
-                                senderId: socket.user.id,
+                                // Using non-null assertion (!) for socket.user.id here.
+                                senderId: socket.user!.id,
                                 messageId: newMessage.id! // Using ! because newMessage.id should be defined after creation
                             }
                         })
@@ -496,9 +509,10 @@ const registerSocketHandlers = (io: Server) => {
                         createdAt: newMessage.createdAt as Date
                     },
                     sender: {
-                        id: socket.user.id,
-                        avatar: socket.user.avatar!, // Use ! as avatar is nullable in type, but expected here
-                        username: socket.user.username
+                        // Using non-null assertion (!) for socket.user.id and avatar here.
+                        id: socket.user!.id,
+                        avatar: socket.user!.avatar!,
+                        username: socket.user!.username
                     }
                 }
 
@@ -515,7 +529,8 @@ const registerSocketHandlers = (io: Server) => {
                 const doesUnreadMessageExists = await prisma.unreadMessages.findUnique({
                     where: {
                         userId_chatId: {
-                            userId: socket.user.id,
+                            // Using non-null assertion (!) for socket.user.id here.
+                            userId: socket.user!.id,
                             chatId,
                         }
                     }
@@ -534,9 +549,10 @@ const registerSocketHandlers = (io: Server) => {
 
                 const payload: MessageSeenEventSendPayload = {
                     user: {
-                        id: socket.user.id,
-                        username: socket.user.username,
-                        avatar: socket.user.avatar! // Use ! as avatar is nullable in type, but expected here
+                        // Using non-null assertion (!) for socket.user.id, username, and avatar here.
+                        id: socket.user!.id,
+                        username: socket.user!.username,
+                        avatar: socket.user!.avatar!
                     },
                     chatId,
                     readAt: unreadMessageData.readAt!,
@@ -641,7 +657,8 @@ const registerSocketHandlers = (io: Server) => {
             try {
                 const result = await prisma.reactions.findFirst({
                     where: {
-                        userId: socket.user.id,
+                        // Using non-null assertion (!) for socket.user.id here.
+                        userId: socket.user!.id,
                         messageId
                     }
                 })
@@ -651,7 +668,8 @@ const registerSocketHandlers = (io: Server) => {
                 await prisma.reactions.create({
                     data: {
                         reaction,
-                        userId: socket.user.id,
+                        // Using non-null assertion (!) for socket.user.id here.
+                        userId: socket.user!.id,
                         messageId,
                     }
                 })
@@ -660,9 +678,10 @@ const registerSocketHandlers = (io: Server) => {
                     chatId,
                     messageId,
                     user: {
-                        id: socket.user.id,
-                        username: socket.user.username,
-                        avatar: socket.user.avatar! // Use ! as avatar is nullable in type, but expected here
+                        // Using non-null assertion (!) for socket.user.id, username, and avatar here.
+                        id: socket.user!.id,
+                        username: socket.user!.username,
+                        avatar: socket.user!.avatar!
                     },
                     reaction,
                 }
@@ -678,14 +697,16 @@ const registerSocketHandlers = (io: Server) => {
             try {
                 await prisma.reactions.deleteMany({
                     where: {
-                        userId: socket.user.id,
+                        // Using non-null assertion (!) for socket.user.id here.
+                        userId: socket.user!.id,
                         messageId
                     }
                 })
                 const payload: DeleteReactionEventSendPayload = {
                     chatId,
                     messageId,
-                    userId: socket.user.id
+                    // Using non-null assertion (!) for socket.user.id here.
+                    userId: socket.user!.id
                 }
                 io.to(chatId).emit(Events.DELETE_REACTION, payload)
             } catch (error) {
@@ -697,9 +718,10 @@ const registerSocketHandlers = (io: Server) => {
             try {
                 const payload: UserTypingEventSendPayload = {
                     user: {
-                        id: socket.user.id,
-                        username: socket.user.username,
-                        avatar: socket.user.avatar! // Use ! as avatar is nullable in type, but expected here
+                        // Using non-null assertion (!) for socket.user.id, username, and avatar here.
+                        id: socket.user!.id,
+                        username: socket.user!.username,
+                        avatar: socket.user!.avatar!
                     },
                     chatId: chatId,
                 }
@@ -730,7 +752,8 @@ const registerSocketHandlers = (io: Server) => {
                 await prisma.vote.create({
                     data: {
                         pollId: isValidPoll.poll.id,
-                        userId: socket.user.id,
+                        // Using non-null assertion (!) for socket.user.id here.
+                        userId: socket.user!.id,
                         optionIndex
                     }
                 })
@@ -739,9 +762,10 @@ const registerSocketHandlers = (io: Server) => {
                     messageId,
                     optionIndex,
                     user: {
-                        id: socket.user.id,
-                        avatar: socket.user.avatar!, // Use ! as avatar is nullable in type, but expected here
-                        username: socket.user.username
+                        // Using non-null assertion (!) for socket.user.id, avatar, and username here.
+                        id: socket.user!.id,
+                        avatar: socket.user!.avatar!,
+                        username: socket.user!.username
                     },
                     chatId
                 }
@@ -771,7 +795,8 @@ const registerSocketHandlers = (io: Server) => {
 
                 const vote = await prisma.vote.findFirst({
                     where: {
-                        userId: socket.user.id,
+                        // Using non-null assertion (!) for socket.user.id here.
+                        userId: socket.user!.id,
                         pollId: isValidPoll.poll.id,
                         optionIndex
                     }
@@ -781,7 +806,8 @@ const registerSocketHandlers = (io: Server) => {
 
                 await prisma.vote.deleteMany({
                     where: {
-                        userId: socket.user.id,
+                        // Using non-null assertion (!) for socket.user.id here.
+                        userId: socket.user!.id,
                         pollId: isValidPoll.poll.id,
                         optionIndex
                     }
@@ -790,7 +816,8 @@ const registerSocketHandlers = (io: Server) => {
                     chatId,
                     messageId,
                     optionIndex,
-                    userId: socket.user.id
+                    // Using non-null assertion (!) for socket.user.id here.
+                    userId: socket.user!.id
                 }
                 io.to(chatId).emit(Events.VOTE_OUT, payload)
 
@@ -936,10 +963,12 @@ const registerSocketHandlers = (io: Server) => {
                 }
                 io.to(deletedPinnedMessage.chatId).emit(Events.UNPIN_MESSAGE, payload);
             } catch (error) {
-                console.log('error un-pinning message:', error);
+                    console.log('error un-pinning message:', error);
             }
         })
 
+        // The registerWebRtcHandlers function will also benefit from the global module augmentation
+        // for the Socket type, resolving TS18048 errors in that file as well.
         registerWebRtcHandlers(socket, io);
 
         socket.on("disconnect", async () => {
@@ -951,17 +980,20 @@ const registerSocketHandlers = (io: Server) => {
 
             await prisma.user.update({
                 where: {
-                    id: socket.user.id
+                    // Using non-null assertion (!) for socket.user.id here.
+                    id: socket.user!.id
                 },
                 data: {
                     isOnline: false,
                     lastSeen: new Date
                 }
             })
-            userSocketIds.delete(socket.user.id);
+            // Using non-null assertion (!) for socket.user.id here.
+            userSocketIds.delete(socket.user!.id);
 
             const payload: OfflineUserEventSendPayload = {
-                userId: socket.user.id
+                // Using non-null assertion (!) for socket.user.id here.
+                userId: socket.user!.id
             }
             socket.broadcast.emit(Events.OFFLINE_USER, payload)
         })
