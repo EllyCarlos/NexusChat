@@ -1,3 +1,4 @@
+
 import { DEFAULT_AVATAR } from "@/constants";
 import { useSocket } from "@/context/socket.context";
 import { useSocketEvent } from "@/hooks/useSocket/useSocketEvent";
@@ -7,11 +8,11 @@ import { selectCalleeIdPopulatedFromRecentCalls, selectCallHistoryId, setIsInCal
 import { selectSelectedChatDetails } from "@/lib/client/slices/chatSlice";
 import { selectIncomingCallInfo, selectIsIncomingCall, setCallDisplay } from "@/lib/client/slices/uiSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
-import { peer } from "@/lib/client/webrtc/services/peer";
+import { getPeerService } from "@/lib/client/webrtc/services/peer";
 import { fetchUserChatsResponse } from "@/lib/server/services/userService";
 import { getOtherMemberOfPrivateChat } from "@/lib/shared/helpers";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import toast from "react-hot-toast";
 import { CallHangIcon } from "../ui/icons/CallHangIcon";
 import { CameraOff } from "../ui/icons/CameraOff";
@@ -155,253 +156,258 @@ const CallDisplay = () => {
     }, [isInComingCall,isAccepted,micOn, cameraOn]); 
     
     
-    const sendStreams = useCallback(()=>{
-        if(myStream && isAccepted){
+
+    const [peerService, setPeerService] = useState<any>(null);
+    const peerServiceRef = useRef<any>(null);
+
+    // Initialize peer service only on client side
+    useEffect(() => {
+        const initPeerService = () => {
+            try {
+                const service = getPeerService();
+                setPeerService(service);
+                peerServiceRef.current = service;
+            } catch (error) {
+                console.error('Failed to initialize peer service:', error);
+                toast.error('Failed to initialize call service');
+            }
+        };
+
+        initPeerService();
+    }, []);
+
+    const sendStreams = useCallback(() => {
+        if (myStream && isAccepted && peerService?.peer) {
             console.log('inside send streams');
             try {
                 const audioStream = myStream.getAudioTracks()[0];
-                if(audioStream){
+                if (audioStream) {
                     setMyAudioStream(new MediaStream([audioStream]));
                 }
                 const videoStream = myStream.getVideoTracks()[0];
-                if(videoStream){
+                if (videoStream) {
                     setMyVideoStream(new MediaStream([videoStream]));
                 }
 
-                myStream.getTracks().forEach(track=>{
-                    peer.peer?.addTrack(track,myStream);
-                })
+                myStream.getTracks().forEach(track => {
+                    peerService.peer?.addTrack(track, myStream);
+                });
             } catch (error) {
-                console.log('error in sending streams',error);
+                console.log('error in sending streams', error);
             }
         }
-      },[myStream,isAccepted])
-    
-    const callUser = useCallback(async()=>{
-        const offer = await peer.getOffer();
-        if(!offer){
-            toast.error('unable to create offer man')
-        }
-        console.log('offer created');
-        const calleeId = selectedChatDetails?.ChatMembers?.filter(member=>member?.user?.id !== loggedInUserId)[0]?.user?.id || calleeIdPopulatedFromRecentCalls
-        if(offer && calleeId){
-            const payload:CallUserEventSendPayload = {
-                calleeId,
-                offer
-            }
-            dispatch(setIsInCall(true));
-            socket?.emit(Event.CALL_USER,payload);
-        }
-        else{
-          toast.error("Failed to initiate call");
-          dispatch(setCallDisplay(false));
-        }
-    },[dispatch, selectedChatDetails, socket,calleeIdPopulatedFromRecentCalls])
+    }, [myStream, isAccepted, peerService]);
 
-    const handleCallEndClick = useCallback(() => {
-        const callId = callHistoryIdInCallerState || callHistoryId;
-        if(callId) {
-            const payload:CallEndEventSendPayload = {
-                callHistoryId:callId,
-                wasCallAccepted:isAccepted
+    const callUser = useCallback(async () => {
+        if (!peerService) {
+            toast.error('Call service not initialized');
+            return;
+        }
+
+        try {
+            const offer = await peerService.getOffer();
+            if (!offer) {
+                toast.error('unable to create offer');
+                return;
             }
-            socket?.emit(Event.CALL_END, payload);
-        }
-        else{
-            toast.error("Some error occured we are sorry for the inconvenience");
-        }
-    }, [callHistoryId, callHistoryIdInCallerState, isAccepted, socket]);
-    
-    const handleAcceptCall = useCallback(async()=>{
-        if(incomingCallInfo){
             
-            const stream = await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+            console.log('offer created');
+            const calleeId = selectedChatDetails?.ChatMembers?.filter(member => member?.user?.id !== loggedInUserId)[0]?.user?.id || calleeIdPopulatedFromRecentCalls;
+            
+            if (offer && calleeId) {
+                const payload: CallUserEventSendPayload = {
+                    calleeId,
+                    offer
+                };
+                dispatch(setIsInCall(true));
+                socket?.emit(Event.CALL_USER, payload);
+            } else {
+                toast.error("Failed to initiate call");
+                dispatch(setCallDisplay(false));
+            }
+        } catch (error) {
+            console.error('Error in callUser:', error);
+            toast.error('Failed to create call offer');
+        }
+    }, [dispatch, selectedChatDetails, socket, calleeIdPopulatedFromRecentCalls, peerService]);
+
+    const handleAcceptCall = useCallback(async () => {
+        if (!incomingCallInfo || !peerService) {
+            toast.error("Call service not available");
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
             setMyStream(stream);
 
-            const answer = await peer.getAnswer(incomingCallInfo.offer);
+            const answer = await peerService.getAnswer(incomingCallInfo.offer);
 
-            if(!answer){
+            if (!answer) {
                 toast.error("Failed to accept call");
-                const callEndPayload:CallEndEventSendPayload = {
-                    callHistoryId:incomingCallInfo.callHistoryId,
-                    wasCallAccepted:isAccepted
-                }
-                socket?.emit(Event.CALL_END,callEndPayload);
+                const callEndPayload: CallEndEventSendPayload = {
+                    callHistoryId: incomingCallInfo.callHistoryId,
+                    wasCallAccepted: isAccepted
+                };
+                socket?.emit(Event.CALL_END, callEndPayload);
                 return;
             }
 
-            const callAcceptPayload:CallAcceptedEventSendPayload = {
-                callerId:incomingCallInfo.caller.id,
+            const callAcceptPayload: CallAcceptedEventSendPayload = {
+                callerId: incomingCallInfo.caller.id,
                 answer,
-                callHistoryId:incomingCallInfo.callHistoryId
-            }
+                callHistoryId: incomingCallInfo.callHistoryId
+            };
             setIsAccepted(true);
-            socket?.emit(Event.CALL_ACCEPTED,callAcceptPayload);
-        }
-        else{
-            toast.error("Some error occured in accepting the call");
-            toast.error("Please reload the page and try again");
-        }
-    },[incomingCallInfo, socket]);
-
-    const handleRejectCall = useCallback(()=>{
-        if(incomingCallInfo){
-            const payload:CallRejectedEventSendPayload = {
-                callHistoryId:incomingCallInfo.callHistoryId
-            }
-            socket?.emit(Event.CALL_REJECTED,payload);
-        }
-        else{
-            toast.error("Some error occured in rejecting the call");
-        }
-    },[incomingCallInfo, socket]);
-
-    const handleCallAcceptedEvent = useCallback(async({answer,callHistoryId,calleeId}:CallAcceptedEventReceivePayload)=>{
-        peer.setRemoteDescription(answer);
-        setCallHistoryId(callHistoryId);
-        setRemoteUserId(calleeId);
-        setIsAccepted(true);
-    },[]);
-
-    
-    const handleNegoNeededEvent = useCallback(async({callerId,offer,callHistoryId}:NegoNeededEventReceivePayload)=>{
-        setRemoteUserId(callerId);
-        setCallHistoryId(callHistoryId);
-        const answer = await peer.getAnswer(offer);
-
-        if(answer){
-            const payload:NegoDoneEventSendPayload = {
-                answer,
-                callerId,
-                callHistoryId
-            }
-            socket?.emit(Event.NEGO_DONE,payload)
-        }
-        else{
-            toast.error("some error occured in neego needed event recieved from server");
-        }
-    },[socket])
-
-    const handleNegoNeeded = useCallback(async()=>{
-        // alert("nego-triggered");
-        const offer = await peer.getOffer();
-    
-        if(offer && remoteUserId && callHistoryId){
-          const payload:NegoNeededEventSendPayload = {
-            calleeId:remoteUserId!,
-            offer,
-            callHistoryId,
-          }
-          socket?.emit(Event.NEGO_NEEDED,payload);  
-        }
-        else{
-          toast.error("Error occured in nego needed");
-        }
-    },[callHistoryId, remoteUserId, socket])
-    
-    const handleNegoFinalEvent = useCallback(async({answer,calleeId}:NegoFinalEventReceivePayload)=>{
-        try {
-            peer.setRemoteDescription(answer);
+            socket?.emit(Event.CALL_ACCEPTED, callAcceptPayload);
         } catch (error) {
-            console.log('errir in setting local description',error);
+            console.error('Error accepting call:', error);
+            toast.error("Failed to accept call");
         }
-        console.log('Negotiation accepted from',calleeId);
-    },[])
+    }, [incomingCallInfo, socket, peerService, isAccepted]);
 
-    const handleRemoteStream = useCallback(async(e:RTCTrackEvent)=>{
-
-        const remoteStream = e.streams[0];
-        setRemoteStream(remoteStream); 
-
-        const audioTrack = remoteStream.getAudioTracks()[0];
-        const videoTrack = remoteStream.getVideoTracks()[0];
-
-
-        console.log('received audio track',audioTrack);
-        console.log('received video track',videoTrack);
-
-        const receivedAudioStream = (audioTrack ? new MediaStream([audioTrack]) : null);
-        const receivedVideoStream = (videoTrack ? new MediaStream([videoTrack]) : null);
-
-        setRemoteAudioStream(receivedAudioStream);
-        setRemoteVideoStream(receivedVideoStream);
-    },[])
-
-    const handleRemoteIceCandidate = useCallback(async({callerId,candidate}:IceCandiateEventReceivePayload)=>{
-        console.log('remote ice candiate received from ',callerId,'cadidate is',candidate);
-        peer.peer?.addIceCandidate(candidate);
-    },[]);
-
-    useEffect(()=>{
-        // when we dont have an incomoin call, we will call the user
-        if(!isInComingCall) {
-            callUser();
+    const handleCallAcceptedEvent = useCallback(async ({ answer, callHistoryId, calleeId }: CallAcceptedEventReceivePayload) => {
+        if (!peerService) {
+            console.error('Peer service not available');
+            return;
         }
-        return ()=>{
-            // cleanup
-            if(myStream){
-                myStream.getTracks().forEach(track=>track.stop());
+        
+        try {
+            await peerService.setRemoteDescription(answer);
+            setCallHistoryId(callHistoryId);
+            setRemoteUserId(calleeId);
+            setIsAccepted(true);
+        } catch (error) {
+            console.error('Error handling call accepted:', error);
+        }
+    }, [peerService]);
+
+    const handleNegoNeededEvent = useCallback(async ({ callerId, offer, callHistoryId }: NegoNeededEventReceivePayload) => {
+        if (!peerService) {
+            console.error('Peer service not available');
+            return;
+        }
+
+        try {
+            setRemoteUserId(callerId);
+            setCallHistoryId(callHistoryId);
+            const answer = await peerService.getAnswer(offer);
+
+            if (answer) {
+                const payload: NegoDoneEventSendPayload = {
+                    answer,
+                    callerId,
+                    callHistoryId
+                };
+                socket?.emit(Event.NEGO_DONE, payload);
+            } else {
+                toast.error("Error in negotiation");
+            }
+        } catch (error) {
+            console.error('Error in nego needed event:', error);
+        }
+    }, [socket, peerService]);
+
+    const handleNegoNeeded = useCallback(async () => {
+        if (!peerService) {
+            console.error('Peer service not available');
+            return;
+        }
+
+        try {
+            const offer = await peerService.getOffer();
+
+            if (offer && remoteUserId && callHistoryId) {
+                const payload: NegoNeededEventSendPayload = {
+                    calleeId: remoteUserId!,
+                    offer,
+                    callHistoryId,
+                };
+                socket?.emit(Event.NEGO_NEEDED, payload);
+            } else {
+                toast.error("Error occurred in negotiation");
+            }
+        } catch (error) {
+            console.error('Error in nego needed:', error);
+        }
+    }, [callHistoryId, remoteUserId, socket, peerService]);
+
+    const handleNegoFinalEvent = useCallback(async ({ answer, calleeId }: NegoFinalEventReceivePayload) => {
+        if (!peerService) {
+            console.error('Peer service not available');
+            return;
+        }
+
+        try {
+            await peerService.setRemoteDescription(answer);
+            console.log('Negotiation accepted from', calleeId);
+        } catch (error) {
+            console.error('Error in setting remote description:', error);
+        }
+    }, [peerService]);
+
+    const handleRemoteIceCandidate = useCallback(async ({ callerId, candidate }: IceCandiateEventReceivePayload) => {
+        console.log('remote ice candidate received from', callerId, 'candidate is', candidate);
+        if (peerService?.peer) {
+            try {
+                await peerService.peer.addIceCandidate(candidate);
+            } catch (error) {
+                console.error('Error adding ICE candidate:', error);
             }
         }
-    },[isInComingCall]);
-    
-    useEffect(() => {
-        // if user changes options like mic or camera, we will update the stream
-        updateStreamAccordingToPreferences();
-    }, [micOn, cameraOn, updateStreamAccordingToPreferences]);
-    
-    useEffect(()=>{
-        if(myStream){
-            console.log('streams changed');
-            sendStreams();
-        }
-    },[myStream])
-
-    useEffect(()=>{
-        if(incomingCallInfo){
-            setRemoteUserId(incomingCallInfo?.caller.id);
-            setCallHistoryId(incomingCallInfo?.callHistoryId);
-        }
-    },[incomingCallInfo])
-
-
-    useEffect(()=>{
-        peer.peer?.addEventListener("track",handleRemoteStream);
-        return ()=>{
-            peer.peer?.removeEventListener("track",handleRemoteStream);
-        }
-    },[handleRemoteStream])
-
-    useEffect(()=>{
-        peer.peer?.addEventListener('negotiationneeded',handleNegoNeeded);
-        return ()=>{
-          peer.peer?.removeEventListener('negotiationneeded',handleNegoNeeded);
-        }
-    },[handleNegoNeeded])
-
+    }, [peerService]);
 
     const handleICECandidate = useCallback(async (e: RTCPeerConnectionIceEvent) => {
         if (e.candidate && remoteUserId) {
             console.log("receiving ice candidate locally");
-            const payload:IceCandidateEventSendPayload = {
-                candidate:e.candidate,
-                calleeId:remoteUserId
-            }
+            const payload: IceCandidateEventSendPayload = {
+                candidate: e.candidate,
+                calleeId: remoteUserId
+            };
             console.log('emitted ice candidate');
-            socket?.emit(Event.ICE_CANDIDATE,payload);
+            socket?.emit(Event.ICE_CANDIDATE, payload);
         }
-    },[remoteUserId, socket]);
+    }, [remoteUserId, socket]);
 
-    useEffect(() => {    
-        peer.peer?.addEventListener("icecandidate", handleICECandidate);
+    // Update useEffect for peer event listeners
+    useEffect(() => {
+        if (peerService?.peer) {
+            peerService.peer.addEventListener("track", handleRemoteStream);
+            return () => {
+                peerService.peer?.removeEventListener("track", handleRemoteStream);
+            };
+        }
+    }, [handleRemoteStream, peerService]);
+
+    useEffect(() => {
+        if (peerService?.peer) {
+            peerService.peer.addEventListener('negotiationneeded', handleNegoNeeded);
+            return () => {
+                peerService.peer?.removeEventListener('negotiationneeded', handleNegoNeeded);
+            };
+        }
+    }, [handleNegoNeeded, peerService]);
+
+    useEffect(() => {
+        if (peerService?.peer) {
+            peerService.peer.addEventListener("icecandidate", handleICECandidate);
+            return () => {
+                peerService.peer?.removeEventListener("icecandidate", handleICECandidate);
+            };
+        }
+    }, [handleICECandidate, peerService]);
+
+    // Update the effect that calls callUser to wait for peerService
+    useEffect(() => {
+        if (!isInComingCall && peerService) {
+            callUser();
+        }
         return () => {
-            peer.peer?.removeEventListener("icecandidate", handleICECandidate);
+            if (myStream) {
+                myStream.getTracks().forEach(track => track.stop());
+            }
         };
-    }, [handleICECandidate]);
-
-    const handleCallEndEvent = useCallback(()=>{
-        dispatch(setMyGlobalStream(myStream));
-    },[dispatch, myStream]);
+    }, [isInComingCall, peerService]);
     
 
     useSocketEvent(Event.CALL_ACCEPTED,handleCallAcceptedEvent);   
