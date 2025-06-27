@@ -414,7 +414,7 @@ const CallDisplay = () => {
     useSocketEvent(Event.NEGO_NEEDED,handleNegoNeededEvent);
     useSocketEvent(Event.NEGO_FINAL,handleNegoFinalEvent);
     useSocketEvent(Event.ICE_CANDIDATE,handleRemoteIceCandidate);
-    useSocketEvent(Event.CALL_END,handleCallEndEvent);
+    //useSocketEvent(Event.CALL_END,handleCallEndEvent);
 
     const isBothStreamOpen = myStream?.getVideoTracks()[0] && remoteStream?.getVideoTracks()[0];
 
