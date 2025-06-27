@@ -96,28 +96,29 @@ export async function middleware(req: NextRequest) {
 
   let userInfo: FetchUserInfoResponse | null = null;
 
-  // Fetch user info for protected routes
-  try {
-    // Skip API calls during build time
-    if (process.env.NODE_ENV === "production" && !process.env.VERCEL_URL && !req.nextUrl.host.includes("vercel.app")) {
-      return NextResponse.next();
-    }
+  // Fetch user info for protected routes
+  try {
+    // Skip API calls during build time
+    if (process.env.NODE_ENV === "production" && !process.env.VERCEL_URL && !req.nextUrl.host.includes("vercel.app")) {
+      return NextResponse.next();
+    }
 
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 
-                   `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    const res = await fetch(`${baseUrl}/api/v1/auth/user`, {
-      headers: {
-        "Cookie": `token=${token}`,
-        "User-Agent": req.headers.get("user-agent") || "",
-        "Accept": "application/json",
-      },
-      signal: controller.signal,
-      cache: 'no-store', // Prevent caching sensitive user data
-    });
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 
+                   `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const res = await fetch(`${baseUrl}/api/v1/auth/user`, {
+      headers: {
+        // Changed from "Cookie" to "Authorization" with "Bearer" prefix
+        "Authorization": `Bearer ${token}`, 
+        "User-Agent": req.headers.get("user-agent") || "",
+        "Accept": "application/json",
+      },
+      signal: controller.signal,
+      cache: 'no-store', // Prevent caching sensitive user data
+    });
 
     clearTimeout(timeoutId);
 
