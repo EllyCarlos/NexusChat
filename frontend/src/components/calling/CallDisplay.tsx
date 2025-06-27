@@ -1,4 +1,3 @@
-
 import { DEFAULT_AVATAR } from "@/constants";
 import { useSocket } from "@/context/socket.context";
 import { useSocketEvent } from "@/hooks/useSocket/useSocketEvent";
@@ -80,6 +79,11 @@ type CallEndEventSendPayload = {
     wasCallAccepted:boolean
 }
 
+type CallEndEventReceivePayload = {
+    callHistoryId:string
+    wasCallAccepted:boolean
+}
+
 type IceCandidateEventSendPayload = {
     candidate: RTCIceCandidate;
     calleeId:string;
@@ -92,7 +96,7 @@ type IceCandiateEventReceivePayload = {
 
 const CallDisplay = () => {
 
-    const selectedChatDetails =  useAppSelector(selectSelectedChatDetails) as fetchUserChatsResponse;
+    const selectedChatDetails = useAppSelector(selectSelectedChatDetails) as fetchUserChatsResponse;
     const isInComingCall = useAppSelector(selectIsIncomingCall);
     const incomingCallInfo = useAppSelector(selectIncomingCallInfo);
 
@@ -369,6 +373,59 @@ const CallDisplay = () => {
         }
     }, [remoteUserId, socket]);
 
+    // Added: Function to handle call ending
+    const handleCallEndClick = useCallback(() => {
+        if (callHistoryId) {
+            const payload: CallEndEventSendPayload = {
+                callHistoryId: callHistoryId,
+                wasCallAccepted: isAccepted
+            };
+            socket?.emit(Event.CALL_END, payload);
+            dispatch(setCallDisplay(false)); // Close the call display
+            dispatch(setIsInCall(false)); // Set isInCall to false
+            // Stop local and remote streams
+            myStream?.getTracks().forEach(track => track.stop());
+            remoteStream?.getTracks().forEach(track => track.stop());
+            setMyStream(null);
+            setRemoteStream(null);
+            setMyVideoStream(null);
+            setRemoteVideoStream(null);
+            setRemoteAudioStream(null);
+            setPeerService(null); // Clear peer service state
+            peerServiceRef.current?.close(); // Close the peer connection
+        }
+    }, [callHistoryId, isAccepted, socket, dispatch, myStream, remoteStream, peerServiceRef]);
+
+    // Added: Function to handle rejecting an incoming call
+    const handleRejectCall = useCallback(() => {
+        if (incomingCallInfo?.callHistoryId) {
+            const payload: CallRejectedEventSendPayload = {
+                callHistoryId: incomingCallInfo.callHistoryId
+            };
+            socket?.emit(Event.CALL_REJECTED, payload);
+            dispatch(setCallDisplay(false)); // Close the call display
+            dispatch(setIsInCall(false)); // Set isInCall to false
+        }
+    }, [incomingCallInfo, socket, dispatch]);
+
+
+    // Added: Event handler for when a call ends from the other side
+    const handleCallEndEvent = useCallback(({ callHistoryId, wasCallAccepted }: CallEndEventReceivePayload) => {
+        toast.error("Call ended.");
+        dispatch(setCallDisplay(false)); // Close the call display
+        dispatch(setIsInCall(false)); // Set isInCall to false
+        // Stop local and remote streams
+        myStream?.getTracks().forEach(track => track.stop());
+        remoteStream?.getTracks().forEach(track => track.stop());
+        setMyStream(null);
+        setRemoteStream(null);
+        setMyVideoStream(null);
+        setRemoteVideoStream(null);
+        setRemoteAudioStream(null);
+        setPeerService(null); // Clear peer service state
+        peerServiceRef.current?.close(); // Close the peer connection
+    }, [dispatch, myStream, remoteStream, peerServiceRef]);
+
     // Update useEffect for peer event listeners
     useEffect(() => {
         if (peerService?.peer) {
@@ -391,8 +448,26 @@ const CallDisplay = () => {
     useEffect(() => {
         if (peerService?.peer) {
             peerService.peer.addEventListener("icecandidate", handleICECandidate);
+            peerService.peer.addEventListener("track", (event: RTCTrackEvent) => {
+                console.log("Remote track received:", event.streams);
+                // The event.streams array contains one or more MediaStream objects.
+                // You might need to handle multiple streams or filter based on track kind (audio/video).
+                if (event.streams && event.streams[0]) {
+                    setRemoteStream(event.streams[0]);
+                    const audioTracks = event.streams[0].getAudioTracks();
+                    const videoTracks = event.streams[0].getVideoTracks();
+                    if (audioTracks.length > 0) {
+                        setRemoteAudioStream(new MediaStream([audioTracks[0]]));
+                    }
+                    if (videoTracks.length > 0) {
+                        setRemoteVideoStream(new MediaStream([videoTracks[0]]));
+                    }
+                }
+            });
+
             return () => {
                 peerService.peer?.removeEventListener("icecandidate", handleICECandidate);
+                // Consider adding cleanup for track listener if needed, though often track listeners are added once for the lifetime of the peer connection
             };
         }
     }, [handleICECandidate, peerService]);
@@ -407,14 +482,21 @@ const CallDisplay = () => {
                 myStream.getTracks().forEach(track => track.stop());
             }
         };
-    }, [isInComingCall, peerService]);
+    }, [isInComingCall, peerService, callUser, myStream]);
     
+    // Effect to send streams once myStream is available and accepted
+    useEffect(() => {
+        if (myStream && isAccepted && peerService?.peer) {
+            sendStreams();
+        }
+    }, [myStream, isAccepted, peerService, sendStreams]);
 
-    useSocketEvent(Event.CALL_ACCEPTED,handleCallAcceptedEvent);   
+
+    useSocketEvent(Event.CALL_ACCEPTED,handleCallAcceptedEvent); 
     useSocketEvent(Event.NEGO_NEEDED,handleNegoNeededEvent);
     useSocketEvent(Event.NEGO_FINAL,handleNegoFinalEvent);
     useSocketEvent(Event.ICE_CANDIDATE,handleRemoteIceCandidate);
-    //useSocketEvent(Event.CALL_END,handleCallEndEvent);
+    useSocketEvent(Event.CALL_END,handleCallEndEvent); // Un-commented and added
 
     const isBothStreamOpen = myStream?.getVideoTracks()[0] && remoteStream?.getVideoTracks()[0];
 
@@ -442,7 +524,7 @@ const CallDisplay = () => {
                 <div className="flex flex-col gap-2 items-center">
                     <p className="text-secondary-darker text-lgr">{remoteUserId?("Ongoing call"):"Ringing..."}</p>
                     {
-                        remoteUserId && (
+                        remoteUserId && remoteAudioStream && (
                             <Visualizer audio={remoteAudioStream} autoStart mode="continuous">
                             {({ canvasRef }) => (
                                 <canvas
@@ -503,7 +585,7 @@ const CallDisplay = () => {
                             />
                         </div>
                     )
-                }
+                } 
                 {
                     remoteAudioStream && (
                         <audio autoPlay
@@ -541,4 +623,4 @@ const CallDisplay = () => {
   )
 }
 
-export default CallDisplay
+export default CallDisplay;
