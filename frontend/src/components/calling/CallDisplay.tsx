@@ -372,10 +372,10 @@ const CallDisplay = () => {
     // Update useEffect for peer event listeners
     useEffect(() => {
         if (peerService?.peer) {
-            peerService.peer.addEventListener("track", handleRemoteStream);
-            return () => {
-                peerService.peer?.removeEventListener("track", handleRemoteStream);
-            };
+            //peerService.peer.addEventListener("track", handleRemoteStream);
+            //return () => {
+                //peerService.peer?.removeEventListener("track", handleRemoteStream);
+            //};
         }
     }, [handleRemoteStream, peerService]);
 
