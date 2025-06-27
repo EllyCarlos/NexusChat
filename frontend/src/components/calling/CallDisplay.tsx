@@ -377,7 +377,7 @@ const CallDisplay = () => {
                 //peerService.peer?.removeEventListener("track", handleRemoteStream);
             //};
         }
-    }, [handleRemoteStream, peerService]);
+    }, [peerService]);
 
     useEffect(() => {
         if (peerService?.peer) {
