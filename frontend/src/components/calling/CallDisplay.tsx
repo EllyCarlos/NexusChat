@@ -400,9 +400,9 @@ const CallDisplay = () => {
         setMyVideoStream(null);
         setRemoteVideoStream(null);
         setRemoteAudioStream(null);
-        setPeerService(null); // Clear peer service state
-        peerServiceRef.current?.close(); // Close the peer connection
-    }, [dispatch, myStream, remoteStream, peerServiceRef]);
+        // Close the peer connection if it exists
+        peerService?.peer?.close();
+    }, [dispatch, myStream, remoteStream, peerService]);
 
     // Update useEffect for peer event listeners
     useEffect(() => {
