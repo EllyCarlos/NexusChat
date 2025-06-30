@@ -1,4 +1,9 @@
+// ChatAreaWrapper.tsx
+
 "use client";
+
+// NEW: Import the PeerServiceProvider
+import { PeerServiceProvider } from "@/context/PeerProvider";
 
 import { useMediaQuery } from "@/hooks/useUtils/useMediaQuery";
 import { useSwipe } from "@/hooks/useUtils/useSwipe";
@@ -19,6 +24,9 @@ export const ChatAreaWrapper = ({ children }: PropTypes) => {
   const chatBar = useAppSelector(selectChatBar);
   const dispatch = useAppDispatch();
   const is1024 = useMediaQuery(1024);
+  const chatDetailsBar = useAppSelector(selectChatDetailsBar);
+
+  // The old useEffect and useRef for PeerService have been REMOVED from this file.
 
   const chatLeftSwipe = () => {
     if (chatBar) {
@@ -27,8 +35,6 @@ export const ChatAreaWrapper = ({ children }: PropTypes) => {
       dispatch(setChatDetailsBar(true));
     }
   };
-
-  const chatDetailsBar = useAppSelector(selectChatDetailsBar);
 
   const chatRightSwipe = () => {
     if (chatDetailsBar) {
@@ -52,7 +58,11 @@ export const ChatAreaWrapper = ({ children }: PropTypes) => {
       onTouchMove={onTouchMoveChat}
       className="flex-[1.6]"
     >
-      {children}
+      {/* NEW: Wrap children with the provider. Now any child component
+          can access the PeerService instance. */}
+      <PeerServiceProvider>
+        {children}
+      </PeerServiceProvider>
     </div>
   );
 };

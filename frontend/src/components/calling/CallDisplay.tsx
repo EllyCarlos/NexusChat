@@ -7,7 +7,7 @@ import { selectCalleeIdPopulatedFromRecentCalls, selectCallHistoryId, setIsInCal
 import { selectSelectedChatDetails } from "@/lib/client/slices/chatSlice";
 import { selectIncomingCallInfo, selectIsIncomingCall, setCallDisplay } from "@/lib/client/slices/uiSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
-import { getPeerService } from "@/lib/client/webrtc/services/peer";
+import { usePeer } from "@/context/PeerProvider";
 import { fetchUserChatsResponse } from "@/lib/server/services/userService";
 import { getOtherMemberOfPrivateChat } from "@/lib/shared/helpers";
 import Image from "next/image";
@@ -95,7 +95,7 @@ type IceCandiateEventReceivePayload = {
 }
 
 const CallDisplay = () => {
-
+    const { peerService } = usePeer();
     const selectedChatDetails = useAppSelector(selectSelectedChatDetails) as fetchUserChatsResponse;
     const isInComingCall = useAppSelector(selectIsIncomingCall);
     const incomingCallInfo = useAppSelector(selectIncomingCallInfo);
@@ -159,27 +159,6 @@ const CallDisplay = () => {
         }
     }, [isInComingCall,isAccepted,micOn, cameraOn]); 
     
-    
-
-    const [peerService, setPeerService] = useState<any>(null);
-    const peerServiceRef = useRef<any>(null);
-
-    // Initialize peer service only on client side
-    useEffect(() => {
-        const initPeerService = () => {
-            try {
-                const service = getPeerService();
-                setPeerService(service);
-                peerServiceRef.current = service;
-            } catch (error) {
-                console.error('Failed to initialize peer service:', error);
-                toast.error('Failed to initialize call service');
-            }
-        };
-
-        initPeerService();
-    }, []);
-
     const sendStreams = useCallback(() => {
         if (myStream && isAccepted && peerService?.peer) {
             console.log('inside send streams');
