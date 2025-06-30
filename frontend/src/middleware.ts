@@ -40,7 +40,7 @@ function clearAuthAndRedirect(req: NextRequest, redirectPath: string = "/auth/lo
 function setSecureCookie(response: NextResponse, name: string, value: string, options: any = {}) {
   response.cookies.set(name, value, {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: "none",
     path: "/",
     secure: process.env.NODE_ENV === "production",
     ...options
