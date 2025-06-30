@@ -1,5 +1,7 @@
 
 'use client';
+import { useDispatch } from 'react-redux'; // Add this
+import { setAuthToken } from '@/lib/client/slices/authSlice'; // Add this (adjust path if necessary)
 import { verifyOAuthToken } from '@/actions/auth.actions';
 import { useConvertPrivateAndPublicKeyInJwkFormat } from '@/hooks/useAuth/useConvertPrivateAndPublicKeyInJwkFormat';
 import { useEncryptPrivateKeyWithUserPassword } from '@/hooks/useAuth/useEncryptPrivateKeyWithUserPassword';
@@ -24,6 +26,7 @@ function OAuthRedirectPageContent() {
   const [isOAuthNewUser, setOAuthNewUser] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const router = useRouter();
+  const dispatch = useDispatch(); 
 
   // Step 1: Trigger token verification
   useEffect(() => {
@@ -59,7 +62,7 @@ function OAuthRedirectPageContent() {
       if (state?.data?.user && state?.data && 'sessionToken' in state.data) {
         const sessionToken = (state.data as any).sessionToken;
         if (sessionToken) {
-          localStorage.setItem('token', sessionToken);
+          dispatch(setAuthToken(sessionToken));
         }      
         
         // Clear the temp token from URL immediately for security
@@ -79,7 +82,7 @@ function OAuthRedirectPageContent() {
         }
       }
     }
-  }, [state, router]);
+  }, [state, router, dispatch]);
 
   // Step 3: Key generation for new users (your existing logic is perfect!)
   const password = state?.data?.combinedSecret;
