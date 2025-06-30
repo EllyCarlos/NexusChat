@@ -11,7 +11,7 @@ import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 // Cookie configuration utility
 const setAuthCookie = (res: Response, token: string) => {
   const isProduction = process.env.NODE_ENV === 'production';
-  res.cookie('Token', token, {
+  res.cookie('token', token, {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
