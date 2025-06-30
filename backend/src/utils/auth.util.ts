@@ -13,7 +13,7 @@ const thirtyDaysInMilliseconds = 30 * 24 * 60 * 60 * 1000;
 //     priority:"high",
 //     secure:true,
 //     sameSite:env.NODE_ENV==='DEVELOPMENT'?"lax":"none",
-//     domain: env.NODE_ENV === 'DEVELOPMENT' ? 'localhost' : 'aesehi.online',
+//     domain: env.NODE_ENV === 'DEVELOPMENT' ? 'localhost',
 //     partitioned:true,
 // }
 

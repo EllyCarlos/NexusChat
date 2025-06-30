@@ -15,7 +15,7 @@ const setAuthCookie = (res: Response, token: string) => {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
-    domain: isProduction ? config.cookieDomain : undefined,
+    //domain: isProduction ? config.cookieDomain : undefined,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: '/',
     partitioned: true // For Chrome's new cookie partitioning
