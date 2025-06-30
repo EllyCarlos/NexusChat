@@ -354,28 +354,27 @@ const CallDisplay = () => {
 
     // Added: Function to handle call ending
     const handleCallEndClick = useCallback(() => {
-        if (callHistoryId) {
-            const payload: CallEndEventSendPayload = {
-                callHistoryId: callHistoryId,
-                wasCallAccepted: isAccepted
-            };
-            socket?.emit(Event.CALL_END, payload);
-            dispatch(setCallDisplay(false)); // Close the call display
-            dispatch(setIsInCall(false)); // Set isInCall to false
-            // Stop local and remote streams
-            myStream?.getTracks().forEach(track => track.stop());
-            remoteStream?.getTracks().forEach(track => track.stop());
-            setMyStream(null);
-            setRemoteStream(null);
-            setMyVideoStream(null);
-            setRemoteVideoStream(null);
-            setRemoteAudioStream(null);
-            setPeerService(null); // Clear peer service state
-            peerServiceRef.current?.close(); // Close the peer connection
-        }
-    }, [callHistoryId, isAccepted, socket, dispatch, myStream, remoteStream, peerServiceRef]);
-
-    // Added: Function to handle rejecting an incoming call
+    if (callHistoryId) {
+        const payload: CallEndEventSendPayload = {
+            callHistoryId: callHistoryId,
+            wasCallAccepted: isAccepted
+        };
+        socket?.emit(Event.CALL_END, payload);
+        dispatch(setCallDisplay(false)); // Close the call display
+        dispatch(setIsInCall(false)); // Set isInCall to false
+        // Stop local and remote streams
+        myStream?.getTracks().forEach(track => track.stop());
+        remoteStream?.getTracks().forEach(track => track.stop());
+        setMyStream(null);
+        setRemoteStream(null);
+        setMyVideoStream(null);
+        setRemoteVideoStream(null);
+        setRemoteAudioStream(null);
+        // Close the peer connection if it exists
+        peerService?.peer?.close();
+    }
+}, [callHistoryId, isAccepted, socket, dispatch, myStream, remoteStream, peerService]);
+// Added: Function to handle rejecting an incoming call
     const handleRejectCall = useCallback(() => {
         if (incomingCallInfo?.callHistoryId) {
             const payload: CallRejectedEventSendPayload = {
