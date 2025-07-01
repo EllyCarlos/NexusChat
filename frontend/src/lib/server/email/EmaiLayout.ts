@@ -105,7 +105,7 @@ export const emailLayout = ({ content, emailType }: Params) => {
     <body>
     <div class="container">
         <div class="header">
-            <img src="https://res.cloudinary.com/dh5fjdce9/image/upload/v1718195665/logo256_nhwcrt.png" alt="NexusChat Official Logo" />
+            <img src="https://res.cloudinary.com/dhdo2yb0w/image/upload/t_media_lib_thumb/logo256_tquduq.png" alt="NexusChat Official Logo" />
             <h1>${headerTitle}</h1>
         </div>
         <div class="content">

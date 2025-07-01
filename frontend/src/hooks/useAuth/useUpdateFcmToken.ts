@@ -16,7 +16,7 @@ export const useUpdateFcmToken = () => {
     isLoading,
     isSuccess,
     isUninitialized,
-    successMessage: "Great! now you will receive notifications from baatchit",
+    successMessage: "Great! now you will receive notifications from NexusChat",
     successToast: true,
   });
 

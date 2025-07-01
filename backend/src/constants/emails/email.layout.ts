@@ -6,19 +6,19 @@ export const emailLayout = (content:string,emailType:EmailType) => {
 
     switch (emailType) {
       case "welcome":
-        headerTitle = "Welcome to Baatchit!";
+        headerTitle = "Welcome to NexusChat!";
         break;
       case "resetPassword":
-        headerTitle = "Reset Your Baatchit Password";
+        headerTitle = "Reset Your NexusChat Password";
         break;
       case "privateKeyRecovery":
         headerTitle = "Verify Private Key Recovery";
         break;
       case "OTP":
-        headerTitle = "Verify Your Baatchit Account";
+        headerTitle = "Verify Your NexusChat Account";
         break;
       default:
-        headerTitle = "Baatchit";
+        headerTitle = "NexusChat";
     }
 
   return `
@@ -107,7 +107,7 @@ export const emailLayout = (content:string,emailType:EmailType) => {
     <div class="container">
 
         <div class="header">
-            <img src="https://res.cloudinary.com/dh5fjdce9/image/upload/v1718195665/logo256_nhwcrt.png" alt="Baatchit Logo" />
+            <img src="https://res.cloudinary.com/dhdo2yb0w/image/upload/t_media_lib_thumb/logo256_tquduq.png" alt="NexusChat Logo" />
             <h1>${headerTitle}</h1>
         </div>
 
@@ -116,7 +116,7 @@ export const emailLayout = (content:string,emailType:EmailType) => {
         </div>
 
         <div class="footer">
-            <p>&copy; 2024 Baatchit. All rights reserved.</p>
+            <p>&copy; 2024 NexusChat. All rights reserved.</p>
         </div>
 
     </div>
