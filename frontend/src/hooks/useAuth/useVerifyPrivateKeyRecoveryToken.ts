@@ -20,7 +20,11 @@ export const useVerifyPrivateKeyRecoveryToken = ({recoveryToken}: PropTypes) => 
 
 
   const router = useRouter();
+  
+  const handleDecryptPrivateKey = useCallback(async ({combinedSecret,privateKey}:{privateKey?:string,combinedSecret?:string}) => {
+    console.log('handleDecryptPrivateKey called. combinedSecret present:', !!combinedSecret, 'privateKey present:', !!privateKey);
 
+  
   // 1. Log initial state and user load
   useEffect(() => {
     console.log('Hook initialized. recoveryToken:', recoveryToken);
@@ -86,11 +90,7 @@ export const useVerifyPrivateKeyRecoveryToken = ({recoveryToken}: PropTypes) => 
     }
   }, [isSuccess, loggedInUser, state?.data?.combinedSecret, state?.data?.privateKey, handleDecryptPrivateKey]);
 
-
-  const handleDecryptPrivateKey = useCallback(async ({combinedSecret,privateKey}:{privateKey?:string,combinedSecret?:string}) => {
-    console.log('handleDecryptPrivateKey called. combinedSecret present:', !!combinedSecret, 'privateKey present:', !!privateKey);
-
-    if ((privateKey || combinedSecret) && loggedInUser) {
+  if ((privateKey || combinedSecret) && loggedInUser) {
       let password;
 
       if (combinedSecret) {
