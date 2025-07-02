@@ -6,7 +6,7 @@ import { verifySession } from '@/lib/server/session'; // Assuming you have a ses
 
 export async function POST(req: Request) {
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const sessionToken = cookieStore.get('session')?.value; // Get your session cookie
 
     if (!sessionToken) {
