@@ -222,7 +222,7 @@ export async function verifyPrivateKeyRecoveryToken(prevState:any,data:{recovery
             data:null
         }
     }
-
+    await createSession(user.id);
     const payload:{privateKey?:string,combinedSecret?:string} = {
         privateKey:user.privateKey!
     }
