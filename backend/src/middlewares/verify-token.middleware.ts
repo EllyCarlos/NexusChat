@@ -18,9 +18,9 @@ export const verifyToken = asyncErrorHandler(async (req: AuthenticatedRequest, r
 
     let token: string | undefined = undefined;
 
-    // 1. Try to get the token from cookies
-    if (req.cookies && req.cookies.token) {
-        token = req.cookies.token as string;
+    // 1. Try to get the token from cookies (CHANGED: 'token' to 'session')
+    if (req.cookies && req.cookies.session) { // <--- Changed from req.cookies.token
+        token = req.cookies.session as string; // <--- Changed from req.cookies.token
     }
 
     // 2. If not in cookies, try to get from Authorization header (Bearer token)
@@ -83,6 +83,9 @@ export const verifyToken = asyncErrorHandler(async (req: AuthenticatedRequest, r
             updatedAt: true,
             emailVerified: true,
             publicKey: true,
+            // --- ADDED: Include needsKeyRecovery and keyRecoveryCompletedAt ---
+            needsKeyRecovery: true,
+            keyRecoveryCompletedAt: true,
             notificationsEnabled: true,
             verificationBadge: true,
             fcmToken: true,
