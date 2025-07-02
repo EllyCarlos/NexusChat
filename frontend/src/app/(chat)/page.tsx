@@ -17,7 +17,7 @@ import { decrypt, SessionPayload } from "@/lib/server/session";
 
 export default async function ChatPage() {
     // 1. Robust authentication check: Get the session cookie
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const sessionCookie = cookieStore.get("session"); // Assuming your session cookie is named "session"
 
     // If no session cookie, redirect to login.

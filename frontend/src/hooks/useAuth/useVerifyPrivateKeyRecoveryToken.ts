@@ -3,7 +3,7 @@ import { storeUserPrivateKeyInIndexedDB } from "@/lib/client/indexedDB";
 import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import { useRouter } from "next/navigation";
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { useActionState } from "react-dom"; // Correct import for useActionState
+import { useActionState } from "react"; // Correct import for useActionState
 import toast from "react-hot-toast";
 import { decryptPrivateKey } from "@/lib/client/encryption"; // Ensure correct path
 

@@ -1,7 +1,7 @@
 // src/app/api/auth/complete-recovery/route.ts
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import prisma from '@/lib/server/prisma'; // Adjust path to your Prisma client
+import { prisma } from '@/lib/server/prisma'; // Adjust path to your Prisma client
 import { verifySession } from '@/lib/server/session'; // Assuming you have a session verification utility
 
 export async function POST(req: Request) {
