@@ -28,9 +28,9 @@ const welcomeEmailContent = ({ username }: Params) => `
       <p>Ready to start chatting? Click below to log in and explore!</p>
   
       <p style="text-align: center;">
-          <a href="https://NexusChat.com" style="text-decoration: none;">
+          <a href="https://Nexuswebapp.vercel.app" target="_blank" rel="noopener noreferrer" title="NexusChat" style="text-decoration: none;">
               <button style="
-                  background-color: #007bff;
+                  background-color:rgb(255, 0, 13);
                   color: #ffffff;
                   border: none;
                   padding: 10px 20px;

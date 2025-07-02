@@ -5,21 +5,23 @@ import { messageApi } from "@/lib/client/rtk-query/message.api";
 import { requestApi } from "@/lib/client/rtk-query/request.api";
 import { userApi } from "@/lib/client/rtk-query/user.api";
 import { configureStore } from "@reduxjs/toolkit";
-import { friendApi } from "../rtk-query/friend.api";
-import authSlice from "../slices/authSlice";
-import chatSlice from "../slices/chatSlice";
-import uiSlice from "../slices/uiSlice";
-import callSlice from "../slices/callSlice";
+import { friendApi } from "@/lib/client/rtk-query/friend.api"; // Use absolute path for consistency
+import authSliceReducer from "@/lib/client/slices/authSlice"; // Import as reducer (default export)
+import chatSliceReducer from "@/lib/client/slices/chatSlice"; // Import as reducer
+import uiSliceReducer from "@/lib/client/slices/uiSlice";     // Import as reducer
+import callSliceReducer from "@/lib/client/slices/callSlice"; // Import as reducer
 
 
 export const makeStore = () => {
   return configureStore({
     reducer: {
-      [authSlice.name]: authSlice.reducer,
-      [chatSlice.name]: chatSlice.reducer,
-      [uiSlice.name]: uiSlice.reducer,
-      [callSlice.name]: callSlice.reducer,
+      // Use the imported reducer directly
+      authSlice: authSliceReducer,
+      chatSlice: chatSliceReducer,
+      uiSlice: uiSliceReducer,
+      callSlice: callSliceReducer,
 
+      // RTK Query API reducers
       [authApi.reducerPath]: authApi.reducer,
       [chatApi.reducerPath]: chatApi.reducer,
       [messageApi.reducerPath]: messageApi.reducer,
@@ -29,7 +31,10 @@ export const makeStore = () => {
       [friendApi.reducerPath]: friendApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
-      getDefaultMiddleware({ serializableCheck: false })
+      getDefaultMiddleware({
+        serializableCheck: false // Keep this if you have non-serializable data (e.g., File objects, Date objects not serialized)
+      })
+        // Concatenate all RTK Query API middlewares
         .concat(authApi.middleware)
         .concat(chatApi.middleware)
         .concat(messageApi.middleware)
@@ -40,6 +45,11 @@ export const makeStore = () => {
   });
 };
 
+// Define types for the store, state, and dispatch
 export type AppStore = ReturnType<typeof makeStore>;
 export type RootState = ReturnType<AppStore["getState"]>;
 export type AppDispatch = AppStore["dispatch"];
+
+// Optional: Export a default store instance if you're not using makeStore in every context
+// This is common for client-side applications where you only need one store instance.
+// export const store = makeStore();

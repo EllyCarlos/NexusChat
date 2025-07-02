@@ -43,7 +43,8 @@ const fetchUserFriends = async ({loggedInUserId}:{loggedInUserId:string}) => {
     const userFriends = friends.map(friend=>friend.user1.id===loggedInUserId?{...friend.user2,...{createdAt:friend.createdAt}}:{...friend.user1,...{createdAt:friend.createdAt}})
     return userFriends;
   } catch (error) {
-    console.log(error);
+    console.error("Error fetching user friends:", error); // Added console.error
+    return []; // Return empty array on error
   }
 };
 
@@ -59,6 +60,8 @@ const fetchUserInfo = async ({loggedInUserId}:{loggedInUserId:string}) => {
         updatedAt:true,
         emailVerified:true,
         publicKey:true,
+        // --- ADD THIS LINE ---
+        needsKeyRecovery:true, // Ensure this field is selected
         notificationsEnabled:true,
         verificationBadge:true,
         fcmToken:true,
@@ -68,7 +71,8 @@ const fetchUserInfo = async ({loggedInUserId}:{loggedInUserId:string}) => {
     }})
     return user;
   } catch (error) {
-    console.log(error);
+    console.error("Error fetching user info:", error); // Added console.error
+    return null; // Return null on error
   }
 };
 
@@ -137,10 +141,6 @@ const fetchUserChats = async ({loggedInUserId}:{loggedInUserId:string}) => {
                   id:true,
                   username:true,
                   avatar:true,
-                  isOnline:true,
-                  publicKey:true,
-                  lastSeen:true,
-                  verificationBadge:true
                 }
               },
             }
@@ -148,37 +148,37 @@ const fetchUserChats = async ({loggedInUserId}:{loggedInUserId:string}) => {
           latestMessage:{
             include:{
               sender:{
-                select:{
+                  select:{
                   id:true,
                   username:true,
                   avatar:true,
-                }
+                  }
               },
               attachments:{
-                select:{
-                  secureUrl:true
-                }
+                  select:{
+                  secureUrl:true,
+                  }
               },
               poll:true,
               reactions:{
-                include:{
+                  select:{
                   user:{
-                    select:{
+                      select:{
                       id:true,
                       username:true,
                       avatar:true
-                    }
+                      }
                   },
-                },
-                omit:{
-                  id: true,
-                  createdAt: true,
-                  updatedAt: true,
-                  userId: true,
-                  messageId: true
-                }
+                  reaction:true,
+                  }
               },
-            }
+            },
+            omit:{
+                senderId:true,
+                pollId:true,
+                audioPublicId:true,
+                replyToMessageId:true,
+            },
           },
           PinnedMessages:{
             include:{
@@ -217,7 +217,7 @@ const fetchUserChats = async ({loggedInUserId}:{loggedInUserId:string}) => {
                           userId:true,
                         }
                       },
-                    }
+                    },
                   },
                   reactions:{
                     select:{
@@ -253,15 +253,11 @@ const fetchUserChats = async ({loggedInUserId}:{loggedInUserId:string}) => {
                     }
                   }
                 },
-                omit:{
-                  senderId:true,
-                  pollId:true,
-                },
-              }
+              },
             },
             omit:{
               chatId:true,
-              messageId:true,
+              messageId:true
             }
           }
         },
@@ -270,10 +266,11 @@ const fetchUserChats = async ({loggedInUserId}:{loggedInUserId:string}) => {
     return chats.map(chat => ({
       ...chat,
       typingUsers: [] as BasicUserInfo[]
-    }));  
+    }));
 
   } catch (error) {
-    console.log(error);
+    console.error("Error fetching user chats:", error); // Added console.error
+    return []; // Return empty array on error
   }
 };
 
@@ -302,11 +299,12 @@ const fetchUserFriendRequest = async ({loggedInUserId}:{loggedInUserId:string}) 
       })
     return friendRequests;
   } catch (error) {
-    console.log(error);
+    console.error("Error fetching user friend requests:", error); // Added console.error
+    return []; // Return empty array on error
   }
 };
 
-// types 
+// types
 type fetchUserFriendsResponse = {
     createdAt: Date;
     id: string;
@@ -318,7 +316,8 @@ type fetchUserFriendsResponse = {
     lastSeen: Date | null;
 }
 
-type FetchUserInfoResponse = Prisma.UserGetPayload<{
+// --- UPDATE THIS TYPE ---
+export type FetchUserInfoResponse = Prisma.UserGetPayload<{
     select:{
       id:true,
       name:true,
@@ -329,6 +328,8 @@ type FetchUserInfoResponse = Prisma.UserGetPayload<{
       updatedAt:true,
       emailVerified:true,
       publicKey:true,
+      // --- ADD THIS FIELD ---
+      needsKeyRecovery:true, // Ensure this field is part of the type
       notificationsEnabled:true,
       verificationBadge:true,
       fcmToken:true,
@@ -419,13 +420,13 @@ type fetchUserChatsResponse = Prisma.ChatGetPayload<{
             reaction:true,
             }
         },
-    },
-    omit:{
-        senderId:true,
-        pollId:true,
-        audioPublicId:true,
-        replyToMessageId:true,
-    },
+      },
+      omit:{
+          senderId:true,
+          pollId:true,
+          audioPublicId:true,
+          replyToMessageId:true,
+      },
     },
     PinnedMessages:{
       include:{
@@ -464,7 +465,7 @@ type fetchUserChatsResponse = Prisma.ChatGetPayload<{
                     userId:true,
                   }
                 },
-              }
+              },
             },
             reactions:{
               select:{
@@ -500,11 +501,7 @@ type fetchUserChatsResponse = Prisma.ChatGetPayload<{
               }
             }
           },
-          omit:{
-            senderId:true,
-            pollId:true,
-          },
-        }
+        },
       },
       omit:{
         chatId:true,
@@ -516,23 +513,23 @@ type fetchUserChatsResponse = Prisma.ChatGetPayload<{
 
 type fetchUserFriendRequestResponse = Prisma.FriendRequestGetPayload<{
     include:{
-        sender:{
-          select:{
-            id:true,
-            username:true,
-            avatar:true,
-            isOnline:true,
-            publicKey:true,
-            lastSeen:true,
-            verificationBadge:true
-          }
+      sender:{
+        select:{
+          id:true,
+          username:true,
+          avatar:true,
+          isOnline:true,
+          publicKey:true,
+          lastSeen:true,
+          verificationBadge:true
         }
-      },
-      omit:{
-        receiverId:true,
-        updatedAt:true,
-        senderId:true,
       }
+    },
+    omit:{
+      receiverId:true,
+      updatedAt:true,
+      senderId:true,
+    }
 }>
 
 
@@ -542,12 +539,17 @@ type ChatMember = Pick<FetchUserInfoResponse, 'avatar' | 'id' | 'isOnline' | 'la
 
 export {
   fetchUserChats,
-  fetchUserFriendRequest, fetchUserFriends,
+  fetchUserFriendRequest,
+  fetchUserFriends,
   fetchUserInfo
 };
 
 export type {
-    fetchUserChatsResponse, fetchUserFriendRequestResponse, fetchUserFriendsResponse,
-    FetchUserInfoResponse, BasicUserInfo , ChatMember
+    fetchUserChatsResponse,
+    fetchUserFriendRequestResponse,
+    fetchUserFriendsResponse,
+    FetchUserInfoResponse,
+    BasicUserInfo ,
+    ChatMember
 };
 

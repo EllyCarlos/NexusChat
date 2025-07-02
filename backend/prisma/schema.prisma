@@ -232,6 +232,10 @@ model User {
   notificationsEnabled     Boolean   @default(false)
   publicKey                String?
   privateKey               String?
+   // ADD THIS NEW FIELD
+  needsKeyRecovery         Boolean   @default(false) // True if user needs to recover their private key
+  // OPTIONAL: Add a timestamp for auditing when recovery was last completed
+  keyRecoveryCompletedAt   DateTime?
   hashedPassword           String
   lastSeen                 DateTime?
   emailVerified            Boolean   @default(false)
