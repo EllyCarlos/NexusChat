@@ -15,116 +15,140 @@ export const useVerifyPrivateKeyRecoveryToken = ({recoveryToken}: PropTypes) => 
   const [isPrivateKeyRestoredInIndexedDB, setIsPrivateKeyRestoredInIndexedDB] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState<FetchUserInfoResponse>();
   const [isSuccess,setIsSuccess] = useState<boolean>(false);
-  const [state,verifyPrivateKeyRecoveryTokenAction] = useActionState(verifyPrivateKeyRecoveryToken,undefined);
+  // Add isPending to see when the action is running
+  const [state,verifyPrivateKeyRecoveryTokenAction, isPending] = useActionState(verifyPrivateKeyRecoveryToken,undefined);
 
 
   const router = useRouter();
 
+  // 1. Log initial state and user load
   useEffect(() => {
+    console.log('Hook initialized. recoveryToken:', recoveryToken);
     try {
       const userData = localStorage.getItem("loggedInUser");
       if (userData) {
-        const loggedInUser = JSON.parse(userData) as FetchUserInfoResponse;
-        if (loggedInUser) setLoggedInUser(loggedInUser);
+        const parsedUser = JSON.parse(userData) as FetchUserInfoResponse;
+        console.log('User data found in localStorage:', parsedUser);
+        if (parsedUser) setLoggedInUser(parsedUser);
         else{
-          toast.error("Some error occured");
+          toast.error("Some error occured (parsedUser is null)");
           router.push("/auth/login");
         }
       }
       else{
-        toast.error("Some error occured");
+        console.log('No user data found in localStorage.');
+        toast.error("Some error occured (no user in localStorage)");
         router.push("/auth/login");
       }
     }
     catch (error) {
       console.log('error getting loggedInUser from localStorage', error);
-      toast.error("Some error occured");
+      toast.error("Some error occured (localStorage parse error)");
       router.push("/auth/login");
     }
   }, []);
-  
+
+  // 2. Log when server action is triggered
   useEffect(() => {
     if (loggedInUser && recoveryToken){
+      console.log('Triggering verifyPrivateKeyRecoveryTokenAction with userId:', loggedInUser.id);
       startTransition(()=>{
         verifyPrivateKeyRecoveryTokenAction({recoveryToken,userId:loggedInUser.id});
       })
+    } else {
+        console.log('Waiting for loggedInUser or recoveryToken to trigger action. loggedInUser:', !!loggedInUser, 'recoveryToken:', !!recoveryToken);
     }
-  }, [loggedInUser]);
+  }, [loggedInUser, recoveryToken, verifyPrivateKeyRecoveryTokenAction]); // Added verifyPrivateKeyRecoveryTokenAction to deps
 
+  // 3. Log server action state changes
   useEffect(()=>{
-    if((state?.data?.combinedSecret || state?.data?.privateKey)){
+    console.log('State updated:', state);
+    if (isPending) {
+        console.log('Server action is pending...');
+    } else if((state?.data?.combinedSecret || state?.data?.privateKey)){
+      console.log('Server action successful, setting isSuccess to true.');
       setIsSuccess(true);
     }
-    else if(state?.errors.message?.length){
-      toast.error(state?.errors.message);
+    else if(state?.errors?.message){ // Check for actual message content
+      console.error('Server action error:', state.errors.message);
+      toast.error(state.errors.message);
       router.push("/auth/login");
     }
-  },[state])
+  },[state, isPending, router]); // Added isPending and router to deps
 
+  // 4. Log decryption and storage process
   useEffect(() => {
-    if (isSuccess && loggedInUser) {
+    if (isSuccess && loggedInUser && (state?.data?.combinedSecret || state?.data?.privateKey)) {
+      console.log('Starting decryption and IndexedDB storage.');
       handleDecryptPrivateKey({combinedSecret:state?.data?.combinedSecret,privateKey:state?.data?.privateKey});
+    } else {
+        console.log('Waiting for isSuccess or loggedInUser or key data to decrypt.');
     }
-  }, [isSuccess]);
-
+  }, [isSuccess, loggedInUser, state?.data?.combinedSecret, state?.data?.privateKey, handleDecryptPrivateKey]);
 
 
   const handleDecryptPrivateKey = useCallback(async ({combinedSecret,privateKey}:{privateKey?:string,combinedSecret?:string}) => {
+    console.log('handleDecryptPrivateKey called. combinedSecret present:', !!combinedSecret, 'privateKey present:', !!privateKey);
 
     if ((privateKey || combinedSecret) && loggedInUser) {
-
       let password;
 
       if (combinedSecret) {
-        // as for oAuth signed up users there is no password so we use combinedSecret as their password which is a combo of
-        // googleId + someSecretValue(stored on server)
-        // so basically
-        // combinedSecret = googleId + someSecretValue(stored on server)
-        // and this combined secret is being used as their password
         password = combinedSecret;
+        console.log('Using combinedSecret as password.');
       } else {
-        // if combined secret did not came
-        // then it means that user has signed up manually
-        // so we will use their password
         const passInLocalStorage = localStorage.getItem("tempPassword");
-
+        console.log('Checking for tempPassword in localStorage:', passInLocalStorage ? 'found' : 'not found');
         if (passInLocalStorage) {
           password = passInLocalStorage;
         } else {
-          toast.error("Some error occured");
+          toast.error("Error: tempPassword missing from localStorage.");
           router.push("/auth/login");
+          return; // Crucial: exit if password isn't found
         }
       }
 
       if (password) {
-        // now as we have the password of user
-        // we will decrypt the privateKey using this password (as the privateKey was also encrypted using this password)
-        const privateKeyInJwk = await decryptPrivateKey(
-          password,
-          privateKey!
-        );
-        // and then we will store the decrypted privateKey in indexedDB
-        await storeUserPrivateKeyInIndexedDB({
-          privateKey: privateKeyInJwk,
-          userId: loggedInUser.id,
-        });
+        try {
+          console.log('Attempting to decrypt private key...');
+          const privateKeyInJwk = await decryptPrivateKey(
+            password,
+            privateKey! // Still consider if ! is truly safe here
+          );
+          console.log('Private key decrypted. Storing in IndexedDB...');
+          await storeUserPrivateKeyInIndexedDB({
+            privateKey: privateKeyInJwk,
+            userId: loggedInUser.id,
+          });
+          console.log('Private key stored in IndexedDB successfully.');
 
-        // and then we will remove the tempPassword and loggedInUser from localStorage
-        localStorage.removeItem("tempPassword");
-        localStorage.removeItem("loggedInUser");
-        setIsPrivateKeyRestoredInIndexedDB(true);
+          // Crucial: Clear temporary data *after* successful storage
+          localStorage.removeItem("tempPassword");
+          localStorage.removeItem("loggedInUser");
+          console.log('tempPassword and loggedInUser removed from localStorage.');
+
+          setIsPrivateKeyRestoredInIndexedDB(true);
+          console.log('setIsPrivateKeyRestoredInIndexedDB set to true.');
+        } catch (decryptError) {
+          console.error('Error during decryption or IndexedDB storage:', decryptError);
+          toast.error("Error recovering private key during decryption/storage.");
+          router.push("/auth/login");
+        }
       }
       else {
-        toast.error("Some error occured while recovering");
+        console.log('handleDecryptPrivateKey: No password found.');
+        toast.error("Some error occured while recovering (no password).");
         router.push("/auth/login");
       }
     }
     else{
-      toast.error("Some error occured while recovering");
+      console.log('handleDecryptPrivateKey: Missing privateKey/combinedSecret or loggedInUser.');
+      toast.error("Some error occured while recovering (missing key data/user).");
       router.push("/auth/login");
     }
-  },[loggedInUser]);
+  },[loggedInUser, router]);
 
+  console.log('Current return state: isPrivateKeyRestoredInIndexedDB:', isPrivateKeyRestoredInIndexedDB, 'isSuccess:', isSuccess);
   return {
     isPrivateKeyRestoredInIndexedDB: isPrivateKeyRestoredInIndexedDB && isSuccess,
   };
