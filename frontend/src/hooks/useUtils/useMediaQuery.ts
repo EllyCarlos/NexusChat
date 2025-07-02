@@ -7,10 +7,17 @@ export const useMediaQuery = (number: number) => {
   // E.g., if number = 640, the query will be `(max-width:639px)` which matches screens with widths <= 639px
   const query = `(max-width:${number - 1}px)`;
 
-  // Initialize state to store whether the media query matches (true or false)
-  const [isMatches, setIsMatches] = useState<boolean>(() => window.matchMedia(query).matches ? true : false);
+  // Initialize state to false initially. It will be updated on the client-side.
+  const [isMatches, setIsMatches] = useState<boolean>(false); 
 
   useEffect(() => {
+    // This code only runs on the client-side, where 'window' is defined.
+    if (typeof window === 'undefined') {
+      // This guard is technically redundant because useEffect only runs on client,
+      // but it serves as an explicit reminder.
+      return;
+    }
+
     // Create a MediaQueryList object that listens to changes in the media query match
     const mediaQuery = window.matchMedia(query);
 
@@ -19,6 +26,9 @@ export const useMediaQuery = (number: number) => {
       // Update the state to reflect whether the media query matches or not
       setIsMatches(event.matches);
     };
+
+    // Set initial match status on the client after mounting
+    setIsMatches(mediaQuery.matches); // <-- Update state with actual match status
 
     // Attach the event listener to monitor changes in the media query match status
     mediaQuery.addEventListener('change', handleMediaQueryChange);
