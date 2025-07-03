@@ -43,14 +43,13 @@ interface MessageReaction {
   reaction: string;
 }
 
-// Define the Message interface for latestMessage (FULLY EXPANDED)
-// This interface combines all properties observed in previous error logs
-// and aligns with a typical Prisma-generated message object with relations included.
+// Define the Message interface for latestMessage (PROPERTY RENAMED)
 interface Message {
   id: string;
   chatId: string;
   senderId: string;
-  content: string | null; // Corresponds to textMessageContent
+  // RENAMED from 'content' to 'textMessageContent'
+  textMessageContent: string | null; 
   type: string; // e.g., 'TEXT', 'IMAGE', 'POLL', 'AUDIO', 'VIDEO'
   url: string | null; // For images, video, general files (also covers audioUrl if used for that)
   audioUrl: string | null; // Explicitly added as it was mentioned
@@ -60,11 +59,11 @@ interface Message {
   updatedAt: string; // Or Date if converted to Date objects
   isPinned: boolean;
 
-  // Derived properties or flags (as seen in the error's expected type)
+  // Derived properties or flags
   isTextMessage: boolean;
   isPollMessage: boolean;
   
-  // Related entities/nested objects (as seen in previous error logs)
+  // Related entities/nested objects
   reactions: MessageReaction[];
   poll: MessagePoll | null;
   attachments: MessageAttachment[];
