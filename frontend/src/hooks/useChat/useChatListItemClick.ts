@@ -7,17 +7,24 @@ import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
 import { useToggleChatBar } from "../useUI/useToggleChatBar";
 import { useMediaQuery } from "../useUtils/useMediaQuery";
 
-// Define the User interface for nested user objects (UPDATED Date types)
+// Define the BasicUserInfo interface (NEW)
+interface BasicUserInfo {
+  id: string;
+  avatar: string;
+  username: string;
+}
+
+// Define the User interface for nested user objects
 interface User {
   id: string;
   avatar: string;
   username: string;
   isOnline: boolean;
   publicKey: string | null;
-  lastSeen: Date | null; // Changed to Date | null
+  lastSeen: Date | null;
   verificationBadge: boolean;
-  createdAt: Date; // Added for consistency, assuming user objects have this
-  updatedAt: Date; // Added for consistency, assuming user objects have this
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // Define the Attachment interface for messages
@@ -45,7 +52,7 @@ interface MessageReaction {
   reaction: string;
 }
 
-// Define the Message interface for latestMessage (UPDATED Date types)
+// Define the Message interface for latestMessage
 interface Message {
   id: string;
   chatId: string;
@@ -56,8 +63,8 @@ interface Message {
   audioUrl: string | null;
   isEdited: boolean;
   isDeleted: boolean;
-  createdAt: Date; // Changed to Date
-  updatedAt: Date; // Changed to Date
+  createdAt: Date;
+  updatedAt: Date;
   isPinned: boolean;
 
   isTextMessage: boolean;
@@ -69,7 +76,7 @@ interface Message {
   sender: User;
 }
 
-// Define the Chat interface to match 'fetchUserChatsResponse' structure (UPDATED Date types)
+// Define the Chat interface to match 'fetchUserChatsResponse' structure (ADDED typingUsers)
 export interface Chat {
   id: string;
   name: string | null;
@@ -78,8 +85,8 @@ export interface Chat {
   avatarCloudinaryPublicId: string | null;
   adminId: string | null;
   latestMessageId: string | null;
-  createdAt: Date; // Changed to Date
-  updatedAt: Date; // Changed to Date
+  createdAt: Date;
+  updatedAt: Date;
   
   ChatMembers: {
     id: string;
@@ -87,9 +94,12 @@ export interface Chat {
     chatId: string;
     user: User;
   }[];
-  PinnedMessages: any[]; // If still causes issues, you'll need to define this interface
-  UnreadMessages: any[]; // If still causes issues, you'll need to define this interface
+  PinnedMessages: any[]; 
+  UnreadMessages: any[]; 
   latestMessage: Message | null;
+  
+  // NEW property required by fetchUserChatsResponse
+  typingUsers: BasicUserInfo[]; 
 }
 
 export const useChatListItemClick = () => {
