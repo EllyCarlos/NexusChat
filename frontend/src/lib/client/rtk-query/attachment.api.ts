@@ -1,5 +1,5 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import { SingleAttachment } from "../../../interfaces/attachment.interface";
+import { AttachmentResponse, SingleAttachment } from "../../../interfaces/attachment.interface";
 import { RootState } from "../store/store";
 
 export const attachmentApi = createApi({
@@ -32,16 +32,16 @@ export const attachmentApi = createApi({
       },
     }),
 
-    fetchAttachments: builder.query<Attachment,{ chatId: string; page: number }>({
-      query: ({ chatId, page }) => `/${chatId}?page=${page}`,
-      serializeQueryArgs: ({ endpointName, queryArgs: { chatId } }) => {
-        return `${endpointName}_${chatId}`;
-      },
-      merge: (currentCache, newItems) => {
-        currentCache.attachments.push(...newItems.attachments);
-        currentCache.totalPages = newItems.totalPages;
-      },
-    }),
+   fetchAttachments: builder.query<AttachmentResponse, { chatId: string; page: number }>({
+  query: ({ chatId, page }) => `/${chatId}?page=${page}`,
+  serializeQueryArgs: ({ endpointName, queryArgs: { chatId } }) => {
+    return `${endpointName}_${chatId}`;
+  },
+  merge: (currentCache, newItems) => {
+    currentCache.attachments.push(...newItems.attachments);
+    currentCache.totalPages = newItems.totalPages;
+  },
+}),
     
   }),
 });
