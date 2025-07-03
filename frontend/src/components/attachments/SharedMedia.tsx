@@ -29,7 +29,7 @@ export const SharedMedia = () => {
         onScroll={handleSharedMediaScroll}
         className="grid grid-cols-2 gap-4 place-items-center h-[28rem] overflow-y-auto"
       >
-        {data?.attachments?.map(({secureUrl},index) => (
+        {data?.attachments?.map(({ secureUrl }: { secureUrl: string }, index) => (
           <Image
             key={index}
             height={200}
