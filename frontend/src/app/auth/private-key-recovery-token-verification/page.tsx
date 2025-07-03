@@ -19,7 +19,6 @@ function PrivateKeyRecoveryTokenVerificationPageContent() {
 const { isPrivateKeyRestoredInIndexedDB, isPending: verificationInProgress, error } = useVerifyPrivateKeyRecoveryToken({
     recoveryToken: token,
     passwordInput: passwordInput,
-    enabled: isVerifying, 
 });
     // This hook will navigate the user away upon successful restoration
     useNavigateToRecoverySuccessfulPageOnPrivateKeyRestoration({ isPrivateKeyRestoredInIndexedDB });
