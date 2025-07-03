@@ -6,8 +6,17 @@ import { useAppSelector } from "../../lib/client/store/hooks";
 import { ChevronRightIcon } from "./icons/ChevronRightIcon";
 import { ChevronLeftIcon } from "./icons/ChevronLeftIcon";
 
+// Define the interface for an Attachment based on its usage and database schema
+interface Attachment {
+  id: string; // Assuming an ID field as per migration.sql
+  secureUrl: string; // Used for Image src
+  cloudinaryPublicId: string; // As per migration.sql
+  // Add any other properties if they exist on your Attachment objects
+}
+
 const AttachmentPreview = () => {
-  
+  // attachments will now correctly infer its type from selectAttachments
+  // which should return Attachment[] based on the slice definition.
   const attachments = useAppSelector(selectAttachments);
 
   const [currentAttachmentIndex, setcurrentAttachmentIndex] = useState(0);
@@ -26,15 +35,13 @@ const AttachmentPreview = () => {
 
   return (
     <div className="flex flex-col justify-center items-center py-4 gap-y-10 ">
-
       <div className="flex items-center gap-x-4">
-
         <button onClick={handlePreviousClick} className="max-sm:hidden">
-          <ChevronLeftIcon/>
+          <ChevronLeftIcon />
         </button>
 
         {attachments && (
-          <Image  
+          <Image
             width={500}
             height={500}
             className="w-[25rem] h-[30rem] max-lg:w-[25rem] max-lg:h-[25rem] max-md:w-[20rem] max-md:h-[20rem] max-sm:w-[] max-sm:h-[] object-contain"
@@ -44,13 +51,13 @@ const AttachmentPreview = () => {
         )}
 
         <button onClick={handleNextClick} className="max-sm:hidden">
-          <ChevronRightIcon/>
+          <ChevronRightIcon />
         </button>
-
       </div>
 
       <div className="flex items-center w-full justify-center flex-wrap gap-y-4 gap-x-2">
-        {attachments && attachments.map((attachment, index) => (
+        {/* Corrected: Explicitly type 'attachment' as Attachment and 'index' as number */}
+        {attachments && attachments.map((attachment: Attachment, index: number) => (
           <Image
             key={index}
             onClick={() => setcurrentAttachmentIndex(index)}
@@ -66,7 +73,6 @@ const AttachmentPreview = () => {
           />
         ))}
       </div>
-
     </div>
   );
 };
