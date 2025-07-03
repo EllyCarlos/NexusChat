@@ -9,8 +9,9 @@ interface Voter {
   avatar: string; // Assuming this is a string URL
 }
 
+// ... (previous code) ...
+
 const ViewVotes = () => {
-  // votesData is typed based on selectVotesData from your Redux slice
   const votesData = useAppSelector(selectVotesData);
 
   return (
@@ -19,8 +20,8 @@ const ViewVotes = () => {
         <h6 className="font-medium text-xl">{votesData.question}</h6>
 
         <div className="flex flex-col gap-y-6">
-          {/* Corrected: Type 'option' as 'string' */}
-          {votesData.options?.map((option: string, index) => (
+          {/* Corrected: Type 'option' as 'string' AND 'index' as 'number' */}
+          {votesData.options?.map((option: string, index: number) => (
             <div key={index} className="flex flex-col gap-y-4">
               <div className="flex flex-col gap-y-1">
                 <div className="flex justify-between">
@@ -37,7 +38,7 @@ const ViewVotes = () => {
               </div>
 
               <div className="flex flex-col gap-y-4 max-h-32 overflow-y-scroll">
-                {/* Corrected: Type the destructured voter object as 'Voter' */}
+                {/* This inner map already has types due to the Voter interface */}
                 {votesData.optionIndexToVotesMap[index]?.map(({ id, username, avatar }: Voter) => (
                   <div key={id} className="flex gap-x-2 items-center">
                     <Image
@@ -60,4 +61,3 @@ const ViewVotes = () => {
 };
 
 export default ViewVotes;
-// This component displays the votes for a poll, including the question, options, and voters for each option.
