@@ -7,24 +7,22 @@ import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
 import { useToggleChatBar } from "../useUI/useToggleChatBar";
 import { useMediaQuery } from "../useUtils/useMediaQuery";
 
-// Define the User interface for nested user objects (unchanged from last time)
+// Define the User interface for nested user objects
 interface User {
   id: string;
   avatar: string;
   username: string;
   isOnline: boolean;
   publicKey: string | null;
-  lastSeen: Date | null;
+  lastSeen: Date | null; // Assuming Date object or ISO string
   verificationBadge: boolean;
-  // Add any other user properties as they appear in your data
 }
 
 // Define the Attachment interface for messages
 interface MessageAttachment {
-  id: string; // Assuming attachments have their own ID
+  id: string;
   secureUrl: string;
   cloudinaryPublicId: string;
-  // Add other properties if your message attachments have them (e.g., mimeType, size)
 }
 
 // Define the Poll interface for messages
@@ -32,41 +30,48 @@ interface MessagePoll {
   question: string;
   options: string[];
   multipleAnswers: boolean;
-  // Add other properties if your message polls have them
 }
 
 // Define the Reaction interface for messages
 interface MessageReaction {
-  id: string; // Reaction ID
-  user: { // Simplified user object for reactions, as hinted by error log
+  id: string;
+  user: {
     id: string;
     avatar: string;
     username: string;
   };
-  reaction: string; // The emoji or text of the reaction
+  reaction: string;
 }
 
-
-// Define the Message interface for latestMessage (EXPANDED)
+// Define the Message interface for latestMessage (FULLY EXPANDED)
+// This interface combines all properties observed in previous error logs
+// and aligns with a typical Prisma-generated message object with relations included.
 interface Message {
   id: string;
-  content: string;
-  senderId: string;
   chatId: string;
-  createdAt: string; // Assuming it's a string representation of Date
-  updatedAt: string;
-  isDeleted: boolean;
+  senderId: string;
+  content: string | null; // Corresponds to textMessageContent
+  type: string; // e.g., 'TEXT', 'IMAGE', 'POLL', 'AUDIO', 'VIDEO'
+  url: string | null; // For images, video, general files (also covers audioUrl if used for that)
+  audioUrl: string | null; // Explicitly added as it was mentioned
   isEdited: boolean;
-  type: string; // e.g., 'text', 'image', 'video', 'poll'
+  isDeleted: boolean;
+  createdAt: string; // Or Date if converted to Date objects
+  updatedAt: string; // Or Date if converted to Date objects
+  isPinned: boolean;
 
-  // NEW properties required by fetchUserChatsResponse for latestMessage
-  reactions: MessageReaction[]; // Array of reactions
-  poll: MessagePoll | null; // Can be null if no poll
-  attachments: MessageAttachment[]; // Array of attachments
-  sender: User; // The sender of the message (full User object or a subset)
+  // Derived properties or flags (as seen in the error's expected type)
+  isTextMessage: boolean;
+  isPollMessage: boolean;
+  
+  // Related entities/nested objects (as seen in previous error logs)
+  reactions: MessageReaction[];
+  poll: MessagePoll | null;
+  attachments: MessageAttachment[];
+  sender: User; // The sender of the message
 }
 
-// Define the Chat interface to match 'fetchUserChatsResponse' structure (unchanged from last time)
+// Define the Chat interface to match 'fetchUserChatsResponse' structure
 export interface Chat {
   id: string;
   name: string | null;
@@ -75,8 +80,8 @@ export interface Chat {
   avatarCloudinaryPublicId: string | null;
   adminId: string | null;
   latestMessageId: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string; // Or Date
+  updatedAt: string; // Or Date
   
   ChatMembers: {
     id: string;
@@ -84,8 +89,8 @@ export interface Chat {
     chatId: string;
     user: User;
   }[];
-  PinnedMessages: any[]; // Consider defining a proper interface if you encounter errors here
-  UnreadMessages: any[]; // Consider defining a proper interface if you encounter errors here
+  PinnedMessages: any[]; // If still causes issues, you'll need to define this interface
+  UnreadMessages: any[]; // If still causes issues, you'll need to define this interface
   latestMessage: Message | null;
 }
 
