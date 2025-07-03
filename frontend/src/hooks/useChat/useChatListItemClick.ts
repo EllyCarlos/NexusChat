@@ -109,7 +109,7 @@ export const useChatListItemClick = () => {
   const selectedChatId = useAppSelector(selectSelectedChatDetails)?.id;
   const { toggleChatBar } = useToggleChatBar();
   
-  const chats: Chat[] | null = useAppSelector(selectChats);
+  const chats = useAppSelector(selectChats);
 
   const isLg = useMediaQuery(1024);
 
