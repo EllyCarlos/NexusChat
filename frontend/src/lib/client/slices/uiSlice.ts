@@ -107,9 +107,13 @@ const uiSlice = createSlice({
     setDarkMode: (state, action: PayloadAction<boolean>) => {
       state.isDarkMode = action.payload;
     },
-    setAttachments: (state, action: PayloadAction<Message['attachments']>) => {
-      state.attachments = action.payload;
-    },
+    setAttachments: (state, action: PayloadAction<{ secureUrl: string }[]>) => {
+  state.attachments = action.payload.map((att, idx) => ({
+    id: `temp-${idx}`,
+    secureUrl: att.secureUrl,
+    cloudinaryPublicId: '', // placeholder
+    }));  
+  },
     resetAttachments: (state) => {
       state.attachments = null;
     },
