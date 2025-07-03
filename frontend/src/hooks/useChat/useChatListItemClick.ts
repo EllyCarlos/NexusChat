@@ -117,7 +117,8 @@ export const useChatListItemClick = () => {
     if (chatId === selectedChatId) {
       dispatch(updateSelectedChatDetails(null));
     } else if (chatId !== selectedChatId && chats && chats.length) {
-      const selectedChatByUser = chats.find((chat: Chat) => chat.id === chatId);
+      const selectedChatByUser = chats.find((chat) => chat.id === chatId);
+
       if (selectedChatByUser) dispatch(updateSelectedChatDetails(selectedChatByUser));
     }
     if (isLg) {
