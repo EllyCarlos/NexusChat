@@ -29,16 +29,17 @@ export const SharedMedia = () => {
         onScroll={handleSharedMediaScroll}
         className="grid grid-cols-2 gap-4 place-items-center h-[28rem] overflow-y-auto"
       >
-        {data?.attachments?.map(({ secureUrl }: { secureUrl: string }, index) => (
-          <Image
-            key={index}
-            height={200}
-            width={200}
-            className="w-40 h-40 object-cover"
-            src={secureUrl}
-            alt={"attachment"}
-          />
-        ))}
+        {data?.attachments?.map((attachment: SingleAttachment, index: number) => (
+  <Image
+    key={index}
+    height={200}
+    width={200}
+    className="w-40 h-40 object-cover"
+    src={attachment.secureUrl}
+    alt="attachment"
+  />
+))
+}
         {isFetching && <CircleLoading />}
       </div>
     </div>
