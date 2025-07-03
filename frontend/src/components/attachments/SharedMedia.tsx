@@ -5,7 +5,7 @@ import { useAppSelector } from "@/lib/client/store/hooks";
 import Image from "next/image";
 import { useRef } from "react";
 import { CircleLoading } from "../shared/CircleLoading";
-import type { Attachment } from "@/interfaces/attachment.interface";
+import type { SingleAttachment } from "@/interfaces/attachment.interface";
 
 export const SharedMedia = () => {
 
@@ -29,7 +29,7 @@ export const SharedMedia = () => {
         onScroll={handleSharedMediaScroll}
         className="grid grid-cols-2 gap-4 place-items-center h-[28rem] overflow-y-auto"
       >
-        {data?.attachments?.map((attachment: Attachment['attachments'][number], index: number) => (
+{data?.attachments?.map((attachment: SingleAttachment, index: number) => (
   <Image
     key={index}
     height={200}
@@ -38,9 +38,8 @@ export const SharedMedia = () => {
     src={attachment.secureUrl}
     alt="attachment"
   />
-))
+))}
 
-}
         {isFetching && <CircleLoading />}
       </div>
     </div>
