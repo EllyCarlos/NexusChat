@@ -56,4 +56,4 @@ export const {
     setCalleeIdPopulatedFromRecentCalls
 } = callSlice.actions;
 
-export default callSlice
+export default callSlice;
