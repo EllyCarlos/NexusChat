@@ -1,13 +1,14 @@
 generator client {
-  provider = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"] 
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
-  extensions = [pgbouncer]
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+  extensions = [uuid_ossp(map: "uuid-ossp", schema: "extensions")]
 }
 
 model ChatMembers {
@@ -214,8 +215,10 @@ model User {
   lastSeen                 DateTime?
   emailVerified            Boolean                   @default(false)
   verificationBadge        Boolean                   @default(false)
-  googleId                 String?                   @unique
+  googleId                 String?
   oAuthSignup              Boolean                   @default(false)
+  needsKeyRecovery        Boolean   @default(false)
+  keyRecoveryCompletedAt  DateTime? // Optional: to track when the key recovery was completed
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
   WhomUserWasCalledBy      CallHistory[]             @relation("callee")
