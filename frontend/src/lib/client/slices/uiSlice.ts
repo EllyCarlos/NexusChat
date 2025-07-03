@@ -1,4 +1,5 @@
 import { IncomingCallEventReceivePayload } from "@/hooks/useCalls/useIncomingCallListener";
+import { SingleAttachment } from "@/interfaces/attachment.interface";
 import { Message } from "@/interfaces/message.interface";
 import { PayloadAction, createSlice } from "@reduxjs/toolkit";
 import { RootState } from "../store/store";
@@ -13,7 +14,7 @@ interface InitialState {
   profileForm: boolean;
   removeMemberForm: boolean;
   gifForm: boolean;
-  attachments: Message['attachments'] | null;
+  attachments: SingleAttachment[] | null;
   chatBar: boolean;
   chatDetailsBar: boolean;
   pollForm: boolean;
