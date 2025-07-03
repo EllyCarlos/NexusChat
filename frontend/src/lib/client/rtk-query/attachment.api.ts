@@ -1,5 +1,5 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import { Attachment } from "../../../interfaces/attachment.interface";
+import { SingleAttachment } from "../../../interfaces/attachment.interface";
 import { RootState } from "../store/store";
 
 export const attachmentApi = createApi({
