@@ -42,16 +42,15 @@ export const useMessageListener = () => {
       const isMessageReceivedInSelectedChat = newMessage.chatId === selectedChatDetailsRef.current?.id;
 
       if (isMessageReceivedInSelectedChat) {
-        // Explicitly type the destructured parameter 'id' by providing the type for the object ({id}: BasicUserInfo)
         const ifUserWhoWasTypingHasSentTheMessage = selectedChatDetailsRef.current?.typingUsers.some(({id}: BasicUserInfo) => id === newMessage.sender.id);
         if (ifUserWhoWasTypingHasSentTheMessage) dispatch(removeUserTyping(newMessage.sender.id));
       }
       
       else {
-        // Apply the same explicit typing here for consistency and correctness
         const ifUserWhoWasTypingHasSentTheMessage = chat?.typingUsers.some(({id}: BasicUserInfo) => id === newMessage.sender.id);
         if (ifUserWhoWasTypingHasSentTheMessage){
-          const updatedTypingUsers = chat.typingUsers.filter((user) => user.id !== newMessage.sender.id);
+          // Explicitly type the 'user' parameter as BasicUserInfo
+          const updatedTypingUsers = chat.typingUsers.filter((user: BasicUserInfo) => user.id !== newMessage.sender.id);
           chat.typingUsers = updatedTypingUsers; 
         }
       }
