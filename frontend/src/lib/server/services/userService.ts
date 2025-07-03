@@ -317,7 +317,7 @@ type fetchUserFriendsResponse = {
 }
 
 // --- UPDATE THIS TYPE ---
-export type FetchUserInfoResponse = Prisma.UserGetPayload<{
+type FetchUserInfoResponse = Prisma.UserGetPayload<{
     select:{
       id:true,
       name:true,
