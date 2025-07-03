@@ -9,13 +9,15 @@ import { selectSelectedChatDetails } from "../../lib/client/slices/chatSlice";
 import { useAppSelector } from "../../lib/client/store/hooks";
 import { RemoveMemberFormUserList } from "./RemoveMemberFormUserList";
 
+// Define the type for a single ChatMember using indexed access type
+type ChatMemberType = fetchUserChatsResponse['ChatMembers'][number];
+
 const RemoveMemberForm = () => {
-
   const selectedChatDetails = useAppSelector(selectSelectedChatDetails);
-
   const { toggleRemoveMemberForm } = useToggleRemoveMemberForm();
+  const loggedInUser = useAppSelector(selectLoggedInUser);
+  const loggedInUserId = loggedInUser?.id; // Extract the ID for comparison
 
-  const loggedInUserId = useAppSelector(selectLoggedInUser);
   const { removeMember } = useRemoveMember();
 
   const isMemberLength3 = selectedChatDetails && selectedChatDetails.ChatMembers.length === 3;
@@ -25,24 +27,38 @@ const RemoveMemberForm = () => {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!searchVal.trim().length && selectedChatDetails) {
-      setFilteredMembers(selectedChatDetails.ChatMembers.filter(member => member.user.id !== loggedInUserId?.id))
+    if (!selectedChatDetails) {
+      setFilteredMembers([]); // Clear if no chat details
+      return;
     }
-    else {
-      setFilteredMembers(filteredMembers.filter(member =>member.user.username.toLowerCase().includes(searchVal.toLowerCase())));
+
+    // Always start filtering from the original chat members
+    let membersToFilter = selectedChatDetails.ChatMembers.filter(
+        (member: ChatMemberType) => member.user.id !== loggedInUserId
+    );
+
+    if (searchVal.trim().length > 0) {
+      membersToFilter = membersToFilter.filter(
+        (member: ChatMemberType) =>
+          member.user.username.toLowerCase().includes(searchVal.toLowerCase())
+      );
     }
-  }, [searchVal]);
+    setFilteredMembers(membersToFilter);
+
+  }, [searchVal, selectedChatDetails, loggedInUserId]); // Dependencies are crucial for useEffect
 
   const toggleSelection = (memberId: string) => {
     if (selectedChatDetails) {
       if (selectedMembers.includes(memberId)) {
-        setSelectedMembers(prev =>prev.filter(member => member !== memberId));
-      }
-      else {
-        if (selectedChatDetails.ChatMembers.length - selectedMembers.length > 3) {
+        // Deselect member
+        setSelectedMembers(prev => prev.filter(member => member !== memberId));
+      } else {
+        // Select member, but only if it doesn't violate the minimum member count
+        // If current total members - (already selected members + new member to select) < 2, then show error.
+        // This ensures the group always has at least 3 members (2 remaining members + 1 admin).
+        if (selectedChatDetails.ChatMembers.length - (selectedMembers.length + 1) >= 2) {
           setSelectedMembers((prev) => [...prev, memberId]);
-        }
-        else {
+        } else {
           toast.error("Group cannot have less than 3 members");
         }
       }
@@ -53,15 +69,14 @@ const RemoveMemberForm = () => {
     if (selectedChatDetails) {
       toggleRemoveMemberForm();
       removeMember({
-        chatId:selectedChatDetails.id,
-        members:selectedMembers
+        chatId: selectedChatDetails.id,
+        members: selectedMembers,
       });
     }
   };
 
   return (
     <div className="flex flex-col gap-y-5">
-
       <div className="flex flex-col gap-y-1">
         <h4 className="text-xl">Remove Member</h4>
         {isMemberLength3 && (
@@ -73,7 +88,6 @@ const RemoveMemberForm = () => {
       </div>
 
       <div className="flex flex-col gap-y-4">
-
         {!isMemberLength3 && (
           <input
             value={searchVal}
@@ -93,7 +107,6 @@ const RemoveMemberForm = () => {
             />
           )}
         </div>
-
       </div>
 
       {selectedMembers.length > 0 && (
