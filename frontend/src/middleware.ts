@@ -31,7 +31,7 @@ function clearAuthAndRedirect(req: NextRequest, redirectPath: string = "/auth/lo
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax", // Match sameSite from session.ts
+    sameSite: "none", // Match sameSite from session.ts
     partitioned: true // Match partitioned from session.ts
   });
   // Clear the client-side loggedInUserId cookie (if you're still using it directly)
@@ -41,7 +41,7 @@ function clearAuthAndRedirect(req: NextRequest, redirectPath: string = "/auth/lo
     // Note: loggedInUserId is typically not httpOnly, but if it was, keep it consistent
     // httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax", // Match sameSite from session.ts
+    sameSite: "none", // Match sameSite from session.ts
     partitioned: true // Match partitioned from session.ts
   });
   return redirectResponse;
@@ -51,7 +51,7 @@ function clearAuthAndRedirect(req: NextRequest, redirectPath: string = "/auth/lo
 function setSecureCookie(response: NextResponse, name: string, value: string, options: any = {}) {
   response.cookies.set(name, value, {
     httpOnly: true, // Keep httpOnly for session tokens
-    sameSite: "lax", // Consistent with session.ts
+    sameSite: "none", // Consistent with session.ts
     path: "/",
     secure: process.env.NODE_ENV === "production",
     partitioned: true, // Consistent with session.ts

@@ -31,7 +31,7 @@ export async function createSession(userId: string) {
     httpOnly: true, // Prevents client-side JavaScript from accessing the cookie
     secure: process.env.NODE_ENV === 'production', // Only send cookie over HTTPS in production
     expires: expiresAt, // Set the cookie's expiration date
-    sameSite: 'lax', // Protects against CSRF attacks (consider 'strict' for higher security)
+    sameSite: 'none', // Protects against CSRF attacks (consider 'strict' for higher security)
     path: '/', // The cookie is accessible from all paths
     // domain: '.yourdomain.com', // Uncomment and replace if your frontend and backend are on different subdomains of the same root domain
   });
@@ -40,7 +40,7 @@ export async function createSession(userId: string) {
   (await cookies()).set("loggedInUserId", userId, {
     expires: expiresAt,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'none',
     path: '/',
   });
 }
