@@ -7,15 +7,17 @@ import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
 import { useToggleChatBar } from "../useUI/useToggleChatBar";
 import { useMediaQuery } from "../useUtils/useMediaQuery";
 
-// Define the User interface for nested user objects
+// Define the User interface for nested user objects (UPDATED Date types)
 interface User {
   id: string;
   avatar: string;
   username: string;
   isOnline: boolean;
   publicKey: string | null;
-  lastSeen: Date | null; // Assuming Date object or ISO string
+  lastSeen: Date | null; // Changed to Date | null
   verificationBadge: boolean;
+  createdAt: Date; // Added for consistency, assuming user objects have this
+  updatedAt: Date; // Added for consistency, assuming user objects have this
 }
 
 // Define the Attachment interface for messages
@@ -43,34 +45,31 @@ interface MessageReaction {
   reaction: string;
 }
 
-// Define the Message interface for latestMessage (PROPERTY RENAMED)
+// Define the Message interface for latestMessage (UPDATED Date types)
 interface Message {
   id: string;
   chatId: string;
   senderId: string;
-  // RENAMED from 'content' to 'textMessageContent'
-  textMessageContent: string | null; 
-  type: string; // e.g., 'TEXT', 'IMAGE', 'POLL', 'AUDIO', 'VIDEO'
-  url: string | null; // For images, video, general files (also covers audioUrl if used for that)
-  audioUrl: string | null; // Explicitly added as it was mentioned
+  textMessageContent: string | null;
+  type: string;
+  url: string | null;
+  audioUrl: string | null;
   isEdited: boolean;
   isDeleted: boolean;
-  createdAt: string; // Or Date if converted to Date objects
-  updatedAt: string; // Or Date if converted to Date objects
+  createdAt: Date; // Changed to Date
+  updatedAt: Date; // Changed to Date
   isPinned: boolean;
 
-  // Derived properties or flags
   isTextMessage: boolean;
   isPollMessage: boolean;
   
-  // Related entities/nested objects
   reactions: MessageReaction[];
   poll: MessagePoll | null;
   attachments: MessageAttachment[];
-  sender: User; // The sender of the message
+  sender: User;
 }
 
-// Define the Chat interface to match 'fetchUserChatsResponse' structure
+// Define the Chat interface to match 'fetchUserChatsResponse' structure (UPDATED Date types)
 export interface Chat {
   id: string;
   name: string | null;
@@ -79,8 +78,8 @@ export interface Chat {
   avatarCloudinaryPublicId: string | null;
   adminId: string | null;
   latestMessageId: string | null;
-  createdAt: string; // Or Date
-  updatedAt: string; // Or Date
+  createdAt: Date; // Changed to Date
+  updatedAt: Date; // Changed to Date
   
   ChatMembers: {
     id: string;
