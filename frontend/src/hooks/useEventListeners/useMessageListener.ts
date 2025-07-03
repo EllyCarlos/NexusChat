@@ -1,5 +1,5 @@
 import { Event } from "@/interfaces/events.interface";
-import { Message } from "@/interfaces/message.interface"; // Keep this if Message is indeed exported from here
+import { Message } from "@/interfaces/message.interface"; 
 // Import Chat and BasicUserInfo from where they are now exported
 import { Chat, BasicUserInfo } from "../useChat/useChatListItemClick"; 
 
@@ -42,12 +42,14 @@ export const useMessageListener = () => {
       const isMessageReceivedInSelectedChat = newMessage.chatId === selectedChatDetailsRef.current?.id;
 
       if (isMessageReceivedInSelectedChat) {
-        const ifUserWhoWasTypingHasSentTheMessage = selectedChatDetailsRef.current?.typingUsers.some(({id}) => id === newMessage.sender.id);
+        // Explicitly type the destructured parameter 'id' by providing the type for the object ({id}: BasicUserInfo)
+        const ifUserWhoWasTypingHasSentTheMessage = selectedChatDetailsRef.current?.typingUsers.some(({id}: BasicUserInfo) => id === newMessage.sender.id);
         if (ifUserWhoWasTypingHasSentTheMessage) dispatch(removeUserTyping(newMessage.sender.id));
       }
       
       else {
-        const ifUserWhoWasTypingHasSentTheMessage = chat?.typingUsers.some(({id}) => id === newMessage.sender.id);
+        // Apply the same explicit typing here for consistency and correctness
+        const ifUserWhoWasTypingHasSentTheMessage = chat?.typingUsers.some(({id}: BasicUserInfo) => id === newMessage.sender.id);
         if (ifUserWhoWasTypingHasSentTheMessage){
           const updatedTypingUsers = chat.typingUsers.filter((user) => user.id !== newMessage.sender.id);
           chat.typingUsers = updatedTypingUsers; 
