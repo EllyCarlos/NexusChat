@@ -34,7 +34,7 @@ export const useMessageListener = () => {
       )
     );
 
-    const chat = chats.find((chatItem: Chat) => chatItem.id === newMessage.chatId);
+    const chat = chats.find((chatItem) => chatItem.id === newMessage.chatId);
 
     if (chat) {
       dispatch(updateLatestMessage({chatId:newMessage.chatId,newMessage}));
