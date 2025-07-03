@@ -5,7 +5,7 @@ import { useAppSelector } from "@/lib/client/store/hooks";
 import Image from "next/image";
 import { useRef } from "react";
 import { CircleLoading } from "../shared/CircleLoading";
-import type { Attachment } from "@/interface/attachment.interface";
+import type { Attachment } from "@/interfaces/attachment.interface";
 
 export const SharedMedia = () => {
 
