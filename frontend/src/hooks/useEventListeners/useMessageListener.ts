@@ -1,8 +1,7 @@
 import { Event } from "@/interfaces/events.interface";
-import { Message } from "@/interfaces/message.interface";
-// Assuming Chat and BasicUserInfo are defined in central interface files:
-import { Chat, BasicUserInfo } from "@/interfaces/chat.interface"; // Adjust path if your Chat interface is elsewhere
-// import { BasicUserInfo } from "@/interfaces/user.interface"; // Uncomment and use if BasicUserInfo is in a separate user interface file
+import { Message } from "@/interfaces/message.interface"; // Keep this if Message is indeed exported from here
+// Import Chat and BasicUserInfo from where they are now exported
+import { Chat, BasicUserInfo } from "../useChat/useChatListItemClick"; 
 
 import { messageApi } from "@/lib/client/rtk-query/message.api";
 import {
@@ -35,7 +34,6 @@ export const useMessageListener = () => {
       )
     );
 
-    // Explicitly type the 'chatItem' parameter as 'Chat'
     const chat = chats.find((chatItem: Chat) => chatItem.id === newMessage.chatId);
 
     if (chat) {
@@ -51,15 +49,8 @@ export const useMessageListener = () => {
       else {
         const ifUserWhoWasTypingHasSentTheMessage = chat?.typingUsers.some(({id}) => id === newMessage.sender.id);
         if (ifUserWhoWasTypingHasSentTheMessage){
-          // Make sure chat.typingUsers is handled immutably if chat is part of Redux state
-          // For direct modification here, ensure chat object is mutable or copy it
-          // Or, better, dispatch an action to update typingUsers in Redux
           const updatedTypingUsers = chat.typingUsers.filter((user) => user.id !== newMessage.sender.id);
-          // Assuming an action like updateChatTypingUsers exists
-          // dispatch(updateChatTypingUsers({ chatId: chat.id, typingUsers: updatedTypingUsers }));
-          // If direct mutation is acceptable in this context (e.g., if 'chat' is a draft from Immer),
-          // then the line below would be fine. If not, it could lead to state mutation issues outside Redux.
-          chat.typingUsers = updatedTypingUsers; // Direct mutation, be cautious
+          chat.typingUsers = updatedTypingUsers; 
         }
       }
     }

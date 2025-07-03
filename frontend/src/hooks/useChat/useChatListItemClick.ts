@@ -7,15 +7,15 @@ import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
 import { useToggleChatBar } from "../useUI/useToggleChatBar";
 import { useMediaQuery } from "../useUtils/useMediaQuery";
 
-// Define the BasicUserInfo interface (NEW)
-interface BasicUserInfo {
+// Define the BasicUserInfo interface (NOW EXPORTED)
+export interface BasicUserInfo {
   id: string;
   avatar: string;
   username: string;
 }
 
-// Define the User interface for nested user objects
-interface User {
+// Define the User interface for nested user objects (NOW EXPORTED)
+export interface User {
   id: string;
   avatar: string;
   username: string;
@@ -27,22 +27,22 @@ interface User {
   updatedAt: Date;
 }
 
-// Define the Attachment interface for messages
-interface MessageAttachment {
+// Define the Attachment interface for messages (NOW EXPORTED if used independently, otherwise can stay internal)
+export interface MessageAttachment {
   id: string;
   secureUrl: string;
   cloudinaryPublicId: string;
 }
 
-// Define the Poll interface for messages
-interface MessagePoll {
+// Define the Poll interface for messages (NOW EXPORTED if used independently, otherwise can stay internal)
+export interface MessagePoll {
   question: string;
   options: string[];
   multipleAnswers: boolean;
 }
 
-// Define the Reaction interface for messages
-interface MessageReaction {
+// Define the Reaction interface for messages (NOW EXPORTED if used independently, otherwise can stay internal)
+export interface MessageReaction {
   id: string;
   user: {
     id: string;
@@ -52,8 +52,11 @@ interface MessageReaction {
   reaction: string;
 }
 
-// Define the Message interface for latestMessage
-interface Message {
+// Define the Message interface for latestMessage (NOW EXPORTED if used independently, otherwise can stay internal)
+// NOTE: If you are already importing Message from "@/interfaces/message.interface",
+// you might want to remove this local definition to avoid conflicts,
+// and ensure the external file has all necessary sub-interfaces.
+export interface Message {
   id: string;
   chatId: string;
   senderId: string;
@@ -76,7 +79,7 @@ interface Message {
   sender: User;
 }
 
-// Define the Chat interface to match 'fetchUserChatsResponse' structure (ADDED typingUsers)
+// Define the Chat interface to match 'fetchUserChatsResponse' structure (NOW EXPORTED)
 export interface Chat {
   id: string;
   name: string | null;
@@ -98,7 +101,6 @@ export interface Chat {
   UnreadMessages: any[]; 
   latestMessage: Message | null;
   
-  // NEW property required by fetchUserChatsResponse
   typingUsers: BasicUserInfo[]; 
 }
 
