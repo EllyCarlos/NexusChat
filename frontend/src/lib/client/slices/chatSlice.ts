@@ -318,4 +318,4 @@ export const {
   deletePinnedMessageOnMessageDeletion
 } = chatSlice.actions;
 
-export default chatSlice;
+export default chatSlice.reducer;

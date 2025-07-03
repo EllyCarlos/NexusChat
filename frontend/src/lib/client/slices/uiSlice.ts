@@ -259,4 +259,4 @@ export const {
   setPinnedMessageData
 } = uiSlice.actions;
 
-export default uiSlice;
+export default uiSlice.reducer;
