@@ -57,7 +57,7 @@ export const useTypingListener = () => {
         let isNewUserPushedInTypingArray: boolean = false;
         
         // Explicitly type 'draft' as Chat
-        const chat = chatsRef.current.find((draft: Chat) => draft.id === chatId);
+        const chat = chatsRef.current.find((draft) => draft.id === chatId);
         if (chat) {
           // Explicitly type typingUser as BasicUserInfo
           const isUserAlreadyTyping = chat.typingUsers.some((typingUser: BasicUserInfo) => typingUser.id === user.id);
