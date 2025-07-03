@@ -7,7 +7,7 @@ import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
 import { useToggleChatBar } from "../useUI/useToggleChatBar";
 import { useMediaQuery } from "../useUtils/useMediaQuery";
 
-// Define the User interface for nested user objects
+// Define the User interface for nested user objects (unchanged from last time)
 interface User {
   id: string;
   avatar: string;
@@ -19,7 +19,35 @@ interface User {
   // Add any other user properties as they appear in your data
 }
 
-// Define the Message interface for latestMessage
+// Define the Attachment interface for messages
+interface MessageAttachment {
+  id: string; // Assuming attachments have their own ID
+  secureUrl: string;
+  cloudinaryPublicId: string;
+  // Add other properties if your message attachments have them (e.g., mimeType, size)
+}
+
+// Define the Poll interface for messages
+interface MessagePoll {
+  question: string;
+  options: string[];
+  multipleAnswers: boolean;
+  // Add other properties if your message polls have them
+}
+
+// Define the Reaction interface for messages
+interface MessageReaction {
+  id: string; // Reaction ID
+  user: { // Simplified user object for reactions, as hinted by error log
+    id: string;
+    avatar: string;
+    username: string;
+  };
+  reaction: string; // The emoji or text of the reaction
+}
+
+
+// Define the Message interface for latestMessage (EXPANDED)
 interface Message {
   id: string;
   content: string;
@@ -30,11 +58,16 @@ interface Message {
   isDeleted: boolean;
   isEdited: boolean;
   type: string; // e.g., 'text', 'image', 'video', 'poll'
-  // Add other properties that your Message objects might have
+
+  // NEW properties required by fetchUserChatsResponse for latestMessage
+  reactions: MessageReaction[]; // Array of reactions
+  poll: MessagePoll | null; // Can be null if no poll
+  attachments: MessageAttachment[]; // Array of attachments
+  sender: User; // The sender of the message (full User object or a subset)
 }
 
-// Define the Chat interface to match 'fetchUserChatsResponse' structure
-export interface Chat { // Exported in case it's used elsewhere
+// Define the Chat interface to match 'fetchUserChatsResponse' structure (unchanged from last time)
+export interface Chat {
   id: string;
   name: string | null;
   isGroupChat: boolean;
@@ -45,16 +78,15 @@ export interface Chat { // Exported in case it's used elsewhere
   createdAt: string;
   updatedAt: string;
   
-  // Properties required by fetchUserChatsResponse as per the error message
   ChatMembers: {
-    id: string; // ChatMembers ID
+    id: string;
     userId: string;
     chatId: string;
-    user: User; // Nested user object
+    user: User;
   }[];
-  PinnedMessages: any[]; // Placeholder, define a PinnedMessage interface if structured
-  UnreadMessages: any[]; // Placeholder, define an UnreadMessage interface if structured
-  latestMessage: Message | null; // Can be null if no messages yet
+  PinnedMessages: any[]; // Consider defining a proper interface if you encounter errors here
+  UnreadMessages: any[]; // Consider defining a proper interface if you encounter errors here
+  latestMessage: Message | null;
 }
 
 export const useChatListItemClick = () => {
@@ -62,7 +94,6 @@ export const useChatListItemClick = () => {
   const selectedChatId = useAppSelector(selectSelectedChatDetails)?.id;
   const { toggleChatBar } = useToggleChatBar();
   
-  // Ensure that selectChats returns an array of the fully defined Chat objects
   const chats: Chat[] | null = useAppSelector(selectChats);
 
   const isLg = useMediaQuery(1024);
