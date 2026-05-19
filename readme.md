@@ -1,291 +1,259 @@
-NexusChat - Real-time Secure Messaging Application
-🚀 Overview
+<div align="center">
 
-NexusChat is a modern, full-stack real-time messaging application designed for secure and efficient communication. It offers a rich set of features, from one-on-one chats and group conversations to voice notes, file sharing, and real-time calling, all powered by a robust backend and a dynamic frontend.
-✨ Features
+# 💬 NexusChat
 
-    Real-time Messaging: Instant message delivery and presence indication.
+### Real-time Secure Messaging — Reimagined
 
-    One-on-One Chats: Private and secure direct messaging.
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=nextdotjs)](https://nextjs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-99.5%25-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Socket.IO](https://img.shields.io/badge/Socket.IO-realtime-010101?style=flat-square&logo=socketdotio)](https://socket.io/)
+[![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square)](LICENSE)
 
-    Group Chats: Create and manage group conversations.
+**[🚀 Live Demo](https://nexuswebapp.vercel.app)** · **[🐛 Report Bug](https://github.com/EllyCarlos/NexusChat/issues)** · **[✨ Request Feature](https://github.com/EllyCarlos/NexusChat/issues)**
 
-    Voice Notes: Send and receive audio messages.
+</div>
 
-    File Sharing: Share images, documents, and other file attachments.
+---
 
-    Real-time Calling: Conduct voice and video calls within the application.
+## 📖 Overview
 
-    User Authentication: Secure sign-up, login, and password management (including recovery).
+**NexusChat** is a full-stack, real-time messaging application built for secure and fluid communication. From private one-on-one conversations and group chats to voice notes, file sharing, live calling, polls, and push notifications — NexusChat delivers a feature-complete modern chat experience.
 
-    Google OAuth: Seamless social login integration.
+Built with a **Next.js 15 + React 19** frontend and a **Node.js + Express + Socket.IO** backend, all wired together with **Prisma ORM** and **PostgreSQL**, and deployed on Vercel + Render.
 
-    Push Notifications: Stay updated with new messages and calls.
+---
 
-    Interactive Media: Integrated Emoji and GIF pickers for richer conversations.
+## ✨ Features
 
-    Polls: Create and participate in polls within chats.
+| Category | Features |
+|---|---|
+| 💬 **Messaging** | One-on-one chats, group chats, real-time delivery, message history |
+| 📎 **Media** | File sharing, image attachments, voice notes, emoji & GIF pickers |
+| 📞 **Calling** | Real-time voice and video calling |
+| 🔔 **Notifications** | Push notifications via Firebase Cloud Messaging |
+| 🔐 **Authentication** | Email/password sign-up, JWT sessions, Google OAuth, MFA, password recovery |
+| 📊 **Interactivity** | In-chat polls, animated UI, responsive design |
+| 🛡️ **Security** | Helmet headers, bcrypt password hashing, secure token handling with `jose` |
+| ☁️ **Storage** | Cloud media management via Cloudinary |
 
-    Responsive UI: Beautiful and adaptive design using Tailwind CSS.
+---
 
-    End-to-End Encryption (Conceptual): Designed with principles to support secure communication (implementation details would be further specified within the code).
+## 🛠️ Tech Stack
 
-🛠️ Tech Stack
-Frontend
+### Frontend
+| Technology | Purpose |
+|---|---|
+| **Next.js 15 + React 19** | Full-stack React framework |
+| **Redux Toolkit + React-Redux** | Global state management |
+| **React Hook Form + Zod** | Form handling & schema validation |
+| **Socket.IO Client** | Real-time bidirectional communication |
+| **Firebase (Client SDK)** | Push notifications |
+| **Framer Motion + Lottie React** | Animations & UI effects |
+| **Tailwind CSS** | Utility-first styling |
+| **Emoji Picker + GIF Picker** | Rich in-chat media |
+| **date-fns** | Date/time utilities |
 
-    ⚛️ Next.js 15 + React 19: Modern full-stack React framework for building fast and scalable web applications.
+### Backend
+| Technology | Purpose |
+|---|---|
+| **Node.js + Express** | REST API server |
+| **Socket.IO** | Real-time event-driven communication |
+| **Prisma ORM + PostgreSQL** | Type-safe database access |
+| **JWT + bcryptjs + jose** | Auth, password hashing & token encryption |
+| **Passport.js + Google OAuth** | Social login (OAuth 2.0) |
+| **Cloudinary** | Cloud image/file storage |
+| **Nodemailer** | Email delivery (password reset, MFA) |
+| **Firebase Admin SDK** | Server-side push notifications |
+| **Helmet + CORS** | Security headers & cross-origin config |
+| **Multer** | File upload handling |
+| **Morgan** | HTTP request logging |
 
-    🛠️ Redux Toolkit + React-Redux: Efficient global state management for a consistent user experience.
+---
 
-    🔗 React Hook Form + Zod: Robust form handling and schema validation for reliable data input.
+## 📁 Project Structure
 
-    🔄 Socket.IO Client: Enables real-time, bidirectional communication with the backend for live updates.
+```
+NexusChat/
+├── frontend/          # Next.js 15 application
+│   ├── app/           # App Router pages & layouts
+│   ├── components/    # Reusable UI components
+│   ├── store/         # Redux Toolkit slices
+│   └── ...
+├── backend/           # Node.js + Express API
+│   ├── prisma/        # Prisma schema & migrations
+│   ├── routes/        # Express route handlers
+│   ├── controllers/   # Business logic
+│   ├── middleware/    # Auth, upload, logging
+│   └── ...
+├── .gitignore
+├── LICENSE
+└── README.md
+```
 
-    📅 Date-fns: Lightweight utility library for date and time manipulation.
+---
 
-    🎥 Framer Motion + Lottie-React: For fluid animations and dynamic UI effects.
+## ⚙️ Local Setup
 
-    🔥 Firebase: Used for push notifications integration on the frontend.
+### Prerequisites
 
-    💅 Tailwind CSS: A utility-first CSS framework for rapid and responsive UI development.
+- **Node.js** v18 or later
+- **npm** or **Yarn**
+- **Git**
+- **PostgreSQL** database (local or hosted — [Neon](https://neon.tech), [Supabase](https://supabase.com), or [Render](https://render.com) all work well)
+- [**Firebase Project**](https://console.firebase.google.com/) (for push notifications)
+- [**Cloudinary Account**](https://cloudinary.com/) (for file/image storage)
+- [**Google OAuth Credentials**](https://console.cloud.google.com/) (for social login)
 
-    💬 Emoji-Picker-React + Gif-Picker-React: Enhances chat interactivity with rich media options.
+---
 
-Backend
+### 1. Clone the Repository
 
-    🟢 Node.js + Express: A scalable and performant backend API server.
-
-    🔄 Socket.IO: Facilitates real-time, event-driven communication between the server and clients.
-
-    🗄️ Prisma ORM: A next-generation ORM for type-safe database access, managing data interactions with PostgreSQL.
-
-    🔐 JWT Authentication (jsonwebtoken): Secure token-based authentication for API endpoints.
-
-    ☁️ Cloudinary: Cloud-based media management for efficient storage and delivery of images and files.
-
-    📧 Nodemailer: Handles email notifications (e.g., for password recovery, MFA verification).
-
-    🔑 Passport.js + Google OAuth: Implements OAuth 2.0 based authentication, specifically for Google login.
-
-    🔥 Firebase Admin SDK: Used on the server-side for sending push notifications.
-
-    🛡️ Helmet: Enhances API security by setting various HTTP headers.
-
-    📝 Morgan: HTTP request logger middleware for Node.js.
-
-    🍪 Cookie-Parser: Parses cookies attached to the client request object.
-
-    🛠️ Multer: Middleware for handling multipart/form-data, primarily for file uploads.
-
-    🔄 CORS: Configured for Cross-Origin Resource Sharing to allow frontend-backend communication.
-
-    🛠️ UUID: Generates unique identifiers.
-
-    ⚙️ dotenv: Manages environment variables for secure configuration.
-
-    🔐 bcryptjs + jose: Used for password hashing and secure token handling/encryption.
-
-⚙️ Setup and Installation
-
-Follow these steps to get NexusChat running on your local machine.
-Prerequisites
-
-    Node.js (v18.x or later recommended)
-
-    npm or Yarn
-
-    Git
-
-    PostgreSQL database (local or cloud-hosted)
-
-    Firebase Project (for Push Notifications)
-
-    Cloudinary Account (for File Storage)
-
-    Google OAuth Credentials (for Google Login)
-
-1. Clone the Repository
-
+```bash
 git clone https://github.com/EllyCarlos/NexusChat.git
 cd NexusChat
+```
 
+---
 
-2. Backend Setup
+### 2. Backend Setup
 
-Navigate to the backend directory:
-
+```bash
 cd backend
-
-
-Install backend dependencies:
-
 npm install
-# or
-yarn install
+```
 
+Create a `.env` file in the `backend/` directory:
 
-Create a .env file in the backend directory and add your environment variables. Do NOT commit this file to Git.
+```env
+# ─── Database ────────────────────────────────────────────────────────────────
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DB_NAME?schema=public"
 
-# Database
-DATABASE_URL="postgresql://YOUR_DB_USER:YOUR_DB_PASSWORD@YOUR_DB_HOST:YOUR_DB_PORT/YOUR_DB_NAME?schema=public"
+# ─── JWT ─────────────────────────────────────────────────────────────────────
+JWT_SECRET="your-strong-secret-key"
 
-# JWT Secret
-JWT_SECRET="YOUR_VERY_STRONG_JWT_SECRET_KEY"
+# ─── Cloudinary ──────────────────────────────────────────────────────────────
+CLOUDINARY_CLOUD_NAME="your-cloud-name"
+CLOUDINARY_API_KEY="your-api-key"
+CLOUDINARY_API_SECRET="your-api-secret"
 
-# Cloudinary
-CLOUDINARY_CLOUD_NAME="YOUR_CLOUDINARY_CLOUD_NAME"
-CLOUDINARY_API_KEY="YOUR_CLOUDINARY_API_KEY"
-CLOUDINARY_API_SECRET="YOUR_CLOUDINARY_API_SECRET"
+# ─── Nodemailer ──────────────────────────────────────────────────────────────
+NODEMAILER_USER="your-email@example.com"
+NODEMAILER_PASS="your-email-password-or-app-password"
 
-# Nodemailer (for email sending, e.g., SendGrid, Mailgun, or Gmail SMTP)
-NODEMAILER_USER="YOUR_EMAIL_USER"
-NODEMAILER_PASS="YOUR_EMAIL_PASSWORD_OR_APP_SPECIFIC_PASSWORD"
+# ─── Google OAuth ────────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+GOOGLE_AUTH_REDIRECT_URI="http://localhost:3000/auth/oauth-redirect"
 
-# Google OAuth
-GOOGLE_CLIENT_ID="YOUR_GOOGLE_CLIENT_ID"
-GOOGLE_CLIENT_SECRET="YOUR_GOOGLE_CLIENT_SECRET"
-GOOGLE_AUTH_REDIRECT_URI="http://localhost:3000/auth/oauth-redirect" # For local development
+# ─── Firebase Admin ──────────────────────────────────────────────────────────
+FIREBASE_ADMIN_SDK_PATH="./path/to/firebase-admin-sdk.json"
 
-# Firebase Admin SDK (for server-side push notifications)
-# IMPORTANT: It's best to store this as a service account JSON file and provide its path
-# For simplicity in .env, you might store the JSON content as a single-line string (escaped)
-# FIREBASE_ADMIN_SDK_CONFIG_JSON='{"type": "service_account", ...}'
-# Alternatively, provide a path to a downloaded JSON file:
-FIREBASE_ADMIN_SDK_PATH="./path/to/your/firebase-admin-sdk.json"
-
-# Frontend URL (for CORS) - Will be your Vercel URL in production
+# ─── App ─────────────────────────────────────────────────────────────────────
 VERCEL_FRONTEND_URL="http://localhost:3000"
-
-# Node Environment (for local development)
 NODE_ENV="DEVELOPMENT"
+```
 
+> ⚠️ **Never commit your `.env` file.** It's already in `.gitignore`.
 
-Run Prisma migrations to set up your database schema:
+Run database migrations and start the server:
 
-npx prisma migrate dev --name init # Replace 'init' with a meaningful name for your first migration
-
-
-Start the backend server:
-
+```bash
+npx prisma migrate dev --name init
 npm run dev
-# or
-yarn dev
+```
 
+The backend will be available at `http://localhost:5000`.
 
-The backend server should now be running on http://localhost:5000 (or your configured port).
-3. Frontend Setup
+---
 
-Navigate to the frontend directory:
+### 3. Frontend Setup
 
+```bash
 cd ../frontend
-
-
-Install frontend dependencies:
-
 npm install
-# or
-yarn install
+```
 
+Create a `.env.local` file in the `frontend/` directory:
 
-Create a .env.local file in the frontend directory and add your environment variables. Do NOT commit this file to Git.
-
-# Backend API URL (for local development)
+```env
+# ─── Backend ─────────────────────────────────────────────────────────────────
 NEXT_PUBLIC_BACKEND_URL="http://localhost:5000"
-
-# Socket.IO Server URL (for local development)
 NEXT_PUBLIC_SOCKET_SERVER_URL="http://localhost:5000"
 
-# Firebase Config (get these from your Firebase project settings -> Project settings -> Your apps -> Web app)
-NEXT_PUBLIC_FIREBASE_API_KEY="YOUR_FIREBASE_API_KEY"
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="YOUR_FIREBASE_PROJECT_ID.firebaseapp.com"
-NEXT_PUBLIC_FIREBASE_PROJECT_ID="YOUR_FIREBASE_PROJECT_ID"
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="YOUR_FIREBASE_PROJECT_ID.appspot.com"
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="YOUR_FIREBASE_MESSAGING_SENDER_ID"
-NEXT_PUBLIC_FIREBASE_APP_ID="YOUR_FIREBASE_APP_ID"
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID="YOUR_FIREBASE_MEASUREMENT_ID" # Starts with G-
+# ─── Firebase ────────────────────────────────────────────────────────────────
+NEXT_PUBLIC_FIREBASE_API_KEY="your-firebase-api-key"
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="your-project.firebaseapp.com"
+NEXT_PUBLIC_FIREBASE_PROJECT_ID="your-project-id"
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="your-project.appspot.com"
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="your-sender-id"
+NEXT_PUBLIC_FIREBASE_APP_ID="your-app-id"
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID="G-XXXXXXXXXX"
 
-# Cloudinary (if used directly on frontend for some cases)
-NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME="YOUR_CLOUDINARY_CLOUD_NAME"
+# ─── Cloudinary ──────────────────────────────────────────────────────────────
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME="your-cloud-name"
+```
 
+Start the development server:
 
-Start the Next.js development server:
-
+```bash
 npm run dev
-# or
-yarn dev
+```
 
+The frontend will be available at `http://localhost:3000`.
 
-The frontend application should now be running on http://localhost:3000.
-🚀 Deployment
+---
 
-NexusChat is designed for deployment with Vercel for the frontend and Render for the backend and database.
-Frontend (Next.js) on Vercel
+## 🚀 Deployment
 
-    Connect GitHub Repository: Link your NexusChat repository to Vercel.
+NexusChat is designed to deploy on **Vercel** (frontend) and **Render** (backend + database).
 
-    Configure Root Directory: If your Next.js app is in the frontend/ subdirectory, set the "Root Directory" to frontend.
+### Backend → Render
 
-    Set Environment Variables: Add your NEXT_PUBLIC_ prefixed environment variables from your .env.local file to Vercel's project settings (under "Environment Variables").
+1. Create a **PostgreSQL** service on Render and copy the **Internal Database URL**.
+2. Create a **Web Service**, connect your GitHub repo, and set:
+   - **Root Directory:** `backend`
+   - **Build Command:** `npm install && npm run build`
+   - **Start Command:** `npm start`
+   - **Pre-deploy Command:** `npx prisma migrate deploy`
+3. Add all backend environment variables. Set `DATABASE_URL` to the internal DB URL and update `VERCEL_FRONTEND_URL` to your Vercel domain. Set `NODE_ENV=PRODUCTION`.
 
-        NEXT_PUBLIC_BACKEND_URL: This will be the public URL of your deployed Render backend.
+### Frontend → Vercel
 
-        NEXT_PUBLIC_SOCKET_SERVER_URL: This will also be the public URL of your deployed Render backend.
+1. Import the repo on Vercel and set **Root Directory** to `frontend`.
+2. Add all `NEXT_PUBLIC_` environment variables.
+   - Set `NEXT_PUBLIC_BACKEND_URL` and `NEXT_PUBLIC_SOCKET_SERVER_URL` to your Render backend's public URL.
+3. Set **Build Command** to:
+   ```bash
+   npx prisma generate && npm run build
+   ```
+4. Deploy. Once live, go back to your Render service and confirm `VERCEL_FRONTEND_URL` matches your Vercel URL, then redeploy if needed.
 
-    Modify Build Command: In Vercel's "Build & Development Settings," set the "Build Command" to:
+---
 
-    npx prisma generate && npm run build
+## 🤝 Contributing
 
+Contributions are welcome! Here's how to get started:
 
-    This ensures Prisma Client is generated correctly in Vercel's caching environment.
+1. **Fork** the repository
+2. **Create** a feature branch: `git checkout -b feature/your-feature-name`
+3. **Commit** your changes: `git commit -m 'feat: add your feature'`
+4. **Push** to the branch: `git push origin feature/your-feature-name`
+5. **Open** a Pull Request
 
-    Deploy: Vercel will automatically build and deploy your Next.js application. Note the deployed URL.
+Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages and ensure your code is properly typed (TypeScript).
 
-Backend (Node.js + Express) on Render
+---
 
-    Deploy PostgreSQL Database:
+## 📄 License
 
-        In the Render dashboard, create a new PostgreSQL service.
+This project is licensed under the **Apache 2.0 License** — see the [LICENSE](LICENSE) file for details.
 
-        Note down the Internal Database URL once created.
+---
 
-    Deploy Web Service (Node.js Backend):
+<div align="center">
 
-        In the Render dashboard, create a new Web Service.
+Made with ❤️ by [EllyCarlos](https://github.com/EllyCarlos)
 
-        Connect your NexusChat GitHub repository.
-
-        Root Directory: Set this to backend (if your backend code is in that subdirectory).
-
-        Build Command: npm install && npm run build
-
-        Start Command: npm start
-
-        Environment Variables: Add all your backend environment variables from your backend/.env file.
-
-            DATABASE_URL: Use the Internal Database URL from your Render PostgreSQL service.
-
-            VERCEL_FRONTEND_URL: Crucially, update this with the actual deployed URL of your Vercel frontend. This is essential for CORS.
-
-            Ensure NODE_ENV is set to PRODUCTION.
-
-        Pre-deploy Command (Recommended for Migrations): To ensure your database migrations run automatically on each deploy, add npx prisma migrate deploy as a "Pre-deploy Command" in your Render web service settings.
-
-    Deploy: Render will build and deploy your Node.js backend. Note the deployed public URL.
-
-Final Step: Connect Frontend to Backend
-
-After both are deployed:
-
-    Go back to your Vercel Project settings.
-
-    Update the NEXT_PUBLIC_BACKEND_URL and NEXT_PUBLIC_SOCKET_SERVER_URL environment variables to point to the public URL of your deployed Render backend.
-
-    Trigger a new Vercel deployment for the frontend.
-
-Your full-stack NexusChat application should now be live and fully connected!
-🤝 Contributing
-
-We welcome contributions! Please feel free to open issues or submit pull requests.
-📄 License
-
-Apache 2.0
+</div>
