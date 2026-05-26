@@ -39,7 +39,7 @@ const encryptMessage = async ({
   const crypto = window.crypto.subtle;
   // Generate a random initialization vector (IV) for each encryption. AES-GCM requires a unique IV for every encryption operation.
   // This ensures the same message encrypted multiple times will produce different ciphertexts.
-  const iv = window.crypto.getRandomValues(new Uint8Array(12)); // AES-GCM typically uses a 12-byte IV.
+  const iv = window.crypto.getRandomValues(new Uint8Array(12)) as Uint8Array<ArrayBuffer>; // AES-GCM typically uses a 12-byte IV.
 
   // Convert the message to a Uint8Array for encryption. This is the format expected by the crypto API.
   // The `TextEncoder` encodes the string message into a sequence of bytes (Uint8Array).
@@ -84,7 +84,7 @@ const encryptAudioBlob = async ({
   const audioArrayBuffer = await audioBlob.arrayBuffer();
 
   // Generate a random IV
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const iv = window.crypto.getRandomValues(new Uint8Array(12)) as Uint8Array<ArrayBuffer>;
 
   // Encrypt the audio data
   const encryptedData = await crypto.encrypt(
@@ -210,7 +210,7 @@ const deriveSharedSecretKey = async ({
 };
 
 // Function to derive a key from password using PBKDF2
-const deriveKeyFromPassword = async (password: string, salt: Uint8Array) => {
+const deriveKeyFromPassword = async (password: string, salt: Uint8Array<ArrayBuffer>) => {
   if (typeof window === "undefined") return;
   const crypto = window.crypto.subtle;
 
@@ -261,7 +261,7 @@ const encryptPrivateKey = async (password: string, privateKey: JsonWebKey) => {
   // Step 1: Generate a random salt of 16 bytes for PBKDF2
   // A salt is generated for key derivation to ensure the security of the password-based encryption.
   // The salt is a random value that ensures the derived key will be unique even if the same password is used.
-  const salt = window.crypto.getRandomValues(new Uint8Array(16));
+  const salt = window.crypto.getRandomValues(new Uint8Array(16)) as Uint8Array<ArrayBuffer>;
 
   // Step 2: Derive an encryption key from the password and salt using PBKDF2
   // We use the password and the generated salt to derive a key using the PBKDF2 key derivation function.
@@ -278,7 +278,7 @@ const encryptPrivateKey = async (password: string, privateKey: JsonWebKey) => {
   // Step 4: Generate a random initialization vector (IV) of 12 bytes for AES-GCM
   // AES-GCM (Galois/Counter Mode) requires an initialization vector (IV) to provide additional randomness
   // for the encryption process. The IV is generated randomly and is unique for each encryption operation.
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const iv = window.crypto.getRandomValues(new Uint8Array(12)) as Uint8Array<ArrayBuffer>;
 
   // Step 5: Encrypt the data using AES-GCM with the derived key and IV
   // The private key (now in a byte array format) is encrypted using the derived key and the generated IV.
@@ -325,9 +325,9 @@ const decryptPrivateKey = async (
   // Step 1: Convert the Base64-encoded combined buffer back to a Uint8Array
   // `atob` decodes the Base64 string to a binary string, and `Uint8Array.from` converts each character
   // of the binary string to its corresponding char code (byte value) to create the Uint8Array.
-  const combinedBuffer = Uint8Array.from(atob(combinedBufferBase64), (c) =>
+  const combinedBuffer = Uint8Array.from(atob(combinedBufferBase64), (c) => 
     c.charCodeAt(0)
-  );
+  ) as Uint8Array<ArrayBuffer>;
 
   // Step 2: Extract the salt (first 16 bytes), IV (next 12 bytes), and the encrypted message
   // The combined buffer is structured as follows:
