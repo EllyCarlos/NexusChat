@@ -36,8 +36,8 @@ type MessageEventReceivePayload = {
     chatId: string
     isPollMessage: boolean
     textMessageContent?: string | ArrayBuffer
-    encryptedAudio?: Uint8Array
-    audio?: Uint8Array
+    encryptedAudio?: Uint8Array<ArrayBuffer>
+    audio?: Uint8Array<ArrayBuffer>
     url?: string
     pollData?: {
         pollQuestion?: string
