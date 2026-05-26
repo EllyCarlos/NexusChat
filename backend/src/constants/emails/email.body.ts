@@ -34,7 +34,7 @@ const resetPasswordBody = (username: string, resetUrl: string) => {
         <p>Hi ${username},</p>
         <p>We received a request to reset your password for your NexusChat account.</p>
         <p>To create a new password, please click on the following link:</p>
-        <a href=${resetUrl}>
+        <a href="${resetUrl}">
             <button>Reset Password</button>
         </a>
         <p>This link will expire in 24 hours. If you did not request a password reset, you can safely ignore this email.</p>
