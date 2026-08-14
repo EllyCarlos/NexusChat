@@ -1,5 +1,4 @@
 import { verifyPassword } from "@/actions/auth.actions";
-import { useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered } from "@/hooks/useAuth/useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered";
 import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import {
   keyRecoverySchema,
@@ -38,11 +37,6 @@ export const RecoveryOptionsForManualSignedUpUser = ({loggedInUser}: PropTypes) 
       })
     }
   }
-
-  useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered({
-    isSuccess:state?.success?.message?.length ? true : false,
-    loggedInUser,
-  });
 
   return state?.success?.message ? (
     <h2 className="text font-bold bg-background p-4 rounded-md">

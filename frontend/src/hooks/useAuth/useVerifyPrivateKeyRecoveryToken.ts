@@ -1,6 +1,5 @@
 import { verifyPrivateKeyRecoveryToken } from "@/actions/auth.actions";
 import { storeUserPrivateKeyInIndexedDB } from "@/lib/client/indexedDB";
-import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import { useRouter } from "next/navigation";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
@@ -19,7 +18,6 @@ export const useVerifyPrivateKeyRecoveryToken = ({
   enabled,
 }: PropTypes) => {
   const [isPrivateKeyRestoredInIndexedDB, setIsPrivateKeyRestoredInIndexedDB] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState<FetchUserInfoResponse | null>(null); // Initialize as null
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const verificationStartedRef = useRef(false);
 
@@ -31,43 +29,11 @@ export const useVerifyPrivateKeyRecoveryToken = ({
 
   const router = useRouter();
 
-  // Effect 1: Try to load loggedInUser from the cookie or server context (if available)
-  // Instead of localStorage, you should ideally get this from a server component
-  // or a cookie that is passed down. For now, we'll keep localStorage, but it's a weak point.
-  useEffect(() => {
-    // This part is the most critical for the looping modal.
-    // If loggedInUser is not consistently available or correctly set,
-    // the action might be re-triggered.
-    const getInitialUserData = async () => {
-      // Option 1 (Better): Fetch user info from server if not already available
-      // This would require an API endpoint or another server action to get user info by session
-      // For now, let's keep the localStorage but acknowledge it's a temp solution
-      try {
-        const userData = localStorage.getItem("loggedInUser");
-        if (userData) {
-          const parsedUser = JSON.parse(userData) as FetchUserInfoResponse;
-          setLoggedInUser(parsedUser);
-        } else {
-          // If no user in localStorage, the recovery can't proceed.
-          // This prevents infinite loops if the user isn't genuinely logged in.
-          toast.error("User session not found. Please log in.");
-          router.push("/auth/login");
-        }
-      } catch (error) {
-        console.error('Error parsing loggedInUser from localStorage:', error);
-        toast.error("Error reading user data. Please log in.");
-        router.push("/auth/login");
-      }
-    };
-    getInitialUserData();
-  }, [router]); // Only run once on mount
-
-  // Effect 2: Trigger the server action after the recovery form is submitted
+  // Effect 1: Trigger the server action after the recovery form is submitted
   useEffect(() => {
     if (
       !verificationStartedRef.current &&
       enabled &&
-      loggedInUser?.id &&
       recoveryToken &&
       passwordInput?.trim() &&
       !state?.data &&
@@ -77,16 +43,16 @@ export const useVerifyPrivateKeyRecoveryToken = ({
       startTransition(() => {
         verifyPrivateKeyRecoveryTokenAction({
           recoveryToken,
-          userId: loggedInUser.id,
         });
       });
     }
-  }, [enabled, loggedInUser?.id, passwordInput, recoveryToken, verifyPrivateKeyRecoveryTokenAction, state?.data, isPending]);
+  }, [enabled, passwordInput, recoveryToken, verifyPrivateKeyRecoveryTokenAction, state?.data, isPending]);
 
-  // Effect 3: Handle the result of the server action
+  // Effect 2: Handle the result of the server action
   useEffect(() => {
     if (state?.errors?.message) {
       toast.error(state.errors.message);
+      // Clear legacy recovery data written by older clients.
       localStorage.removeItem("loggedInUser");
       localStorage.removeItem("tempPassword");
       router.push("/auth/login");
@@ -99,14 +65,14 @@ export const useVerifyPrivateKeyRecoveryToken = ({
     }
   }, [state, router]);
 
-  // Effect 4: Decrypt and store the private key once data is successfully fetched
+  // Effect 3: Decrypt and store the private key once data is successfully fetched
   // This useCallback is correctly defined and then called inside an effect.
   const handleDecryptAndStorePrivateKey = useCallback(async () => {
-    if (!loggedInUser || !state?.data) {
+    if (!state?.data) {
       return;
     }
 
-    const { combinedSecret, privateKey } = state.data;
+    const { combinedSecret, privateKey, userId } = state.data;
     let passwordToUse: string | null = null;
 
     if (combinedSecret) {
@@ -133,11 +99,11 @@ export const useVerifyPrivateKeyRecoveryToken = ({
         );
         await storeUserPrivateKeyInIndexedDB({
           privateKey: privateKeyInJwk,
-          userId: loggedInUser.id,
+          userId,
         });
 
-        // Clear temporary data only AFTER successful storage
-        localStorage.removeItem("loggedInUser"); // If you're still relying on this
+        // Clear legacy recovery data only AFTER successful storage.
+        localStorage.removeItem("loggedInUser");
 
         setIsPrivateKeyRestoredInIndexedDB(true);
       } catch (decryptError) {
@@ -150,15 +116,15 @@ export const useVerifyPrivateKeyRecoveryToken = ({
       toast.error("Missing credentials for key recovery.");
       router.push("/auth/login");
     }
-  }, [loggedInUser, state?.data, passwordInput, router]);
+  }, [state?.data, passwordInput, router]);
 
 
-  // Effect 5: Trigger the decryption and storage process
+  // Effect 4: Trigger the decryption and storage process
   useEffect(() => {
-    if (isSuccess && loggedInUser && (state?.data?.combinedSecret || state?.data?.privateKey)) {
+    if (isSuccess && (state?.data?.combinedSecret || state?.data?.privateKey)) {
       handleDecryptAndStorePrivateKey();
     }
-  }, [isSuccess, loggedInUser, state?.data, handleDecryptAndStorePrivateKey]); // Depend on the callback itself
+  }, [isSuccess, state?.data, handleDecryptAndStorePrivateKey]); // Depend on the callback itself
 
   return {
     isPrivateKeyRestoredInIndexedDB: isPrivateKeyRestoredInIndexedDB, // isSuccess check done inside the hook now

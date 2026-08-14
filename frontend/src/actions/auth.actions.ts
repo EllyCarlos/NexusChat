@@ -236,11 +236,11 @@ export async function sendPrivateKeyRecoveryEmail(prevState: any, user: Pick<Fet
 }
 
 // --- VERIFY PRIVATE KEY RECOVERY TOKEN ---
-export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { recoveryToken: string, userId: string }) {
+export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { recoveryToken: string }) {
   try {
-    if (!data.recoveryToken || !data.userId) {
+    if (!data.recoveryToken) {
       return {
-        errors: { message: 'Invalid request: Token or User ID missing.' },
+        errors: { message: 'Invalid request: Token missing.' },
         data: null
       };
     }
@@ -253,15 +253,6 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
       return {
         errors: {
           message: 'Verification link is invalid or expired. Please request a new one.'
-        },
-        data: null
-      };
-    }
-
-    if (tokenUserId !== data.userId) {
-      return {
-        errors: {
-          message: 'Verification link is invalid. Please ensure the full link is used.'
         },
         data: null
       };
@@ -313,11 +304,7 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
       };
     }
 
-    const payload: { privateKey?: string; combinedSecret?: string } = {};
-
-    if (user.privateKey) {
-      payload.privateKey = user.privateKey;
-    } else {
+    if (!user.privateKey) {
       return {
         errors: {
           message: 'No private key found for this user account.'
@@ -325,6 +312,11 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
         data: null
       };
     }
+
+    const payload: { userId: string; privateKey: string; combinedSecret?: string } = {
+      userId: user.id,
+      privateKey: user.privateKey
+    };
 
     if (user.oAuthSignup && user.googleId && process.env.PRIVATE_KEY_RECOVERY_SECRET) {
       payload.combinedSecret = user.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;

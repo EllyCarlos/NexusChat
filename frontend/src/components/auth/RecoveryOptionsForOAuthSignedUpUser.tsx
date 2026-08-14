@@ -1,5 +1,4 @@
 import { sendPrivateKeyRecoveryEmail } from "@/actions/auth.actions";
-import { useStoreLoggedInUserInfoInLocalStorageIfRecoveryEmailSentSuccessful } from "@/hooks/useAuth/useStoreLoggedInUserInfoInLocalStorageIfRecoveryEmailSentSuccessful";
 import { User } from "@/interfaces/auth.interface";
 import { startTransition, useActionState, useCallback, useEffect } from "react";
 import { useFormStatus } from "react-dom";
@@ -13,7 +12,6 @@ type PropTypes = {
 export const RecoveryOptionsForOAuthSignedUpUser = ({loggedInUser}:PropTypes) => {
 
   const [state,sendPrivateKeyRecoveryEmailAction] = useActionState(sendPrivateKeyRecoveryEmail,undefined);
-  useStoreLoggedInUserInfoInLocalStorageIfRecoveryEmailSentSuccessful({isPrivateKeyRecoveryEmailSentSuccessful:state?.success.message?.length ? true : false,loggedInUser});
 
   useEffect(()=>{
     if(state && state.errors.message){
