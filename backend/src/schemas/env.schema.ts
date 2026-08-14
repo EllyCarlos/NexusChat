@@ -23,7 +23,6 @@ const envSchema = z.object({
     GOOGLE_CLIENT_ID: z.string({ required_error: "GOOGLE_CLIENT_ID is required" }),
     GOOGLE_CLIENT_SECRET: z.string({ required_error: "GOOGLE_CLIENT_SECRET is required" }),
     GOOGLE_APPLICATION_CREDENTIALS: z.string({ required_error: "GOOGLE_APPLICATION_CREDENTIALS is required" }),
-    PRIVATE_KEY_RECOVERY_SECRET: z.string({ required_error: "PRIVATE_KEY_RECOVERY_SECRET is required" }),
     DATABASE_URL: z.string({ required_error: "DATABASE_URL is required" }),
     DIRECT_URL: z.string({ required_error: "DIRECT_URL is required" })
 });

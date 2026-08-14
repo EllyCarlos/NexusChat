@@ -1,27 +1,11 @@
-import { NextFunction, Request, Response } from "express";
+import { NextFunction, Response } from "express";
 import jwt from 'jsonwebtoken';
-import { v4 as uuidV4 } from 'uuid'; // Added for JTI
 import { config } from "../config/env.config.js";
 import type { AuthenticatedRequest, OAuthAuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from '../lib/prisma.lib.js';
 import type { fcmTokenSchemaType } from "../schemas/auth.schema.js";
 import { env } from "../schemas/env.schema.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-
-// Cookie configuration utility
-const setAuthCookie = (res: Response, token: string) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  // Changed cookie name from 'token' to 'session' for consistency with Next.js frontend
-  res.cookie('session', token, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax', // 'none' requires secure: true
-    // domain: isProduction ? config.cookieDomain : undefined, // Uncomment if you need a specific domain
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    path: '/',
-    partitioned: true // For Chrome's new cookie partitioning (CHIPS)
-  });
-};
 
 const getUserInfo = asyncErrorHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const user = req.user;
@@ -92,21 +76,6 @@ const checkAuth = asyncErrorHandler(async (req: AuthenticatedRequest, res: Respo
   return next(new CustomError("Token missing, please login again", 401));
 });
 
-// Generate session token
-const generateSessionToken = (userId: string) => {
-  return jwt.sign({
-    userId: userId,
-    type: 'session',
-    iat: Math.floor(Date.now() / 1000),
-    iss: config.jwtIssuer,
-    aud: config.jwtAudience,
-    jti: uuidV4()
-  }, env.JWT_SECRET, {
-    expiresIn: "7d", // Matches cookie expiry
-    algorithm: 'HS256'
-  });
-};
-
 // Enhanced OAuth redirect handler
 const redirectHandler = asyncErrorHandler(async (req: OAuthAuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -147,105 +116,6 @@ const redirectHandler = asyncErrorHandler(async (req: OAuthAuthenticatedRequest,
   } catch (error) {
     console.error('🚨 OAuth redirect error:', error); // Use console.error
     return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?error=oauth_failed`);
-  }
-});
-
-// Enhanced OAuth token verification endpoint
-const verifyOAuthToken = asyncErrorHandler(async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { token } = req.body;
-
-    if (!token) {
-      return next(new CustomError("OAuth token is required", 400));
-    }
-
-    console.log('🔍 Verifying OAuth token...');
-
-    // Verify JWT token
-    const decoded = jwt.verify(token, env.JWT_SECRET) as any;
-
-    console.log('✅ JWT verification successful:', {
-      userId: decoded.userId,
-      isNewUser: decoded.isNewUser,
-      type: decoded.type,
-      email: decoded.email
-    });
-
-    // Validate token structure
-    if (!decoded.userId || typeof decoded.isNewUser !== 'boolean' || decoded.type !== 'oauth-temp') {
-      console.error('❌ Invalid token structure:', decoded);
-      return next(new CustomError("Invalid OAuth token structure", 401));
-    }
-
-    // Find user in database
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        avatar: true,
-        email: true,
-        createdAt: true,
-        updatedAt: true,
-        emailVerified: true,
-        publicKey: true,
-        needsKeyRecovery: true, // Select this field
-        keyRecoveryCompletedAt: true, // Select this field
-        notificationsEnabled: true,
-        verificationBadge: true,
-        fcmToken: true,
-        oAuthSignup: true,
-        googleId: true // Ensure googleId is selected for combinedSecret
-      }
-    });
-
-    if (!user) {
-      console.error('❌ User not found:', decoded.userId);
-      return next(new CustomError("User not found", 404));
-    }
-
-    console.log('✅ User found:', user.email);
-
-    // Generate long-term session token
-    const sessionToken = generateSessionToken(user.id);
-
-    // Set HTTP-only cookie
-    setAuthCookie(res, sessionToken);
-
-    // Prepare response
-    const responseData: any = {
-      success: true,
-      user: user, // Pass the full user object including new fields
-      sessionToken: sessionToken,
-      isNewUser: decoded.isNewUser
-    };
-
-    // Add combined secret for new users (for initial key generation/encryption)
-    // IMPORTANT: Ensure PRIVATE_KEY_RECOVERY_SECRET is set in your backend environment variables
-    if (decoded.isNewUser && user.oAuthSignup && user.googleId && process.env.PRIVATE_KEY_RECOVERY_SECRET) {
-      responseData.combinedSecret = user.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
-      console.log('🆕 New OAuth user - added combined secret for initial key generation/encryption');
-    } else if (decoded.isNewUser && user.oAuthSignup && (!user.googleId || !process.env.PRIVATE_KEY_RECOVERY_SECRET)) {
-        console.error("OAuth user missing googleId or PRIVATE_KEY_RECOVERY_SECRET for combined secret generation.");
-        // Consider returning an error or handling this gracefully if it's a critical setup issue.
-    }
-
-
-    console.log('✅ OAuth verification complete for:', user.email);
-    return res.status(200).json(responseData);
-
-  } catch (error) {
-    console.error('🚨 OAuth token verification failed:', error); // Use console.error
-
-    if (error instanceof jwt.JsonWebTokenError) {
-      return next(new CustomError("Invalid OAuth token", 401));
-    }
-    if (error instanceof jwt.TokenExpiredError) {
-      return next(new CustomError("OAuth token expired", 401));
-    }
-
-    return next(new CustomError("OAuth verification failed", 500));
   }
 });
 
@@ -310,8 +180,6 @@ export {
   getUserInfo,
   redirectHandler,
   updateFcmToken,
-  verifyOAuthToken,
   logoutHandler,
-  generateSessionToken,
   completeKeyRecovery // Export the new function
 };
