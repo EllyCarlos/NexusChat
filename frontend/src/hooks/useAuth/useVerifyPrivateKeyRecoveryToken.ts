@@ -47,9 +47,7 @@ export const useVerifyPrivateKeyRecoveryToken = ({
         if (userData) {
           const parsedUser = JSON.parse(userData) as FetchUserInfoResponse;
           setLoggedInUser(parsedUser);
-          console.log('User data loaded from localStorage:', parsedUser);
         } else {
-          console.warn('No user data found in localStorage. User might need to log in again.');
           // If no user in localStorage, the recovery can't proceed.
           // This prevents infinite loops if the user isn't genuinely logged in.
           toast.error("User session not found. Please log in.");
@@ -76,28 +74,18 @@ export const useVerifyPrivateKeyRecoveryToken = ({
       !isPending
     ) {
       verificationStartedRef.current = true;
-      console.log('Triggering verifyPrivateKeyRecoveryTokenAction for user:', loggedInUser.id);
       startTransition(() => {
         verifyPrivateKeyRecoveryTokenAction({
           recoveryToken,
           userId: loggedInUser.id,
         });
       });
-    } else {
-      console.log('Skipping action trigger:', {
-        loggedInUserId: loggedInUser?.id,
-        recoveryTokenPresent: !!recoveryToken,
-        stateDataPresent: !!state?.data,
-        isPending: isPending,
-      });
     }
   }, [enabled, loggedInUser?.id, passwordInput, recoveryToken, verifyPrivateKeyRecoveryTokenAction, state?.data, isPending]);
 
   // Effect 3: Handle the result of the server action
   useEffect(() => {
-    console.log('Server action state changed:', state);
     if (state?.errors?.message) {
-      console.error('Server action error:', state.errors.message);
       toast.error(state.errors.message);
       localStorage.removeItem("loggedInUser");
       localStorage.removeItem("tempPassword");
@@ -107,7 +95,6 @@ export const useVerifyPrivateKeyRecoveryToken = ({
 
     // Only proceed if state.data exists and contains either combinedSecret or privateKey
     if (state?.data && (state.data.combinedSecret || state.data.privateKey)) {
-      console.log('Server action returned key data. Setting isSuccess to true.');
       setIsSuccess(true);
     }
   }, [state, router]);
@@ -116,7 +103,6 @@ export const useVerifyPrivateKeyRecoveryToken = ({
   // This useCallback is correctly defined and then called inside an effect.
   const handleDecryptAndStorePrivateKey = useCallback(async () => {
     if (!loggedInUser || !state?.data) {
-      console.log('handleDecryptAndStorePrivateKey: Missing loggedInUser or state.data');
       return;
     }
 
@@ -125,50 +111,41 @@ export const useVerifyPrivateKeyRecoveryToken = ({
 
     if (combinedSecret) {
       passwordToUse = combinedSecret;
-      console.log('Using combinedSecret as password for decryption.');
     } else if (privateKey) { // privateKey exists means it's encrypted, so passwordInput is needed
       if (passwordInput) {
         passwordToUse = passwordInput;
-        console.log('Using passwordInput for decryption.');
       } else {
         toast.error("Password is required to decrypt your private key.");
-        console.error('Password input missing for private key decryption.');
         router.push("/auth/login"); // Redirect if password is required but not provided
         return;
       }
     } else {
       toast.error("No private key data received from server.");
-      console.error('No privateKey or combinedSecret in state.data');
       router.push("/auth/login");
       return;
     }
 
     if (passwordToUse && privateKey) {
       try {
-        console.log('Attempting to decrypt private key...');
         const privateKeyInJwk = await decryptPrivateKey(
           passwordToUse,
           privateKey
         );
-        console.log('Private key decrypted. Storing in IndexedDB...');
         await storeUserPrivateKeyInIndexedDB({
           privateKey: privateKeyInJwk,
           userId: loggedInUser.id,
         });
-        console.log('Private key stored in IndexedDB successfully.');
 
         // Clear temporary data only AFTER successful storage
         localStorage.removeItem("loggedInUser"); // If you're still relying on this
 
         setIsPrivateKeyRestoredInIndexedDB(true);
-        console.log('setIsPrivateKeyRestoredInIndexedDB set to true.');
       } catch (decryptError) {
         console.error('Error during decryption or IndexedDB storage:', decryptError);
         toast.error("Error recovering private key. Please try again.");
         router.push("/auth/login");
       }
     } else {
-      console.warn('handleDecryptAndStorePrivateKey: Missing password or privateKey for decryption.');
       // This case should ideally not be hit if checks above are robust
       toast.error("Missing credentials for key recovery.");
       router.push("/auth/login");
@@ -179,15 +156,9 @@ export const useVerifyPrivateKeyRecoveryToken = ({
   // Effect 5: Trigger the decryption and storage process
   useEffect(() => {
     if (isSuccess && loggedInUser && (state?.data?.combinedSecret || state?.data?.privateKey)) {
-      console.log('Calling handleDecryptAndStorePrivateKey due to success state and data.');
       handleDecryptAndStorePrivateKey();
-    } else {
-      console.log('Waiting for isSuccess, loggedInUser, or key data to call decryption handler.');
     }
   }, [isSuccess, loggedInUser, state?.data, handleDecryptAndStorePrivateKey]); // Depend on the callback itself
-
-
-  console.log('Current hook return state: isPrivateKeyRestoredInIndexedDB:', isPrivateKeyRestoredInIndexedDB, 'isSuccess:', isSuccess);
 
   return {
     isPrivateKeyRestoredInIndexedDB: isPrivateKeyRestoredInIndexedDB, // isSuccess check done inside the hook now

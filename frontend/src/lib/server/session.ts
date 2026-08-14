@@ -25,21 +25,20 @@ export async function createSession(userId: string) {
 
   // Encrypt the session payload into a JWT
   const sessionToken = await encrypt({ userId, expiresAt });
+  const cookieStore = await cookies();
 
-  // Set the JWT as an HTTP-only, secure cookie
-  (await cookies()).set("session", sessionToken, { // Set the cookie name
-    httpOnly: true, // Prevents client-side JavaScript from accessing the cookie
-    secure: process.env.NODE_ENV === 'production', // Only send cookie over HTTPS in production
-    expires: expiresAt, // Set the cookie's expiration date
-    sameSite: 'none', // Protects against CSRF attacks (consider 'strict' for higher security)
-    path: '/', // The cookie is accessible from all paths
-    // domain: '.yourdomain.com', // Uncomment and replace if your frontend and backend are on different subdomains of the same root domain
-  });
-
-  // You might also want to set a simple loggedInUserId cookie (not httpOnly) for client-side use if needed
-  (await cookies()).set("loggedInUserId", userId, {
+  // Set the non-authentication cookie first so the session cookie is the final operation.
+  cookieStore.set("loggedInUserId", userId, {
     expires: expiresAt,
     secure: process.env.NODE_ENV === 'production',
+    sameSite: 'none',
+    path: '/',
+  });
+
+  cookieStore.set("session", sessionToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    expires: expiresAt,
     sameSite: 'none',
     path: '/',
   });
@@ -59,10 +58,16 @@ export async function deleteSession() {
  * @returns The signed JWT string.
  */
 export async function encrypt(payload: SessionPayload): Promise<string> {
+  const expiresAt = new Date(payload.expiresAt);
+
+  if (Number.isNaN(expiresAt.getTime())) {
+    throw new Error("Token expiry is invalid.");
+  }
+
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" }) // Algorithm used for signing
     .setIssuedAt() // Set the issuance time
-    .setExpirationTime("30d") // Set JWT expiration time (matches cookie expiry)
+    .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
     .sign(encodedKey); // Sign the JWT with the secret key
 }
 

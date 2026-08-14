@@ -10,6 +10,21 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import jwt from 'jsonwebtoken'; // Keep this for verifyOAuthToken
 
+const PRIVATE_KEY_RECOVERY_TOKEN_VALIDITY_MS = 60 * 60 * 1000;
+
+async function issuePrivateKeyRecoveryToken(userId: string) {
+  const expiresAt = new Date(Date.now() + PRIVATE_KEY_RECOVERY_TOKEN_VALIDITY_MS);
+  const recoveryToken = await encrypt({ userId, expiresAt });
+  const hashedToken = await bcrypt.hash(recoveryToken, 10);
+
+  await prisma.privateKeyRecoveryToken.deleteMany({ where: { userId } });
+  await prisma.privateKeyRecoveryToken.create({
+    data: { userId, hashedToken, expiresAt }
+  });
+
+  return recoveryToken;
+}
+
 // --- LOGIN ---
 export async function login(prevState: any, formData: FormData) {
   const email = formData.get("email") as string;
@@ -157,42 +172,47 @@ export async function logout() {
 // --- SEND PRIVATE KEY RECOVERY EMAIL ---
 export async function sendPrivateKeyRecoveryEmail(prevState: any, user: Pick<FetchUserInfoResponse, "id" | "email" | "username">) {
   try {
-    const { email, id, username } = user;
+    const { id } = user;
 
-    if (!email || !id || !username) {
+    if (!id) {
       return {
         errors: { message: "User information is incomplete." },
         success: { message: null }
       };
     }
 
-    // Use a short-lived token for email verification, not session token
-    // This token is for the URL, and its expiry should be managed carefully.
-    const privateKeyRecoveryToken = await encrypt({
-      userId: id,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60) // Token valid for 1 hour for URL
+    const sessionToken = (await cookies()).get("session")?.value;
+    const session = await decrypt(sessionToken);
+    const sessionExpiresAt = new Date(session.expiresAt);
+
+    if (
+      !session.userId ||
+      session.userId !== id ||
+      Number.isNaN(sessionExpiresAt.getTime()) ||
+      sessionExpiresAt <= new Date()
+    ) {
+      return {
+        errors: { message: "User session not found. Please log in again." },
+        success: { message: null }
+      };
+    }
+
+    const recoveryUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, email: true, username: true, oAuthSignup: true }
     });
 
-    // Hash the token to store in the database for comparison
-    const privateKeyRecoveryHashedToken = await bcrypt.hash(privateKeyRecoveryToken, 10);
+    if (!recoveryUser?.oAuthSignup || !recoveryUser.email || !recoveryUser.username) {
+      return {
+        errors: { message: "User information is incomplete." },
+        success: { message: null }
+      };
+    }
 
-    // Clear any old tokens for this user before creating a new one
-    await prisma.privateKeyRecoveryToken.deleteMany({
-      where: { userId: id }
-    });
-
-    // Store the hashed token with a longer expiry, as this is the actual DB record expiry
-    await prisma.privateKeyRecoveryToken.create({
-      data: {
-        userId: id,
-        hashedToken: privateKeyRecoveryHashedToken,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7) // Database record valid for 7 days
-      }
-    });
-
+    const privateKeyRecoveryToken = await issuePrivateKeyRecoveryToken(recoveryUser.id);
     const privateKeyRecoveryUrl = `${process.env.NEXT_PUBLIC_CLIENT_URL}/auth/private-key-recovery-token-verification?token=${privateKeyRecoveryToken}`;
 
-    await sendEmail({ emailType: "privateKeyRecovery", to: email, username, verificationUrl: privateKeyRecoveryUrl });
+    await sendEmail({ emailType: "privateKeyRecovery", to: recoveryUser.email, username: recoveryUser.username, verificationUrl: privateKeyRecoveryUrl });
 
     return {
       errors: {
@@ -225,50 +245,11 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
       };
     }
 
-    // 1. Get the stored hashed token from the database
-    const recoveryTokenExists = await prisma.privateKeyRecoveryToken.findFirst({
-      where: { userId: data.userId }
-    });
-
-    if (!recoveryTokenExists) {
-      console.warn(`No recovery token found for userId: ${data.userId}`);
-      return {
-        errors: {
-          message: 'Verification link is invalid or already used.'
-        },
-        data: null
-      };
-    }
-
-    // 2. Check if the stored token has expired
-    if (recoveryTokenExists.expiresAt < new Date()) {
-      // Clean up expired token
-      await prisma.privateKeyRecoveryToken.delete({ where: { id: recoveryTokenExists.id } });
-      console.warn(`Recovery token expired for userId: ${data.userId}`);
-      return {
-        errors: {
-          message: 'Verification link has expired. Please request a new one.'
-        },
-        data: null
-      };
-    }
-
-    // 3. Compare the provided token with the hashed token in the database
-    if (!(await bcrypt.compare(data.recoveryToken, recoveryTokenExists.hashedToken))) {
-      console.warn(`Mismatched recovery token hash for userId: ${data.userId}`);
-      return {
-        errors: {
-          message: 'Verification link is invalid. Please ensure the full link is used.'
-        },
-        data: null
-      };
-    }
-
-    // 4. Decrypt the provided token to check its payload (jose)
     const decodedPayload = await decrypt(data.recoveryToken);
+    const tokenUserId = decodedPayload.userId;
+    const tokenExpiresAt = new Date(decodedPayload.expiresAt);
 
-    if (!decodedPayload || decodedPayload.userId !== data.userId || new Date(decodedPayload.expiresAt) < new Date()) {
-      console.warn(`Decrypted payload mismatch or expired. Provided userId: ${data.userId}, Decoded userId: ${decodedPayload?.userId}, Expired: ${new Date(decodedPayload?.expiresAt || 0) < new Date()}`);
+    if (!tokenUserId || Number.isNaN(tokenExpiresAt.getTime()) || tokenExpiresAt <= new Date()) {
       return {
         errors: {
           message: 'Verification link is invalid or expired. Please request a new one.'
@@ -277,14 +258,53 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
       };
     }
 
-    // 5. Fetch the user and their private key data
+    if (tokenUserId !== data.userId) {
+      return {
+        errors: {
+          message: 'Verification link is invalid. Please ensure the full link is used.'
+        },
+        data: null
+      };
+    }
+
+    const recoveryTokenExists = await prisma.privateKeyRecoveryToken.findFirst({
+      where: { userId: tokenUserId }
+    });
+
+    if (!recoveryTokenExists) {
+      return {
+        errors: {
+          message: 'Verification link is invalid or already used.'
+        },
+        data: null
+      };
+    }
+
+    if (recoveryTokenExists.expiresAt <= new Date()) {
+      await prisma.privateKeyRecoveryToken.delete({ where: { id: recoveryTokenExists.id } });
+      return {
+        errors: {
+          message: 'Verification link has expired. Please request a new one.'
+        },
+        data: null
+      };
+    }
+
+    if (!(await bcrypt.compare(data.recoveryToken, recoveryTokenExists.hashedToken))) {
+      return {
+        errors: {
+          message: 'Verification link is invalid. Please ensure the full link is used.'
+        },
+        data: null
+      };
+    }
+
     const user = await prisma.user.findUnique({
-      where: { id: data.userId },
+      where: { id: tokenUserId },
       select: { id: true, privateKey: true, oAuthSignup: true, googleId: true }
     });
 
     if (!user) {
-      console.warn(`User not found during private key recovery verification for userId: ${data.userId}`);
       return {
         errors: {
           message: 'User not found. Verification link is not valid.'
@@ -293,19 +313,11 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
       };
     }
 
-    // Create a new session for the user upon successful token verification
-    // This authenticates the user for subsequent actions on the recovery page
-    await createSession(user.id);
-
-    // Prepare payload based on signup type
     const payload: { privateKey?: string; combinedSecret?: string } = {};
 
     if (user.privateKey) {
       payload.privateKey = user.privateKey;
     } else {
-      console.warn(`User ${user.id} has no privateKey. This should not happen for a recovery flow for non-OAuth users.`);
-      // If a user has no private key, what are they recovering? This might indicate an issue.
-      // Consider throwing an error or returning a specific message.
       return {
         errors: {
           message: 'No private key found for this user account.'
@@ -314,23 +326,19 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
       };
     }
 
-
-    // If user signed up with OAuth, their key is encrypted with a derived secret
     if (user.oAuthSignup && user.googleId && process.env.PRIVATE_KEY_RECOVERY_SECRET) {
       payload.combinedSecret = user.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
     } else if (user.oAuthSignup && (!user.googleId || !process.env.PRIVATE_KEY_RECOVERY_SECRET)) {
-        console.error("OAuth user missing googleId or PRIVATE_KEY_RECOVERY_SECRET");
-        return {
-            errors: {
-                message: "OAuth user configuration error for private key recovery."
-            },
-            data: null
-        };
+      return {
+        errors: {
+          message: "OAuth user configuration error for private key recovery."
+        },
+        data: null
+      };
     }
 
-    // Delete the database token record after successful use to prevent replay attacks
     await prisma.privateKeyRecoveryToken.delete({ where: { id: recoveryTokenExists.id } });
-    console.log(`Successfully verified recovery token and deleted record for userId: ${data.userId}`);
+    await createSession(user.id);
 
     return {
       errors: {
@@ -400,25 +408,7 @@ export async function verifyPassword(prevState: any, data: { userId: string, pas
       };
     }
 
-    // If password is correct, generate and send a private key recovery email
-    // This is essentially triggering the same flow as `sendPrivateKeyRecoveryEmail`
-    const privateKeyRecoveryToken = await encrypt({
-      userId,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60) // Token valid for 1 hour for URL
-    });
-    const privateKeyRecoveryHashedToken = await bcrypt.hash(privateKeyRecoveryToken, 10);
-
-    await prisma.privateKeyRecoveryToken.deleteMany({
-      where: { userId }
-    });
-    await prisma.privateKeyRecoveryToken.create({
-      data: {
-        userId,
-        hashedToken: privateKeyRecoveryHashedToken,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7) // Database record valid for 7 days
-      }
-    });
-
+    const privateKeyRecoveryToken = await issuePrivateKeyRecoveryToken(userId);
     const privateKeyRecoveryUrl = `${process.env.NEXT_PUBLIC_CLIENT_URL}/auth/private-key-recovery-token-verification?token=${privateKeyRecoveryToken}`;
     await sendEmail({ emailType: "privateKeyRecovery", to: user.email, username: user.username, verificationUrl: privateKeyRecoveryUrl });
 
