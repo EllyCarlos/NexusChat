@@ -51,40 +51,53 @@ const initializeIndexDb = () => {
 };
 
 // Function to store a user's private key in IndexedDB
-const storeUserPrivateKeyInIndexedDB = async ({userId,privateKey}:{userId: string, privateKey: JsonWebKey}) => {
-  if(typeof window === 'undefined') return;
+const storeUserPrivateKeyInIndexedDB = ({userId,privateKey}:{userId: string, privateKey: JsonWebKey}): Promise<void> => {
+  if(typeof window === 'undefined') return Promise.resolve();
 
-  // Open (or create) the IndexedDB database
-  const request = indexedDB.open(DB_NAME, VERSION);
+  return new Promise((resolve, reject) => {
+    // Open (or create) the IndexedDB database
+    const request = indexedDB.open(DB_NAME, VERSION);
 
-  // Success callback for when the database is successfully opened
-  request.onsuccess = function () {
-    const db = request.result; // Get the reference to the opened database
-
-    // Start a transaction on the 'privateKeys' object store with 'readwrite' access
-    const transaction = db.transaction(OBJECT_STORE.privateKeys, "readwrite");
-
-    // Get the object store (table) for private keys within the transaction
-    const store = transaction.objectStore(OBJECT_STORE.privateKeys);
-
-    // Prepare the data to be inserted: an object with 'userId' and 'privateKey'
-    const putRequest = store.put({ userId, privateKey });
-
-    // Success callback when the data is successfully inserted (or updated) in the store
-    putRequest.onsuccess = function () {
-      console.log("Private key stored successfully");
+    request.onerror = function () {
+      reject(new Error("Unable to open private-key storage."));
     };
 
-    // Error callback if there is an issue inserting the data
-    putRequest.onerror = function () {
-      console.error("Error adding private key");
-    };
+    // Success callback for when the database is successfully opened
+    request.onsuccess = function () {
+      const db = request.result; // Get the reference to the opened database
+      let transaction: IDBTransaction;
 
-    // This callback runs when the transaction has been completed (either successfully or not)
-    transaction.oncomplete = function () {
-      db.close(); // Close the database connection when the transaction is done
+      try {
+        // Start a transaction on the 'privateKeys' object store with 'readwrite' access
+        transaction = db.transaction(OBJECT_STORE.privateKeys, "readwrite");
+
+        // Get the object store (table) for private keys within the transaction
+        const store = transaction.objectStore(OBJECT_STORE.privateKeys);
+
+        // Prepare the data to be inserted: an object with 'userId' and 'privateKey'
+        store.put({ userId, privateKey });
+      } catch {
+        db.close();
+        reject(new Error("Unable to store private key."));
+        return;
+      }
+
+      transaction.oncomplete = function () {
+        db.close();
+        resolve();
+      };
+
+      transaction.onerror = function () {
+        db.close();
+        reject(new Error("Unable to store private key."));
+      };
+
+      transaction.onabort = function () {
+        db.close();
+        reject(new Error("Unable to store private key."));
+      };
     };
-  };
+  });
 };
 
 // Function to retrieve a user's private key from IndexedDB by userId

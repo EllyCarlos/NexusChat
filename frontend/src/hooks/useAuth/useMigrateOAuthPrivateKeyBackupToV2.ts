@@ -26,11 +26,13 @@ export type OAuthPrivateKeyMigrationStatus =
 type PropTypes = {
   userId: string | null | undefined;
   migration: OAuthV2MigrationMaterial | null | undefined;
+  privateKey?: JsonWebKey;
 };
 
 export const useMigrateOAuthPrivateKeyBackupToV2 = ({
   userId,
   migration,
+  privateKey: suppliedPrivateKey,
 }: PropTypes) => {
   const [status, setStatus] = useState<OAuthPrivateKeyMigrationStatus>("idle");
   const [state, migrateAction] = useActionState(
@@ -49,7 +51,9 @@ export const useMigrateOAuthPrivateKeyBackupToV2 = ({
 
     void (async () => {
       try {
-        const storedPrivateKey = await getUserPrivateKeyFromIndexedDB({ userId });
+        const storedPrivateKey =
+          suppliedPrivateKey ??
+          (await getUserPrivateKeyFromIndexedDB({ userId }));
         if (!storedPrivateKey) {
           setStatus("skipped");
           return;
@@ -84,7 +88,7 @@ export const useMigrateOAuthPrivateKeyBackupToV2 = ({
         setStatus("failed");
       }
     })();
-  }, [migration, migrateAction, userId]);
+  }, [migration, migrateAction, suppliedPrivateKey, userId]);
 
   useEffect(() => {
     if (state?.errors?.message) {

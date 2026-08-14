@@ -46,6 +46,24 @@ const parseStoredNexusChatPublicKey = async (serializedPublicKey: string) => {
   return validateNexusChatPublicJsonWebKey(parsedPublicKey);
 };
 
+const createOAuthV2MigrationMaterial = async ({
+  userId,
+  serializedPublicKey,
+}: {
+  userId: string;
+  serializedPublicKey: string;
+}): Promise<OAuthV2MigrationMaterial> => {
+  const publicKey = await parseStoredNexusChatPublicKey(serializedPublicKey);
+  const recoverySecret = generatePerUserRecoverySecret();
+
+  return {
+    version: 2,
+    recoverySecret,
+    recoveryKeyWrap: wrapRecoverySecret({ userId, recoverySecret }),
+    publicKey,
+  };
+};
+
 type OAuthTokenPayload = {
   userId: string;
   isNewUser: boolean;
@@ -748,17 +766,10 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       try {
         const currentBackup = parsePrivateKeyBackup(user.privateKey);
         if (currentBackup.format === "legacy-v1") {
-          const publicKey = await parseStoredNexusChatPublicKey(user.publicKey);
-          const recoverySecret = generatePerUserRecoverySecret();
-          oauthMigration = {
-            version: 2,
-            recoverySecret,
-            recoveryKeyWrap: wrapRecoverySecret({
-              userId: user.id,
-              recoverySecret
-            }),
-            publicKey
-          };
+          oauthMigration = await createOAuthV2MigrationMaterial({
+            userId: user.id,
+            serializedPublicKey: user.publicKey,
+          });
         }
       } catch {
         oauthMigrationError = true;
@@ -1046,6 +1057,61 @@ export async function storeNewOAuthV2UserKeys(
     return {
       errors: { message: "Key provisioning failed." },
       success: { message: null },
+      data: null
+    };
+  }
+}
+
+// --- PREPARE POST-RECOVERY OAUTH LEGACY BACKUP MIGRATION ---
+export async function prepareOAuthPrivateKeyBackupV2Migration(
+  _prevState: unknown
+) {
+  try {
+    const sessionToken = (await cookies()).get("session")?.value;
+    const sessionUserId = await verifySession(sessionToken);
+    if (!sessionUserId) {
+      return {
+        errors: { message: "Private-key backup migration was not completed." },
+        data: null
+      };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: {
+        oAuthSignup: true,
+        privateKey: true,
+        publicKey: true
+      }
+    });
+    if (!user?.oAuthSignup || !user.privateKey || !user.publicKey) {
+      return {
+        errors: { message: "Private-key backup migration was not completed." },
+        data: null
+      };
+    }
+
+    const currentBackup = parsePrivateKeyBackup(user.privateKey);
+    if (currentBackup.format !== "legacy-v1") {
+      return {
+        errors: { message: null },
+        data: null
+      };
+    }
+
+    const migration = await createOAuthV2MigrationMaterial({
+      userId: sessionUserId,
+      serializedPublicKey: user.publicKey,
+    });
+
+    return {
+      errors: { message: null },
+      data: migration
+    };
+  } catch {
+    console.error("OAuth private-key backup migration preparation failed.");
+    return {
+      errors: { message: "Private-key backup migration was not completed." },
       data: null
     };
   }
