@@ -470,6 +470,16 @@ const isNexusChatPrivateJsonWebKey = (
   isP384PrivateKeyComponent(value.y) &&
   isP384PrivateKeyComponent(value.d);
 
+const isNexusChatPublicJsonWebKey = (
+  value: unknown
+): value is JsonWebKey =>
+  isRecord(value) &&
+  value.kty === "EC" &&
+  value.crv === "P-384" &&
+  isP384PrivateKeyComponent(value.x) &&
+  isP384PrivateKeyComponent(value.y) &&
+  !Object.prototype.hasOwnProperty.call(value, "d");
+
 const validateNexusChatPrivateJsonWebKey = async (
   value: unknown,
   errorCode: PrivateKeyEnvelopeErrorCode,
@@ -489,6 +499,34 @@ const validateNexusChatPrivateJsonWebKey = async (
     );
   } catch {
     throw new PrivateKeyEnvelopeError(errorCode, errorMessage);
+  }
+
+  return value;
+};
+
+export const validateNexusChatPublicJsonWebKey = async (
+  value: unknown
+): Promise<JsonWebKey> => {
+  if (!isNexusChatPublicJsonWebKey(value)) {
+    throw new PrivateKeyEnvelopeError(
+      "INVALID_BACKUP",
+      "A valid NexusChat P-384 public JWK is required."
+    );
+  }
+
+  try {
+    await getWebCrypto().subtle.importKey(
+      "jwk",
+      value,
+      { name: "ECDH", namedCurve: "P-384" },
+      false,
+      []
+    );
+  } catch {
+    throw new PrivateKeyEnvelopeError(
+      "INVALID_BACKUP",
+      "A valid NexusChat P-384 public JWK is required."
+    );
   }
 
   return value;

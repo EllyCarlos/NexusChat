@@ -3,9 +3,9 @@ import { useDispatch } from 'react-redux';
 import { setAuthToken } from '@/lib/client/slices/authSlice'; // Adjust path if necessary
 import { verifyOAuthToken } from '@/actions/auth.actions'; // Ensure this action points to your backend verification
 import { useConvertPrivateAndPublicKeyInJwkFormat } from '@/hooks/useAuth/useConvertPrivateAndPublicKeyInJwkFormat';
-import { useEncryptPrivateKeyWithUserPassword } from '@/hooks/useAuth/useEncryptPrivateKeyWithUserPassword';
+import { useEncryptPrivateKeyV2 } from '@/hooks/useAuth/useEncryptPrivateKeyV2';
 import { useGenerateKeyPair } from '@/hooks/useAuth/useGenerateKeyPair';
-import { useStoreUserKeysInDatabase } from '@/hooks/useAuth/useStoreUserKeysInDatabase';
+import { useStoreNewOAuthV2UserKeys } from '@/hooks/useAuth/useStoreNewOAuthV2UserKeys';
 import { useStoreUserPrivateKeyInIndexedDB } from '@/hooks/useAuth/useStoreUserPrivateKeyInIndexedDB';
 import { useUpdateLoggedInUserPublicKeyInState } from '@/hooks/useAuth/useUpdateLoggedInUserPublicKeyInState';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -14,6 +14,7 @@ import {
   Suspense,
   useActionState,
   useEffect,
+  useRef,
   useState
 } from 'react';
 import toast from 'react-hot-toast';
@@ -23,13 +24,15 @@ function OAuthRedirectPageContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
   const [isOAuthNewUser, setOAuthNewUser] = useState<boolean>(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false); // Flag to prevent re-triggering
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const oauthVerificationStartedRef = useRef(false);
   const router = useRouter();
   const dispatch = useDispatch();
 
   // Step 1: Trigger token verification
   useEffect(() => {
-    if (token && !isProcessing) { // Ensure token exists and we're not already processing
+    if (token && !oauthVerificationStartedRef.current) {
+      oauthVerificationStartedRef.current = true;
       console.log('Starting OAuth token verification');
       setIsProcessing(true); // Set processing to true immediately
 
@@ -37,7 +40,7 @@ function OAuthRedirectPageContent() {
         verifyOAuthTokenAction(token);
       });
     }
-  }, [token, verifyOAuthTokenAction, isProcessing]); // Depend on isProcessing to prevent re-trigger on state change
+  }, [token, verifyOAuthTokenAction]);
 
   // Step 2: Handle response and store token
   useEffect(() => {
@@ -45,7 +48,7 @@ function OAuthRedirectPageContent() {
       console.log('OAuth verification state received:', {
         hasError: !!state.errors?.message,
         hasUser: !!state?.data?.user,
-        hasCombinedSecret: !!state?.data?.combinedSecret,
+        hasV2Setup: !!state?.data?.oauthSetup,
         hasSessionToken: !!state?.data?.sessionToken // More concise check
       });
 
@@ -71,8 +74,7 @@ function OAuthRedirectPageContent() {
         const newUrl = window.location.pathname;
         window.history.replaceState({}, '', newUrl);
 
-        // Check if this is a new user (has combinedSecret)
-        if (state.data.combinedSecret) {
+        if (state.data.oauthSetup) {
           toast.success('Welcome! Setting up your account...');
           setOAuthNewUser(true);
         } else {
@@ -86,13 +88,12 @@ function OAuthRedirectPageContent() {
     }
   }, [state, router, dispatch]);
 
-  // Step 3: Key generation for new users (your existing logic is perfect!)
-  // password here refers to the combinedSecret for initial key derivation
-  const password = state?.data?.combinedSecret;
+  // Step 3: Generate and provision keys only when the server issues V2 setup material.
+  const oauthSetup = state?.data?.oauthSetup;
   const userId = state?.data?.user?.id;
 
-  const { privateKey, publicKey } = useGenerateKeyPair({ 
-    user: isOAuthNewUser && !!password 
+  const { privateKey, publicKey } = useGenerateKeyPair({
+    user: isOAuthNewUser && !!oauthSetup
   });
 
   const { privateKeyJWK, publicKeyJWK } = useConvertPrivateAndPublicKeyInJwkFormat({ 
@@ -100,25 +101,37 @@ function OAuthRedirectPageContent() {
     publicKey 
   });
 
-  const { encryptedPrivateKey } = useEncryptPrivateKeyWithUserPassword({ 
-    password, 
-    privateKeyJWK 
+  const { encryptedPrivateKey, encryptionError } = useEncryptPrivateKeyV2({
+    privateKeyJWK,
+    recoverySecret: oauthSetup?.recoverySecret,
+    recoveryKeyWrap: oauthSetup?.recoveryKeyWrap,
   });
 
-  const { publicKeyReturnedFromServerAfterBeingStored } = useStoreUserKeysInDatabase({
+  const {
+    publicKeyReturnedFromServerAfterBeingStored,
+    provisioningError,
+    provisioningSucceeded,
+  } = useStoreNewOAuthV2UserKeys({
     encryptedPrivateKey,
     publicKeyJWK,
-    loggedInUserId: userId,
   });
 
   useStoreUserPrivateKeyInIndexedDB({
-    privateKey: privateKeyJWK,
+    privateKey: provisioningSucceeded ? privateKeyJWK : null,
     userId: userId,
   });
 
   useUpdateLoggedInUserPublicKeyInState({
     publicKey: publicKeyReturnedFromServerAfterBeingStored,
   });
+
+  useEffect(() => {
+    const setupError = encryptionError || provisioningError;
+    if (setupError) {
+      toast.error(setupError);
+      router.push('/auth/login');
+    }
+  }, [encryptionError, provisioningError, router]);
 
   // Handle completion of key setup for new users
   useEffect(() => {

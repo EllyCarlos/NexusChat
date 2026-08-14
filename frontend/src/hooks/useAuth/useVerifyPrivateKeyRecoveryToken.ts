@@ -5,6 +5,7 @@ import { startTransition, useCallback, useEffect, useRef, useState } from "react
 import { useActionState } from "react";
 import toast from "react-hot-toast";
 import { decryptPrivateKey } from "@/lib/client/encryption";
+import { decryptPrivateKeyV2 } from "@/lib/client/privateKeyEnvelope";
 
 type PropTypes = {
   recoveryToken: string | null;
@@ -59,8 +60,7 @@ export const useVerifyPrivateKeyRecoveryToken = ({
       return; // Exit to prevent further processing
     }
 
-    // Only proceed if state.data exists and contains either combinedSecret or privateKey
-    if (state?.data && (state.data.combinedSecret || state.data.privateKey)) {
+    if (state?.data) {
       setIsSuccess(true);
     }
   }, [state, router]);
@@ -72,48 +72,42 @@ export const useVerifyPrivateKeyRecoveryToken = ({
       return;
     }
 
-    const { combinedSecret, privateKey, userId } = state.data;
-    let passwordToUse: string | null = null;
+    const { privateKey, recoveryMode, userId } = state.data;
 
-    if (combinedSecret) {
-      passwordToUse = combinedSecret;
-    } else if (privateKey) { // privateKey exists means it's encrypted, so passwordInput is needed
-      if (passwordInput) {
-        passwordToUse = passwordInput;
-      } else {
-        toast.error("Password is required to decrypt your private key.");
-        router.push("/auth/login"); // Redirect if password is required but not provided
-        return;
-      }
-    } else {
-      toast.error("No private key data received from server.");
-      router.push("/auth/login");
-      return;
-    }
+    try {
+      let privateKeyInJwk: JsonWebKey | null | undefined;
 
-    if (passwordToUse && privateKey) {
-      try {
-        const privateKeyInJwk = await decryptPrivateKey(
-          passwordToUse,
-          privateKey
-        );
-        await storeUserPrivateKeyInIndexedDB({
-          privateKey: privateKeyInJwk,
-          userId,
+      if (recoveryMode === "oauth-v2") {
+        privateKeyInJwk = await decryptPrivateKeyV2({
+          envelope: privateKey,
+          recoverySecret: state.data.recoverySecret,
         });
-
-        // Clear legacy recovery data only AFTER successful storage.
-        localStorage.removeItem("loggedInUser");
-
-        setIsPrivateKeyRestoredInIndexedDB(true);
-      } catch (decryptError) {
-        console.error('Error during decryption or IndexedDB storage:', decryptError);
-        toast.error("Error recovering private key. Please try again.");
-        router.push("/auth/login");
+      } else {
+        const passwordToUse =
+          recoveryMode === "oauth-v1"
+            ? state.data.combinedSecret
+            : passwordInput;
+        if (!passwordToUse) {
+          throw new Error("Missing recovery credential.");
+        }
+        privateKeyInJwk = await decryptPrivateKey(passwordToUse, privateKey);
       }
-    } else {
-      // This case should ideally not be hit if checks above are robust
-      toast.error("Missing credentials for key recovery.");
+
+      if (!privateKeyInJwk) {
+        throw new Error("Private-key decryption failed.");
+      }
+
+      await storeUserPrivateKeyInIndexedDB({
+        privateKey: privateKeyInJwk,
+        userId,
+      });
+
+      // Clear legacy recovery data only AFTER successful storage.
+      localStorage.removeItem("loggedInUser");
+      setIsPrivateKeyRestoredInIndexedDB(true);
+    } catch {
+      console.error("Private-key recovery failed.");
+      toast.error("Error recovering private key. Please try again.");
       router.push("/auth/login");
     }
   }, [state?.data, passwordInput, router]);
@@ -121,7 +115,7 @@ export const useVerifyPrivateKeyRecoveryToken = ({
 
   // Effect 4: Trigger the decryption and storage process
   useEffect(() => {
-    if (isSuccess && (state?.data?.combinedSecret || state?.data?.privateKey)) {
+    if (isSuccess && state?.data) {
       handleDecryptAndStorePrivateKey();
     }
   }, [isSuccess, state?.data, handleDecryptAndStorePrivateKey]); // Depend on the callback itself

@@ -2,15 +2,68 @@
 
 import { DEFAULT_AVATAR } from "@/constants";
 import { sendEmail } from "@/lib/server/email/SendEmail";
+import {
+  parsePrivateKeyBackup,
+  parsePrivateKeyEnvelopeV2,
+  validateNexusChatPublicJsonWebKey,
+  type RecoveryKeyWrapV2,
+} from "@/lib/client/privateKeyEnvelope";
 import { generateOtp } from "@/lib/server/helpers";
+import {
+  generatePerUserRecoverySecret,
+  PrivateKeyRecoveryKeyWrapError,
+  unwrapRecoverySecret,
+  wrapRecoverySecret,
+} from "@/lib/server/privateKeyRecoveryKeyWrap";
 import { prisma } from "@/lib/server/prisma";
 import { FetchUserInfoResponse } from "@/lib/server/services/userService";
-import { createSession, decrypt, deleteSession, encrypt, SessionPayload } from "@/lib/server/session"; // Make sure SessionPayload is exported from session.ts
+import { createSession, decrypt, deleteSession, encrypt, SessionPayload, verifySession } from "@/lib/server/session"; // Make sure SessionPayload is exported from session.ts
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import jwt from 'jsonwebtoken'; // Keep this for verifyOAuthToken
 
 const PRIVATE_KEY_RECOVERY_TOKEN_VALIDITY_MS = 60 * 60 * 1000;
+
+type OAuthV2SetupMaterial = {
+  version: 2;
+  recoverySecret: string;
+  recoveryKeyWrap: RecoveryKeyWrapV2;
+};
+
+type OAuthTokenPayload = {
+  userId: string;
+  isNewUser: boolean;
+  type: "oauth-temp";
+};
+
+export type PrivateKeyRecoveryData =
+  | {
+      userId: string;
+      privateKey: string;
+      recoveryMode: "manual-v1";
+    }
+  | {
+      userId: string;
+      privateKey: string;
+      recoveryMode: "oauth-v1";
+      combinedSecret: string;
+    }
+  | {
+      userId: string;
+      privateKey: string;
+      recoveryMode: "oauth-v2";
+      recoverySecret: string;
+    };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isOAuthTokenPayload = (value: unknown): value is OAuthTokenPayload =>
+  isRecord(value) &&
+  typeof value.userId === "string" &&
+  value.userId.length > 0 &&
+  typeof value.isNewUser === "boolean" &&
+  value.type === "oauth-temp";
 
 async function issuePrivateKeyRecoveryToken(userId: string) {
   const expiresAt = new Date(Date.now() + PRIVATE_KEY_RECOVERY_TOKEN_VALIDITY_MS);
@@ -236,7 +289,7 @@ export async function sendPrivateKeyRecoveryEmail(prevState: any, user: Pick<Fet
 }
 
 // --- VERIFY PRIVATE KEY RECOVERY TOKEN ---
-export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { recoveryToken: string }) {
+export async function verifyPrivateKeyRecoveryToken(_prevState: unknown, data: { recoveryToken: string }) {
   try {
     if (!data.recoveryToken) {
       return {
@@ -313,19 +366,44 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
       };
     }
 
-    const payload: { userId: string; privateKey: string; combinedSecret?: string } = {
-      userId: user.id,
-      privateKey: user.privateKey
-    };
+    const parsedBackup = parsePrivateKeyBackup(user.privateKey);
+    let payload: PrivateKeyRecoveryData;
 
-    if (user.oAuthSignup && user.googleId && process.env.PRIVATE_KEY_RECOVERY_SECRET) {
-      payload.combinedSecret = user.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
-    } else if (user.oAuthSignup && (!user.googleId || !process.env.PRIVATE_KEY_RECOVERY_SECRET)) {
-      return {
-        errors: {
-          message: "OAuth user configuration error for private key recovery."
-        },
-        data: null
+    if (!user.oAuthSignup) {
+      if (parsedBackup.format !== "legacy-v1") {
+        return {
+          errors: { message: "Private-key recovery failed." },
+          data: null
+        };
+      }
+      payload = {
+        userId: user.id,
+        privateKey: user.privateKey,
+        recoveryMode: "manual-v1"
+      };
+    } else if (parsedBackup.format === "legacy-v1") {
+      if (!user.googleId || !process.env.PRIVATE_KEY_RECOVERY_SECRET) {
+        return {
+          errors: { message: "Private-key recovery failed." },
+          data: null
+        };
+      }
+      payload = {
+        userId: user.id,
+        privateKey: user.privateKey,
+        recoveryMode: "oauth-v1",
+        combinedSecret: user.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET
+      };
+    } else {
+      const recoverySecret = unwrapRecoverySecret({
+        userId: tokenUserId,
+        recoveryKeyWrap: parsedBackup.envelope.recoveryKeyWrap
+      });
+      payload = {
+        userId: user.id,
+        privateKey: user.privateKey,
+        recoveryMode: "oauth-v2",
+        recoverySecret
       };
     }
 
@@ -339,8 +417,8 @@ export async function verifyPrivateKeyRecoveryToken(prevState: any, data: { reco
       data: payload
     };
 
-  } catch (error) {
-    console.error('Error verifying private key recovery token:', error);
+  } catch {
+    console.error('Private-key recovery token verification failed.');
     // Be careful with error messages to avoid leaking information
     return {
       errors: {
@@ -513,7 +591,7 @@ export async function forgotPassword(prevState: any, email: string) {
 
 // --- VERIFY OAUTH TOKEN ---
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function verifyOAuthToken(prevState: any, token: string) {
+export async function verifyOAuthToken(_prevState: unknown, token: string) {
   try {
     if (!token) {
       return {
@@ -536,7 +614,16 @@ export async function verifyOAuthToken(prevState: any, token: string) {
       };
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET) as any;
+    const decoded: unknown = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (!isOAuthTokenPayload(decoded)) {
+      return {
+        errors: {
+          message: "Invalid token structure"
+        },
+        data: null
+      };
+    }
 
     console.log('🔍 Decoded token structure:', {
       keys: Object.keys(decoded),
@@ -587,7 +674,7 @@ export async function verifyOAuthToken(prevState: any, token: string) {
         verificationBadge: true,
         fcmToken: true,
         oAuthSignup: true,
-        googleId: true, // Select googleId if used for combinedSecret
+        privateKey: true,
       }
     });
 
@@ -603,22 +690,53 @@ export async function verifyOAuthToken(prevState: any, token: string) {
 
     console.log('✅ User found in database:', user.id);
 
+    if (decoded.isNewUser && !user.oAuthSignup) {
+      return {
+        errors: { message: "OAuth account setup failed." },
+        data: null
+      };
+    }
+
+    if (
+      user.oAuthSignup &&
+      (user.privateKey === null) !== (user.publicKey === null)
+    ) {
+      return {
+        errors: { message: "OAuth account setup failed." },
+        data: null
+      };
+    }
+
+    let oauthSetup: OAuthV2SetupMaterial | null = null;
+    if (
+      user.oAuthSignup &&
+      user.privateKey === null &&
+      user.publicKey === null
+    ) {
+      const recoverySecret = generatePerUserRecoverySecret();
+      oauthSetup = {
+        version: 2,
+        recoverySecret,
+        recoveryKeyWrap: wrapRecoverySecret({
+          userId: user.id,
+          recoverySecret
+        })
+      };
+    }
+
     // Create session
     await createSession(user.id);
 
-    const responseData: any = {
-      user,
-      sessionToken: token // Consider if you truly need to send back the original token
+    const { privateKey: _storedPrivateKey, ...clientUser } = user;
+    const responseData: {
+      user: typeof clientUser;
+      sessionToken: string;
+      oauthSetup: OAuthV2SetupMaterial | null;
+    } = {
+      user: clientUser,
+      sessionToken: token,
+      oauthSetup
     };
-
-    // If it's a new OAuth user, generate combinedSecret for initial key encryption
-    if (decoded.isNewUser && user.oAuthSignup && user.googleId && process.env.PRIVATE_KEY_RECOVERY_SECRET) {
-      // The combinedSecret should be derived in a way that's reproducible by the client
-      // for decrypting the private key if stored with this secret.
-      // Make sure this matches how you derive it in `verifyPrivateKeyRecoveryToken`
-      responseData.combinedSecret = user.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET;
-      console.log('🆕 New OAuth user - added combinedSecret for initial key generation/encryption');
-    }
 
     console.log('✅ OAuth verification successful for user:', user.id);
     return {
@@ -629,20 +747,8 @@ export async function verifyOAuthToken(prevState: any, token: string) {
     };
 
   } catch (error) {
-    console.error('🚨 OAuth token verification error:', error);
-
     if (error instanceof Error) {
-      if (error.name === 'JsonWebTokenError') {
-        console.error('JWT Error details:', error.message);
-        return {
-          errors: {
-            message: "Invalid token format."
-          },
-          data: null
-        };
-      }
       if (error.name === 'TokenExpiredError') {
-        console.error('Token expired');
         return {
           errors: {
             message: "Token has expired. Please try logging in again."
@@ -650,12 +756,24 @@ export async function verifyOAuthToken(prevState: any, token: string) {
           data: null
         };
       }
+      if (error.name === 'JsonWebTokenError') {
+        return {
+          errors: {
+            message: "Invalid token format."
+          },
+          data: null
+        };
+      }
     }
 
-    console.error('Unexpected error during OAuth token verification:', error);
+    if (error instanceof PrivateKeyRecoveryKeyWrapError) {
+      console.error("OAuth V2 recovery setup is unavailable.");
+    } else {
+      console.error("OAuth token verification failed.");
+    }
     return {
       errors: {
-        message: "Token verification failed. Please try again."
+        message: "OAuth account setup failed. Please try again."
       },
       data: null
     };
@@ -774,58 +892,177 @@ export async function resetPassword(prevState: any, data: { token: string, newPa
   }
 }
 
-// --- STORE USER KEYS IN DATABASE ---
-export async function storeUserKeysInDatabase(prevState: any, data: { publicKey: JsonWebKey, privateKey: string, loggedInUserId: string }) {
+// --- PROVISION NEW OAUTH V2 USER KEYS ---
+export async function storeNewOAuthV2UserKeys(
+  _prevState: unknown,
+  data: { publicKey: unknown; privateKey: string }
+) {
   try {
-    console.log('Action `storeUserKeysInDatabase` called.');
-    const { privateKey, publicKey, loggedInUserId } = data;
-
-    if (!privateKey || !publicKey || !loggedInUserId) {
+    if (!data || typeof data.privateKey !== "string" || !data.publicKey) {
       return {
-        errors: { message: 'Missing key data or user ID.' },
-        success: { message: null }
+        errors: { message: "Key provisioning failed." },
+        success: { message: null },
+        data: null
       };
     }
 
-    const user = await prisma.user.findUnique({ where: { id: loggedInUserId } });
-    if (!user) {
+    const sessionToken = (await cookies()).get("session")?.value;
+    const sessionUserId = await verifySession(sessionToken);
+    if (!sessionUserId) {
       return {
-        errors: {
-          message: 'User not found.'
-        },
-        success: {
-          message: null
-        }
+        errors: { message: "Authentication is required." },
+        success: { message: null },
+        data: null
+      };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: {
+        id: true,
+        oAuthSignup: true,
+        privateKey: true,
+        publicKey: true
+      }
+    });
+    if (!user?.oAuthSignup) {
+      return {
+        errors: { message: "Key provisioning failed." },
+        success: { message: null },
+        data: null
+      };
+    }
+
+    const envelope = parsePrivateKeyEnvelopeV2(data.privateKey);
+    const validatedPublicKey = await validateNexusChatPublicJsonWebKey(
+      data.publicKey
+    );
+    const serializedPublicKey = JSON.stringify(validatedPublicKey);
+
+    unwrapRecoverySecret({
+      userId: sessionUserId,
+      recoveryKeyWrap: envelope.recoveryKeyWrap
+    });
+
+    if (user.privateKey !== null || user.publicKey !== null) {
+      if (
+        user.privateKey === data.privateKey &&
+        user.publicKey === serializedPublicKey
+      ) {
+        return {
+          errors: { message: null },
+          success: { message: "User keys are already provisioned." },
+          data: { publicKey: user.publicKey }
+        };
+      }
+      return {
+        errors: { message: "User keys are already provisioned." },
+        success: { message: null },
+        data: null
+      };
+    }
+
+    const updateResult = await prisma.user.updateMany({
+      where: {
+        id: sessionUserId,
+        privateKey: null,
+        publicKey: null
+      },
+      data: {
+        privateKey: data.privateKey,
+        publicKey: serializedPublicKey
+      }
+    });
+
+    if (updateResult.count === 0) {
+      const provisionedUser = await prisma.user.findUnique({
+        where: { id: sessionUserId },
+        select: { privateKey: true, publicKey: true }
+      });
+      if (
+        provisionedUser?.privateKey !== data.privateKey ||
+        provisionedUser.publicKey !== serializedPublicKey
+      ) {
+        return {
+          errors: { message: "User keys are already provisioned." },
+          success: { message: null },
+          data: null
+        };
+      }
+    }
+
+    return {
+      errors: { message: null },
+      success: { message: "User keys stored successfully." },
+      data: { publicKey: serializedPublicKey }
+    };
+  } catch {
+    console.error("OAuth V2 key provisioning failed.");
+    return {
+      errors: { message: "Key provisioning failed." },
+      success: { message: null },
+      data: null
+    };
+  }
+}
+
+// --- STORE MANUAL-SIGNUP LEGACY USER KEYS ---
+export async function storeUserKeysInDatabase(
+  _prevState: unknown,
+  data: {
+    publicKey: JsonWebKey;
+    privateKey: string;
+    loggedInUserId: string;
+  }
+) {
+  try {
+    const sessionToken = (await cookies()).get("session")?.value;
+    const sessionUserId = await verifySession(sessionToken);
+    if (
+      !sessionUserId ||
+      sessionUserId !== data.loggedInUserId ||
+      !data.privateKey ||
+      !data.publicKey
+    ) {
+      return {
+        errors: { message: "Unable to store user keys." },
+        success: { message: null },
+        data: null
+      };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: { id: true, oAuthSignup: true }
+    });
+    if (!user || user.oAuthSignup) {
+      return {
+        errors: { message: "Unable to store user keys." },
+        success: { message: null },
+        data: null
       };
     }
 
     const updatedUser = await prisma.user.update({
-      where: { id: user.id },
-      data: { publicKey: JSON.stringify(publicKey), privateKey },
-      select: { publicKey: true } // Only select what's needed for the response
+      where: { id: sessionUserId },
+      data: {
+        publicKey: JSON.stringify(data.publicKey),
+        privateKey: data.privateKey
+      },
+      select: { publicKey: true }
     });
 
     return {
-      errors: {
-        message: null
-      },
-      success: {
-        message: 'User keys stored in database successfully.'
-      },
-      data: {
-        publicKey: updatedUser.publicKey
-      }
+      errors: { message: null },
+      success: { message: "User keys stored successfully." },
+      data: { publicKey: updatedUser.publicKey }
     };
-
-  } catch (error) {
-    console.error('Error storing user keys in database:', error);
+  } catch {
+    console.error("Manual user key storage failed.");
     return {
-      errors: {
-        message: 'Error storing user keys in database.'
-      },
-      success: {
-        message: null
-      }
+      errors: { message: "Unable to store user keys." },
+      success: { message: null },
+      data: null
     };
   }
 }
