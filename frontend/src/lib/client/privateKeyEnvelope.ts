@@ -480,7 +480,7 @@ const isNexusChatPublicJsonWebKey = (
   isP384PrivateKeyComponent(value.y) &&
   !Object.prototype.hasOwnProperty.call(value, "d");
 
-const validateNexusChatPrivateJsonWebKey = async (
+const validateNexusChatPrivateJsonWebKeyForPurpose = async (
   value: unknown,
   errorCode: PrivateKeyEnvelopeErrorCode,
   errorMessage: string
@@ -503,6 +503,15 @@ const validateNexusChatPrivateJsonWebKey = async (
 
   return value;
 };
+
+export const validateNexusChatPrivateJsonWebKey = async (
+  value: unknown
+): Promise<JsonWebKey> =>
+  validateNexusChatPrivateJsonWebKeyForPurpose(
+    value,
+    "INVALID_BACKUP",
+    "A valid NexusChat P-384 private JWK is required."
+  );
 
 export const validateNexusChatPublicJsonWebKey = async (
   value: unknown
@@ -538,7 +547,7 @@ export const encryptPrivateKeyV2 = async ({
   recoveryKeyWrap,
 }: EncryptPrivateKeyV2Input) => {
   assertRecoverySecret(recoverySecret);
-  const validatedPrivateKey = await validateNexusChatPrivateJsonWebKey(
+  const validatedPrivateKey = await validateNexusChatPrivateJsonWebKeyForPurpose(
     privateKey,
     "INVALID_BACKUP",
     "A private JWK is required."
@@ -624,7 +633,7 @@ export const decryptPrivateKeyV2 = async ({
       new TextDecoder().decode(plaintext)
     ) as unknown;
 
-    return await validateNexusChatPrivateJsonWebKey(
+    return await validateNexusChatPrivateJsonWebKeyForPurpose(
       parsedPrivateKey,
       "DECRYPTION_FAILED",
       "Private-key recovery failed."
