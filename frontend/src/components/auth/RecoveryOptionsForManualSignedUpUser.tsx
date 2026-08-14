@@ -1,6 +1,5 @@
 import { verifyPassword } from "@/actions/auth.actions";
 import { useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered } from "@/hooks/useAuth/useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered";
-import { useStorePasswordInLocalStorageIfCorrectPasswordIsEntered } from "@/hooks/useAuth/useStorePasswordInLocalStorageIfCorrectPasswordIsEntered";
 import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import {
   keyRecoverySchema,
@@ -30,7 +29,7 @@ export const RecoveryOptionsForManualSignedUpUser = ({loggedInUser}: PropTypes) 
     }
   },[state])
 
-  const {register,handleSubmit,watch,formState: { errors },} = useForm<keyRecoverySchemaType>({resolver: zodResolver(keyRecoverySchema)});
+  const {register,handleSubmit,formState: { errors },} = useForm<keyRecoverySchemaType>({resolver: zodResolver(keyRecoverySchema)});
 
   const onSubmit: SubmitHandler<keyRecoverySchemaType> = ({ password }) => {
     if(loggedInUser){
@@ -40,10 +39,6 @@ export const RecoveryOptionsForManualSignedUpUser = ({loggedInUser}: PropTypes) 
     }
   }
 
-  useStorePasswordInLocalStorageIfCorrectPasswordIsEntered({
-    isSuccess:state?.success?.message?.length ? true : false,
-    passwordRef: watch("password"),
-  });
   useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered({
     isSuccess:state?.success?.message?.length ? true : false,
     loggedInUser,

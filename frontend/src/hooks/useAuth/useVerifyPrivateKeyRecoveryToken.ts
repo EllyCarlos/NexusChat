@@ -2,25 +2,26 @@ import { verifyPrivateKeyRecoveryToken } from "@/actions/auth.actions";
 import { storeUserPrivateKeyInIndexedDB } from "@/lib/client/indexedDB";
 import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import { useRouter } from "next/navigation";
-import { startTransition, useCallback, useEffect, useState } from "react";
-import { useActionState } from "react"; // Correct import for useActionState
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { useActionState } from "react";
 import toast from "react-hot-toast";
-import { decryptPrivateKey } from "@/lib/client/encryption"; // Ensure correct path
+import { decryptPrivateKey } from "@/lib/client/encryption";
 
 type PropTypes = {
   recoveryToken: string | null;
-  // New: Pass the password securely from the component where the user enters it
-  // This removes the need for localStorage.getItem("tempPassword")
   passwordInput: string | null;
+  enabled: boolean;
 };
 
 export const useVerifyPrivateKeyRecoveryToken = ({
   recoveryToken,
-  passwordInput, // Receive password directly
+  passwordInput,
+  enabled,
 }: PropTypes) => {
   const [isPrivateKeyRestoredInIndexedDB, setIsPrivateKeyRestoredInIndexedDB] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState<FetchUserInfoResponse | null>(null); // Initialize as null
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const verificationStartedRef = useRef(false);
 
   // useActionState returns [state, action, isPending]
   const [state, verifyPrivateKeyRecoveryTokenAction, isPending] = useActionState(
@@ -63,9 +64,18 @@ export const useVerifyPrivateKeyRecoveryToken = ({
     getInitialUserData();
   }, [router]); // Only run once on mount
 
-  // Effect 2: Trigger the server action once we have recoveryToken and loggedInUser
+  // Effect 2: Trigger the server action after the recovery form is submitted
   useEffect(() => {
-    if (loggedInUser?.id && recoveryToken && !state?.data && !isPending) {
+    if (
+      !verificationStartedRef.current &&
+      enabled &&
+      loggedInUser?.id &&
+      recoveryToken &&
+      passwordInput?.trim() &&
+      !state?.data &&
+      !isPending
+    ) {
+      verificationStartedRef.current = true;
       console.log('Triggering verifyPrivateKeyRecoveryTokenAction for user:', loggedInUser.id);
       startTransition(() => {
         verifyPrivateKeyRecoveryTokenAction({
@@ -81,7 +91,7 @@ export const useVerifyPrivateKeyRecoveryToken = ({
         isPending: isPending,
       });
     }
-  }, [loggedInUser?.id, recoveryToken, verifyPrivateKeyRecoveryTokenAction, state?.data, isPending]);
+  }, [enabled, loggedInUser?.id, passwordInput, recoveryToken, verifyPrivateKeyRecoveryTokenAction, state?.data, isPending]);
 
   // Effect 3: Handle the result of the server action
   useEffect(() => {
@@ -89,9 +99,8 @@ export const useVerifyPrivateKeyRecoveryToken = ({
     if (state?.errors?.message) {
       console.error('Server action error:', state.errors.message);
       toast.error(state.errors.message);
-      // It's important to clear any temporary state that might cause re-loops
       localStorage.removeItem("loggedInUser");
-      localStorage.removeItem("tempPassword"); // Just in case it was there
+      localStorage.removeItem("tempPassword");
       router.push("/auth/login");
       return; // Exit to prevent further processing
     }
@@ -150,7 +159,6 @@ export const useVerifyPrivateKeyRecoveryToken = ({
 
         // Clear temporary data only AFTER successful storage
         localStorage.removeItem("loggedInUser"); // If you're still relying on this
-        // localStorage.removeItem("tempPassword"); // This should no longer be used
 
         setIsPrivateKeyRestoredInIndexedDB(true);
         console.log('setIsPrivateKeyRestoredInIndexedDB set to true.');
@@ -187,4 +195,3 @@ export const useVerifyPrivateKeyRecoveryToken = ({
     error: state?.errors?.message, // Expose error message
   };
 };
-// This hook now handles the entire flow of verifying the recovery token,
