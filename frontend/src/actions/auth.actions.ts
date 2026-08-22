@@ -609,7 +609,7 @@ export async function forgotPassword(prevState: any, email: string) {
       emailType: "resetPassword",
       to: user.email,
       username: user.username,
-      verificationUrl: resetUrl
+      resetPasswordUrl: resetUrl
     });
 
     return {
