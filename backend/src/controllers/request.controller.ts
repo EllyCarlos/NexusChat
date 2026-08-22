@@ -8,6 +8,7 @@ import { joinMembersInChatRoom } from "../utils/chat.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { sendPushNotification } from "../utils/generic.js";
 import { emitEvent, emitEventToRoom } from "../utils/socket.util.js";
+import { BACKEND_RATE_LIMITS, enforcePairRateLimit } from "../middlewares/rate-limit.middleware.js";
 
 
 export const getUserRequests = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
@@ -51,6 +52,15 @@ export const createRequest = asyncErrorHandler(async(req:AuthenticatedRequest,re
     if(req.user.id === receiver){
         return next(new CustomError("You cannot send a request to yourself",400))
     }
+
+    if (!enforcePairRateLimit({
+      response: res,
+      next,
+      actorUserId: req.user.id,
+      otherUserId: isValidReceiverId.id,
+      policy: BACKEND_RATE_LIMITS.friendCreateCooldown,
+      secondPolicy: BACKEND_RATE_LIMITS.friendCreateWindow,
+    })) return;
 
     const requestAlreadyExists = await prisma.friendRequest.findFirst({
       where:{
@@ -160,6 +170,14 @@ export const handleRequest = asyncErrorHandler(async(req:AuthenticatedRequest,re
     if(isExistingRequest.receiverId !== req.user.id){
         return next(new CustomError("Request not found",404))
     }
+
+    if (!enforcePairRateLimit({
+      response: res,
+      next,
+      actorUserId: req.user.id,
+      otherUserId: isExistingRequest.senderId,
+      policy: BACKEND_RATE_LIMITS.friendHandle,
+    })) return;
 
     if(action==='accept'){
 

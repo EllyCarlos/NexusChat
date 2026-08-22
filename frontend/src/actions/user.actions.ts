@@ -2,6 +2,18 @@
 
 import { prisma } from "@/lib/server/prisma";
 import { getAuthenticatedSession } from "@/lib/server/authenticatedSession";
+import {
+  consumeServerActionRateLimit,
+  RATE_LIMIT_MESSAGE,
+  type RateLimitPolicy,
+} from "@/lib/server/rateLimit";
+
+const HOUR_MS = 60 * 60 * 1000;
+const USER_ACTION_LIMITS = {
+  search: { namespace: "user-search", limit: 30, windowMs: 60 * 1000 },
+  fcmToken: { namespace: "fcm-token", limit: 20, windowMs: HOUR_MS },
+  notificationSettings: { namespace: "notification-settings", limit: 30, windowMs: HOUR_MS },
+} satisfies Record<string, RateLimitPolicy>;
 
 // --- SEARCH USER ---
 export async function searchUser(prevState: any, data: { username: string }) {
@@ -10,6 +22,13 @@ export async function searchUser(prevState: any, data: { username: string }) {
     if (!session) {
       return {
         errors: { message: "Authentication is required." },
+        data: null,
+      };
+    }
+
+    if (!consumeServerActionRateLimit(USER_ACTION_LIMITS.search, session.userId).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
         data: null,
       };
     }
@@ -41,9 +60,7 @@ export async function searchUser(prevState: any, data: { username: string }) {
         username: true,
         avatar: true
       },
-      // Consider adding a limit to the number of search results to prevent
-      // returning too much data and for performance reasons.
-      // take: 10, // Example: Limit to 10 results
+      take: 20,
     });
 
     return {
@@ -71,6 +88,13 @@ export async function storeFcmToken(_prevState: unknown, data: { fcmToken: strin
     if (!session) {
       return {
         errors: { message: "Authentication is required." },
+        data: null,
+      };
+    }
+
+    if (!consumeServerActionRateLimit(USER_ACTION_LIMITS.fcmToken, session.userId).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
         data: null,
       };
     }
@@ -126,6 +150,13 @@ export async function updateUserNotificationStatus(_prevState: unknown, data: { 
     if (!session) {
       return {
         errors: { message: "Authentication is required." },
+        success: { message: null }
+      };
+    }
+
+    if (!consumeServerActionRateLimit(USER_ACTION_LIMITS.notificationSettings, session.userId).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
         success: { message: null }
       };
     }

@@ -19,6 +19,15 @@ import {
 import { prisma } from "@/lib/server/prisma";
 import { getAuthenticatedSession } from "@/lib/server/authenticatedSession";
 import {
+  checkServerActionRateLimit,
+  consumeServerActionRateLimit,
+  normalizeAccountIdentifier,
+  RATE_LIMIT_MESSAGE,
+  resetServerActionRateLimit,
+  type RateLimitDecision,
+  type RateLimitPolicy,
+} from "@/lib/server/rateLimit";
+import {
   createSession,
   deleteSession,
   signPasswordResetToken,
@@ -30,6 +39,41 @@ import {
 import bcrypt from "bcryptjs";
 
 const PRIVATE_KEY_RECOVERY_TOKEN_VALIDITY_MS = 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+
+const RATE_LIMITS = {
+  login: { namespace: "login", limit: 5, windowMs: 10 * MINUTE_MS },
+  signup: { namespace: "signup", limit: 3, windowMs: HOUR_MS },
+  forgotPassword: { namespace: "forgot-password", limit: 3, windowMs: HOUR_MS },
+  resetPassword: { namespace: "reset-password", limit: 5, windowMs: 15 * MINUTE_MS },
+  otpSendCooldown: { namespace: "otp-send-cooldown", limit: 1, windowMs: MINUTE_MS },
+  otpSendWindow: { namespace: "otp-send-window", limit: 5, windowMs: HOUR_MS },
+  otpVerify: { namespace: "otp-verify", limit: 5, windowMs: 10 * MINUTE_MS },
+  verifyPassword: { namespace: "verify-password", limit: 5, windowMs: 10 * MINUTE_MS },
+  recoveryEmailCooldown: { namespace: "recovery-email-cooldown", limit: 1, windowMs: MINUTE_MS },
+  recoveryEmailWindow: { namespace: "recovery-email-window", limit: 3, windowMs: HOUR_MS },
+  recoveryToken: { namespace: "recovery-token", limit: 5, windowMs: 15 * MINUTE_MS },
+  oauthExchange: { namespace: "oauth-exchange", limit: 10, windowMs: 10 * MINUTE_MS },
+} satisfies Record<string, RateLimitPolicy>;
+
+const consumeLayeredLimit = (
+  key: string,
+  first: RateLimitPolicy,
+  second: RateLimitPolicy,
+): RateLimitDecision => {
+  const firstDecision = consumeServerActionRateLimit(first, key);
+  return firstDecision.allowed ? consumeServerActionRateLimit(second, key) : firstDecision;
+};
+
+const checkLayeredLimit = (
+  key: string,
+  first: RateLimitPolicy,
+  second: RateLimitPolicy,
+): RateLimitDecision => {
+  const firstDecision = checkServerActionRateLimit(first, key);
+  return firstDecision.allowed ? checkServerActionRateLimit(second, key) : firstDecision;
+};
 
 type OAuthV2SetupMaterial = {
   version: 2;
@@ -120,6 +164,14 @@ export async function login(prevState: any, formData: FormData) {
       };
     }
 
+    const normalizedEmail = normalizeAccountIdentifier(email);
+    if (!consumeServerActionRateLimit(RATE_LIMITS.login, normalizedEmail).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        redirect: false,
+      };
+    }
+
     const user = await prisma.user.findUnique({
       where: { email },
     });
@@ -174,6 +226,11 @@ export async function signup(prevState: any, formData: FormData) {
         message: "All fields are required.",
       },
     };
+  }
+
+  const normalizedEmail = normalizeAccountIdentifier(email);
+  if (!consumeServerActionRateLimit(RATE_LIMITS.signup, normalizedEmail).allowed) {
+    return { errors: { message: RATE_LIMIT_MESSAGE } };
   }
 
   try {
@@ -260,6 +317,18 @@ export async function sendPrivateKeyRecoveryEmail(_prevState: unknown) {
       };
     }
 
+    const recoveryEmailDecision = consumeLayeredLimit(
+      session.userId,
+      RATE_LIMITS.recoveryEmailCooldown,
+      RATE_LIMITS.recoveryEmailWindow,
+    );
+    if (!recoveryEmailDecision.allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        success: { message: null }
+      };
+    }
+
     const recoveryUser = await prisma.user.findUnique({
       where: { id: session.userId },
       select: { id: true, email: true, username: true, oAuthSignup: true }
@@ -325,6 +394,13 @@ export async function verifyPrivateKeyRecoveryToken(_prevState: unknown, data: {
         errors: {
           message: 'Verification link is invalid or expired. Please request a new one.'
         },
+        data: null
+      };
+    }
+
+    if (!consumeServerActionRateLimit(RATE_LIMITS.recoveryToken, tokenUserId).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
         data: null
       };
     }
@@ -427,6 +503,7 @@ export async function verifyPrivateKeyRecoveryToken(_prevState: unknown, data: {
 
     await prisma.privateKeyRecoveryToken.delete({ where: { id: recoveryTokenExists.id } });
     await createSession(user.id);
+    resetServerActionRateLimit(RATE_LIMITS.recoveryToken, tokenUserId);
 
     return {
       errors: {
@@ -463,6 +540,25 @@ export async function verifyPassword(_prevState: unknown, data: { password: stri
     if (!password) {
       return {
         errors: { message: "Password is required." },
+        success: { message: null }
+      };
+    }
+
+    if (!consumeServerActionRateLimit(RATE_LIMITS.verifyPassword, session.userId).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        success: { message: null }
+      };
+    }
+
+    const recoveryEmailDecision = checkLayeredLimit(
+      session.userId,
+      RATE_LIMITS.recoveryEmailCooldown,
+      RATE_LIMITS.recoveryEmailWindow,
+    );
+    if (!recoveryEmailDecision.allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
         success: { message: null }
       };
     }
@@ -504,6 +600,19 @@ export async function verifyPassword(_prevState: unknown, data: { password: stri
       };
     }
 
+    const consumedRecoveryEmail = consumeLayeredLimit(
+      session.userId,
+      RATE_LIMITS.recoveryEmailCooldown,
+      RATE_LIMITS.recoveryEmailWindow,
+    );
+    if (!consumedRecoveryEmail.allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        success: { message: null }
+      };
+    }
+    resetServerActionRateLimit(RATE_LIMITS.verifyPassword, session.userId);
+
     const privateKeyRecoveryToken = await issuePrivateKeyRecoveryToken(session.userId);
     const privateKeyRecoveryUrl = `${process.env.NEXT_PUBLIC_CLIENT_URL}/auth/private-key-recovery-token-verification?token=${privateKeyRecoveryToken}`;
     await sendEmail({ emailType: "privateKeyRecovery", to: user.email, username: user.username, verificationUrl: privateKeyRecoveryUrl });
@@ -541,6 +650,14 @@ export async function forgotPassword(prevState: any, email: string) {
         success: {
           message: null
         }
+      };
+    }
+
+    const normalizedEmail = normalizeAccountIdentifier(email);
+    if (!consumeServerActionRateLimit(RATE_LIMITS.forgotPassword, normalizedEmail).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        success: { message: null }
       };
     }
 
@@ -684,6 +801,13 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       userId: decoded.userId,
       isNewUser: decoded.isNewUser
     });
+
+    if (!consumeServerActionRateLimit(RATE_LIMITS.oauthExchange, decoded.userId).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        data: null
+      };
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
@@ -857,6 +981,13 @@ export async function resetPassword(prevState: any, data: { token: string, newPa
 
     const userId = decodedPayload.userId;
 
+    if (!consumeServerActionRateLimit(RATE_LIMITS.resetPassword, userId).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        success: { message: null }
+      };
+    }
+
     // Check database for the hashed token
     const resetPasswordTokenExists = await prisma.resetPasswordToken.findFirst({
       where: { userId }
@@ -917,6 +1048,7 @@ export async function resetPassword(prevState: any, data: { token: string, newPa
     });
 
     await prisma.resetPasswordToken.delete({ where: { id: resetPasswordTokenExists.id } }); // Delete used token
+    resetServerActionRateLimit(RATE_LIMITS.resetPassword, userId);
 
     return {
       errors: {
@@ -1300,6 +1432,18 @@ export async function sendOtp(_prevState: unknown) {
       };
     }
 
+    const otpSendDecision = consumeLayeredLimit(
+      session.userId,
+      RATE_LIMITS.otpSendCooldown,
+      RATE_LIMITS.otpSendWindow,
+    );
+    if (!otpSendDecision.allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        success: { message: null }
+      };
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
       select: { id: true, email: true, username: true }
@@ -1368,6 +1512,13 @@ export async function verifyOtp(_prevState: unknown, data: { otp: string }) {
       };
     }
 
+    if (!consumeServerActionRateLimit(RATE_LIMITS.otpVerify, session.userId).allowed) {
+      return {
+        errors: { message: RATE_LIMIT_MESSAGE },
+        success: { message: null }
+      };
+    }
+
     const otpExists = await prisma.otp.findFirst({
       where: { userId: session.userId }
     });
@@ -1413,6 +1564,7 @@ export async function verifyOtp(_prevState: unknown, data: { otp: string }) {
       }),
       prisma.otp.delete({ where: { id: otpExists.id } })
     ]);
+    resetServerActionRateLimit(RATE_LIMITS.otpVerify, session.userId);
 
     return {
       errors: {

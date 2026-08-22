@@ -4,12 +4,13 @@ import { authenticateGoogleOAuthCallback, beginGoogleOAuth, validateGoogleOAuthS
 import { validate } from "../middlewares/validate.middleware.js";
 import { verifyToken } from "../middlewares/verify-token.middleware.js";
 import { fcmTokenSchema } from "../schemas/auth.schema.js";
+import { fcmTokenRateLimit } from "../middlewares/rate-limit.middleware.js";
 
 export default Router()
 
 .get("/user",verifyToken,getUserInfo)
 .get("/verify-token",verifyToken,checkAuth)
-.patch("/user/update-fcm-token",verifyToken,validate(fcmTokenSchema),updateFcmToken)
+.patch("/user/update-fcm-token",verifyToken,fcmTokenRateLimit,validate(fcmTokenSchema),updateFcmToken)
 .get("/google",beginGoogleOAuth)
 .get(
   "/google/callback",
