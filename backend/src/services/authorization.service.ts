@@ -46,6 +46,29 @@ export type AuthorizedPin = Prisma.PinnedMessagesGetPayload<{
   select: typeof authorizedPinSelect;
 }>;
 
+const authorizedCallSelect = {
+  id: true,
+  callerId: true,
+  calleeId: true,
+  startedAt: true,
+  endedAt: true,
+  status: true,
+} satisfies Prisma.CallHistorySelect;
+
+export type AuthorizedCall = Prisma.CallHistoryGetPayload<{
+  select: typeof authorizedCallSelect;
+}>;
+
+const callableUserSelect = {
+  id: true,
+  notificationsEnabled: true,
+  fcmToken: true,
+} satisfies Prisma.UserSelect;
+
+export type CallableUser = Prisma.UserGetPayload<{
+  select: typeof callableUserSelect;
+}>;
+
 const authorizedChatKey: unique symbol = Symbol("authorizedChat");
 
 type RequestWithAuthorizedChat = Request & {
@@ -180,6 +203,91 @@ export const assertPinAccessible = async (
   }
 
   return pin;
+};
+
+export const assertCanCallUser = async (
+  callerId: string,
+  calleeId: string,
+): Promise<CallableUser> => {
+  if (!callerId) {
+    throw new CustomError("Authentication is required", 401);
+  }
+
+  if (!calleeId?.trim()) {
+    throw new CustomError("CalleeId is required", 400);
+  }
+
+  if (callerId === calleeId) {
+    throw new CustomError("Users cannot call themselves", 400);
+  }
+
+  const callee = await prisma.user.findUnique({
+    where: { id: calleeId },
+    select: callableUserSelect,
+  });
+
+  if (!callee) {
+    throw new CustomError("User not found", 404);
+  }
+
+  const friendship = await prisma.friends.findFirst({
+    where: {
+      OR: [
+        { user1Id: callerId, user2Id: calleeId },
+        { user1Id: calleeId, user2Id: callerId },
+      ],
+    },
+    select: { id: true },
+  });
+
+  if (!friendship) {
+    throw new CustomError("Calling permission is required", 403);
+  }
+
+  return callee;
+};
+
+export const assertCallParticipant = async (
+  actorUserId: string,
+  callHistoryId: string,
+): Promise<AuthorizedCall> => {
+  if (!actorUserId) {
+    throw new CustomError("Authentication is required", 401);
+  }
+
+  if (!callHistoryId?.trim()) {
+    throw new CustomError("CallHistoryId is required", 400);
+  }
+
+  const call = await prisma.callHistory.findFirst({
+    where: {
+      id: callHistoryId,
+      OR: [
+        { callerId: actorUserId },
+        { calleeId: actorUserId },
+      ],
+    },
+    select: authorizedCallSelect,
+  });
+
+  if (!call) {
+    throw new CustomError("Call not found", 404);
+  }
+
+  return call;
+};
+
+export const assertCallCallee = async (
+  actorUserId: string,
+  callHistoryId: string,
+): Promise<AuthorizedCall> => {
+  const call = await assertCallParticipant(actorUserId, callHistoryId);
+
+  if (call.calleeId !== actorUserId) {
+    throw new CustomError("Call callee permission is required", 403);
+  }
+
+  return call;
 };
 
 export const cacheAuthorizedChat = (request: Request, chat: AuthorizedChat): void => {

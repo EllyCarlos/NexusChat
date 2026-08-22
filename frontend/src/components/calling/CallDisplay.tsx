@@ -72,26 +72,23 @@ type NegoNeededEventSendPayload = {
 type NegoFinalEventReceivePayload = {
     answer: RTCSessionDescriptionInit;
     calleeId: string;
+    callHistoryId:string
 };
 
 type CallEndEventSendPayload = {
     callHistoryId:string
-    wasCallAccepted:boolean
-}
-
-type CallEndEventReceivePayload = {
-    callHistoryId:string
-    wasCallAccepted:boolean
 }
 
 type IceCandidateEventSendPayload = {
     candidate: RTCIceCandidate;
     calleeId:string;
+    callHistoryId:string;
 }
 
 type IceCandiateEventReceivePayload = {
     candidate: RTCIceCandidate;
     callerId:string;
+    callHistoryId:string;
 }
 
 const CallDisplay = () => {
@@ -121,6 +118,7 @@ const CallDisplay = () => {
     const [callHistoryId,setCallHistoryId] = useState<string | null>(null);
 
     const callHistoryIdInCallerState = useAppSelector(selectCallHistoryId)
+    const activeCallHistoryId = callHistoryId ?? callHistoryIdInCallerState;
 
     // user-preferences
     const [micOn,setMicOn] = useState<boolean>(true);
@@ -229,8 +227,7 @@ const CallDisplay = () => {
             if (!answer) {
                 toast.error("Failed to accept call");
                 const callEndPayload: CallEndEventSendPayload = {
-                    callHistoryId: incomingCallInfo.callHistoryId,
-                    wasCallAccepted: isAccepted
+                    callHistoryId: incomingCallInfo.callHistoryId
                 };
                 socket?.emit(Event.CALL_END, callEndPayload);
                 return;
@@ -241,6 +238,8 @@ const CallDisplay = () => {
                 answer,
                 callHistoryId: incomingCallInfo.callHistoryId
             };
+            setCallHistoryId(incomingCallInfo.callHistoryId);
+            setRemoteUserId(incomingCallInfo.caller.id);
             setIsAccepted(true);
             socket?.emit(Event.CALL_ACCEPTED, callAcceptPayload);
         } catch (error) {
@@ -300,11 +299,11 @@ const CallDisplay = () => {
         try {
             const offer = await peerService.getOffer();
 
-            if (offer && remoteUserId && callHistoryId) {
+            if (offer && remoteUserId && activeCallHistoryId) {
                 const payload: NegoNeededEventSendPayload = {
                     calleeId: remoteUserId!,
                     offer,
-                    callHistoryId,
+                    callHistoryId:activeCallHistoryId,
                 };
                 socket?.emit(Event.NEGO_NEEDED, payload);
             } else {
@@ -313,7 +312,7 @@ const CallDisplay = () => {
         } catch (error) {
             console.error('Error in nego needed:', error);
         }
-    }, [callHistoryId, remoteUserId, socket, peerService]);
+    }, [activeCallHistoryId, remoteUserId, socket, peerService]);
 
     const handleNegoFinalEvent = useCallback(async ({ answer, calleeId }: NegoFinalEventReceivePayload) => {
         if (!peerService) {
@@ -341,23 +340,23 @@ const CallDisplay = () => {
     }, [peerService]);
 
     const handleICECandidate = useCallback(async (e: RTCPeerConnectionIceEvent) => {
-        if (e.candidate && remoteUserId) {
+        if (e.candidate && remoteUserId && activeCallHistoryId) {
             console.log("receiving ice candidate locally");
             const payload: IceCandidateEventSendPayload = {
                 candidate: e.candidate,
-                calleeId: remoteUserId
+                calleeId: remoteUserId,
+                callHistoryId:activeCallHistoryId
             };
             console.log('emitted ice candidate');
             socket?.emit(Event.ICE_CANDIDATE, payload);
         }
-    }, [remoteUserId, socket]);
+    }, [activeCallHistoryId, remoteUserId, socket]);
 
     // Added: Function to handle call ending
     const handleCallEndClick = useCallback(() => {
-    if (callHistoryId) {
+    if (activeCallHistoryId) {
         const payload: CallEndEventSendPayload = {
-            callHistoryId: callHistoryId,
-            wasCallAccepted: isAccepted
+            callHistoryId: activeCallHistoryId
         };
         socket?.emit(Event.CALL_END, payload);
         dispatch(setCallDisplay(false)); // Close the call display
@@ -373,7 +372,7 @@ const CallDisplay = () => {
         // Close the peer connection if it exists
         peerService?.peer?.close();
     }
-}, [callHistoryId, isAccepted, socket, dispatch, myStream, remoteStream, peerService]);
+}, [activeCallHistoryId, socket, dispatch, myStream, remoteStream, peerService]);
 // Added: Function to handle rejecting an incoming call
     const handleRejectCall = useCallback(() => {
         if (incomingCallInfo?.callHistoryId) {
@@ -388,7 +387,7 @@ const CallDisplay = () => {
 
 
     // Added: Event handler for when a call ends from the other side
-    const handleCallEndEvent = useCallback(({ callHistoryId, wasCallAccepted }: CallEndEventReceivePayload) => {
+    const handleCallEndEvent = useCallback(() => {
         toast.error("Call ended.");
         dispatch(setCallDisplay(false)); // Close the call display
         dispatch(setIsInCall(false)); // Set isInCall to false

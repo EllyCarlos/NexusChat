@@ -14,7 +14,7 @@
     "ts.check": "tsc --project tsconfig.json --noEmit",
     "build": "rimraf dist && tsc",
     "postinstall": "npx prisma generate",
-    "test:security": "vitest run tests/token-purpose.test.ts tests/rest-authorization.test.ts tests/socket-authorization.test.ts"
+    "test:security": "vitest run tests/token-purpose.test.ts tests/rest-authorization.test.ts tests/socket-authorization.test.ts tests/webrtc-authorization.test.ts"
   },
   "keywords": [],
   "author": "",

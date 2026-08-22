@@ -19,7 +19,7 @@ export type IncomingCallEventReceivePayload = {
 };
 
 type CalleeBusyEventSendPayload = {
-    callerId:string;
+    callHistoryId:string;
 }
 
 export const useIncomingCallListener = () => {
@@ -39,7 +39,7 @@ export const useIncomingCallListener = () => {
         if(isInCallRef.current){
             // if already in call, send busy signal to caller
             const payload:CalleeBusyEventSendPayload = {
-                callerId:data.caller.id
+                callHistoryId:data.callHistoryId
             }
             toast(`${data.caller.username} tried calling you`);
             socket?.emit(Event.CALLEE_BUSY,payload)
