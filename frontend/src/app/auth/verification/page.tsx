@@ -51,7 +51,7 @@ export default async function Page(){
       </div>
       {
         parsedUserInfo ?
-        <OtpVerification email={parsedUserInfo.email} loggedInUserId={parsedUserInfo.id} username={parsedUserInfo.username}/>
+        <OtpVerification />
         :
         <p>Some error occured, try reloading the page again</p>
       }

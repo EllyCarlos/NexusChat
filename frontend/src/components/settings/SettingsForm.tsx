@@ -38,7 +38,7 @@ const SettingsForm = () => {
   useEffect(()=>{
     if(loggedInUser && debouncedValue!==null && debouncedValue !== loggedInUser.notificationsEnabled)
       startTransition(()=>{
-        updateUserNotificationStatusAction({loggedInUserId:loggedInUser.id,notificationStatus:debouncedValue});
+        updateUserNotificationStatusAction({notificationStatus:debouncedValue});
       })
   },[debouncedValue,loggedInUser])
   

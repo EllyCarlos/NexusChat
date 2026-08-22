@@ -1,5 +1,4 @@
 import { verifyPassword } from "@/actions/auth.actions";
-import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import {
   keyRecoverySchema,
   keyRecoverySchemaType,
@@ -11,11 +10,7 @@ import { SubmitHandler, useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { CircleLoading } from "../shared/CircleLoading";
 
-type PropTypes = {
-  loggedInUser: FetchUserInfoResponse | null;
-};
-
-export const RecoveryOptionsForManualSignedUpUser = ({loggedInUser}: PropTypes) => {
+export const RecoveryOptionsForManualSignedUpUser = () => {
 
   const [state,verifyPasswordAction] =  useActionState(verifyPassword,undefined);
 
@@ -31,11 +26,9 @@ export const RecoveryOptionsForManualSignedUpUser = ({loggedInUser}: PropTypes) 
   const {register,handleSubmit,formState: { errors },} = useForm<keyRecoverySchemaType>({resolver: zodResolver(keyRecoverySchema)});
 
   const onSubmit: SubmitHandler<keyRecoverySchemaType> = ({ password }) => {
-    if(loggedInUser){
-      startTransition(()=>{
-        verifyPasswordAction({userId:loggedInUser?.id,password})
-      })
-    }
+    startTransition(()=>{
+      verifyPasswordAction({password})
+    })
   }
 
   return state?.success?.message ? (

@@ -17,7 +17,7 @@ import {
   wrapRecoverySecret,
 } from "@/lib/server/privateKeyRecoveryKeyWrap";
 import { prisma } from "@/lib/server/prisma";
-import { FetchUserInfoResponse } from "@/lib/server/services/userService";
+import { getAuthenticatedSession } from "@/lib/server/authenticatedSession";
 import {
   createSession,
   deleteSession,
@@ -26,11 +26,8 @@ import {
   verifyOAuthExchangeToken,
   verifyPasswordResetToken,
   verifyPrivateKeyRecoveryToken as verifyPrivateKeyRecoveryJwt,
-  verifySession,
-  verifySessionToken,
 } from "@/lib/server/session";
 import bcrypt from "bcryptjs";
-import { cookies } from "next/headers";
 
 const PRIVATE_KEY_RECOVERY_TOKEN_VALIDITY_MS = 60 * 60 * 1000;
 
@@ -253,33 +250,10 @@ export async function logout() {
 }
 
 // --- SEND PRIVATE KEY RECOVERY EMAIL ---
-export async function sendPrivateKeyRecoveryEmail(prevState: any, user: Pick<FetchUserInfoResponse, "id" | "email" | "username">) {
+export async function sendPrivateKeyRecoveryEmail(_prevState: unknown) {
   try {
-    const { id } = user;
-
-    if (!id) {
-      return {
-        errors: { message: "User information is incomplete." },
-        success: { message: null }
-      };
-    }
-
-    const sessionToken = (await cookies()).get("session")?.value;
-    const session = await verifySessionToken(sessionToken);
+    const session = await getAuthenticatedSession();
     if (!session) {
-      return {
-        errors: { message: "User session not found. Please log in again." },
-        success: { message: null }
-      };
-    }
-    const sessionExpiresAt = new Date(session.expiresAt);
-
-    if (
-      !session.userId ||
-      session.userId !== id ||
-      Number.isNaN(sessionExpiresAt.getTime()) ||
-      sessionExpiresAt <= new Date()
-    ) {
       return {
         errors: { message: "User session not found. Please log in again." },
         success: { message: null }
@@ -474,18 +448,26 @@ export async function verifyPrivateKeyRecoveryToken(_prevState: unknown, data: {
 }
 
 // --- VERIFY PASSWORD (for Private Key Recovery initial step) ---
-export async function verifyPassword(prevState: any, data: { userId: string, password: string }) {
+export async function verifyPassword(_prevState: unknown, data: { password: string }) {
   try {
-    const { password, userId } = data;
-
-    if (!userId || !password) {
+    const session = await getAuthenticatedSession();
+    if (!session) {
       return {
-        errors: { message: "User ID and password are required." },
+        errors: { message: "Authentication is required." },
         success: { message: null }
       };
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const { password } = data;
+
+    if (!password) {
+      return {
+        errors: { message: "Password is required." },
+        success: { message: null }
+      };
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: session.userId } });
 
     if (!user) {
       return {
@@ -522,7 +504,7 @@ export async function verifyPassword(prevState: any, data: { userId: string, pas
       };
     }
 
-    const privateKeyRecoveryToken = await issuePrivateKeyRecoveryToken(userId);
+    const privateKeyRecoveryToken = await issuePrivateKeyRecoveryToken(session.userId);
     const privateKeyRecoveryUrl = `${process.env.NEXT_PUBLIC_CLIENT_URL}/auth/private-key-recovery-token-verification?token=${privateKeyRecoveryToken}`;
     await sendEmail({ emailType: "privateKeyRecovery", to: user.email, username: user.username, verificationUrl: privateKeyRecoveryUrl });
 
@@ -972,9 +954,8 @@ export async function storeNewOAuthV2UserKeys(
       };
     }
 
-    const sessionToken = (await cookies()).get("session")?.value;
-    const sessionUserId = await verifySession(sessionToken);
-    if (!sessionUserId) {
+    const session = await getAuthenticatedSession();
+    if (!session) {
       return {
         errors: { message: "Authentication is required." },
         success: { message: null },
@@ -983,7 +964,7 @@ export async function storeNewOAuthV2UserKeys(
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: sessionUserId },
+      where: { id: session.userId },
       select: {
         id: true,
         oAuthSignup: true,
@@ -1006,7 +987,7 @@ export async function storeNewOAuthV2UserKeys(
     const serializedPublicKey = JSON.stringify(validatedPublicKey);
 
     unwrapRecoverySecret({
-      userId: sessionUserId,
+      userId: session.userId,
       recoveryKeyWrap: envelope.recoveryKeyWrap
     });
 
@@ -1030,7 +1011,7 @@ export async function storeNewOAuthV2UserKeys(
 
     const updateResult = await prisma.user.updateMany({
       where: {
-        id: sessionUserId,
+        id: session.userId,
         privateKey: null,
         publicKey: null
       },
@@ -1042,7 +1023,7 @@ export async function storeNewOAuthV2UserKeys(
 
     if (updateResult.count === 0) {
       const provisionedUser = await prisma.user.findUnique({
-        where: { id: sessionUserId },
+        where: { id: session.userId },
         select: { privateKey: true, publicKey: true }
       });
       if (
@@ -1077,9 +1058,8 @@ export async function prepareOAuthPrivateKeyBackupV2Migration(
   _prevState: unknown
 ) {
   try {
-    const sessionToken = (await cookies()).get("session")?.value;
-    const sessionUserId = await verifySession(sessionToken);
-    if (!sessionUserId) {
+    const session = await getAuthenticatedSession();
+    if (!session) {
       return {
         errors: { message: "Private-key backup migration was not completed." },
         data: null
@@ -1087,7 +1067,7 @@ export async function prepareOAuthPrivateKeyBackupV2Migration(
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: sessionUserId },
+      where: { id: session.userId },
       select: {
         oAuthSignup: true,
         privateKey: true,
@@ -1110,7 +1090,7 @@ export async function prepareOAuthPrivateKeyBackupV2Migration(
     }
 
     const migration = await createOAuthV2MigrationMaterial({
-      userId: sessionUserId,
+      userId: session.userId,
       serializedPublicKey: user.publicKey,
     });
 
@@ -1147,9 +1127,8 @@ export async function migrateOAuthPrivateKeyBackupToV2(
       };
     }
 
-    const sessionToken = (await cookies()).get("session")?.value;
-    const sessionUserId = await verifySession(sessionToken);
-    if (!sessionUserId) {
+    const session = await getAuthenticatedSession();
+    if (!session) {
       return {
         errors: { message: "Authentication is required." },
         success: { message: null },
@@ -1158,7 +1137,7 @@ export async function migrateOAuthPrivateKeyBackupToV2(
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: sessionUserId },
+      where: { id: session.userId },
       select: {
         oAuthSignup: true,
         privateKey: true,
@@ -1175,7 +1154,7 @@ export async function migrateOAuthPrivateKeyBackupToV2(
 
     const envelope = parsePrivateKeyEnvelopeV2(data.privateKey);
     const recoverySecret = unwrapRecoverySecret({
-      userId: sessionUserId,
+      userId: session.userId,
       recoveryKeyWrap: envelope.recoveryKeyWrap
     });
     const [privateKey, publicKey] = await Promise.all([
@@ -1215,7 +1194,7 @@ export async function migrateOAuthPrivateKeyBackupToV2(
 
     const updateResult = await prisma.user.updateMany({
       where: {
-        id: sessionUserId,
+        id: session.userId,
         privateKey: user.privateKey
       },
       data: {
@@ -1225,7 +1204,7 @@ export async function migrateOAuthPrivateKeyBackupToV2(
 
     if (updateResult.count === 0) {
       const currentUser = await prisma.user.findUnique({
-        where: { id: sessionUserId },
+        where: { id: session.userId },
         select: { privateKey: true }
       });
       if (currentUser?.privateKey !== data.privateKey) {
@@ -1258,15 +1237,12 @@ export async function storeUserKeysInDatabase(
   data: {
     publicKey: JsonWebKey;
     privateKey: string;
-    loggedInUserId: string;
   }
 ) {
   try {
-    const sessionToken = (await cookies()).get("session")?.value;
-    const sessionUserId = await verifySession(sessionToken);
+    const session = await getAuthenticatedSession();
     if (
-      !sessionUserId ||
-      sessionUserId !== data.loggedInUserId ||
+      !session ||
       !data.privateKey ||
       !data.publicKey
     ) {
@@ -1278,7 +1254,7 @@ export async function storeUserKeysInDatabase(
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: sessionUserId },
+      where: { id: session.userId },
       select: { id: true, oAuthSignup: true }
     });
     if (!user || user.oAuthSignup) {
@@ -1290,7 +1266,7 @@ export async function storeUserKeysInDatabase(
     }
 
     const updatedUser = await prisma.user.update({
-      where: { id: sessionUserId },
+      where: { id: session.userId },
       data: {
         publicKey: JSON.stringify(data.publicKey),
         privateKey: data.privateKey
@@ -1314,38 +1290,49 @@ export async function storeUserKeysInDatabase(
 }
 
 // --- SEND OTP ---
-export async function sendOtp(prevState: any, data: { loggedInUserId: string, email: string, username: string }) {
+export async function sendOtp(_prevState: unknown) {
   try {
-    const { loggedInUserId, email, username } = data;
+    const session = await getAuthenticatedSession();
+    if (!session) {
+      return {
+        errors: { message: "Authentication is required." },
+        success: { message: null }
+      };
+    }
 
-    if (!loggedInUserId || !email || !username) {
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, email: true, username: true }
+    });
+
+    if (!user?.email || !user.username) {
       return {
         errors: { message: 'Missing user information for OTP.' },
         success: { message: null }
       };
     }
 
-    await prisma.otp.deleteMany({ where: { userId: loggedInUserId } });
+    await prisma.otp.deleteMany({ where: { userId: user.id } });
 
     const otp = generateOtp(); // Assuming this generates a string OTP
     const hashedOtp = await bcrypt.hash(otp, 10);
 
     await prisma.otp.create({
       data: {
-        userId: loggedInUserId,
+        userId: user.id,
         hashedOtp,
         expiresAt: new Date(Date.now() + 1000 * 60 * 5) // OTP valid for 5 minutes
       }
     });
 
-    await sendEmail({ emailType: "OTP", to: email, username, otp: otp });
+    await sendEmail({ emailType: "OTP", to: user.email, username: user.username, otp });
 
     return {
       errors: {
         message: null
       },
       success: {
-        message: `We have sent an OTP to ${email}. Please check your inbox (and spam folder).`
+        message: `We have sent an OTP to ${user.email}. Please check your inbox (and spam folder).`
       }
     };
   } catch (error) {
@@ -1362,19 +1349,27 @@ export async function sendOtp(prevState: any, data: { loggedInUserId: string, em
 }
 
 // --- VERIFY OTP ---
-export async function verifyOtp(prevState: any, data: { otp: string, loggedInUserId: string }) {
+export async function verifyOtp(_prevState: unknown, data: { otp: string }) {
   try {
-    const { otp, loggedInUserId } = data;
-
-    if (!otp || !loggedInUserId) {
+    const session = await getAuthenticatedSession();
+    if (!session) {
       return {
-        errors: { message: 'OTP and user ID are required.' },
+        errors: { message: "Authentication is required." },
+        success: { message: null }
+      };
+    }
+
+    const { otp } = data;
+
+    if (!otp) {
+      return {
+        errors: { message: 'OTP is required.' },
         success: { message: null }
       };
     }
 
     const otpExists = await prisma.otp.findFirst({
-      where: { userId: loggedInUserId }
+      where: { userId: session.userId }
     });
 
     if (!otpExists) {
@@ -1411,14 +1406,13 @@ export async function verifyOtp(prevState: any, data: { otp: string, loggedInUse
       };
     }
 
-    // Update user's emailVerified status
-    await prisma.user.update({
-      where: { id: loggedInUserId },
-      data: { emailVerified: true },
-    });
-
-    // Delete the used OTP record
-    await prisma.otp.delete({ where: { id: otpExists.id } });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: session.userId },
+        data: { emailVerified: true },
+      }),
+      prisma.otp.delete({ where: { id: otpExists.id } })
+    ]);
 
     return {
       errors: {
@@ -1443,8 +1437,7 @@ export async function verifyOtp(prevState: any, data: { otp: string, loggedInUse
 
 // --- GET AUTH TOKEN (for client-side access) ---
 export async function getAuthToken() {
-  // Make sure this aligns with the cookie name set in session.ts (e.g., "session")
-  const token = (await cookies()).get("session")?.value;
-  return token || null;
+  const session = await getAuthenticatedSession();
+  return session?.token ?? null;
 }
 // Note: This function is for server-side use only. Ensure you handle the token securely.

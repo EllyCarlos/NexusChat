@@ -4,20 +4,20 @@ import { startTransition, useActionState, useEffect } from "react";
 type PropTypes = {
     encryptedPrivateKey: string | null;
     publicKeyJWK: JsonWebKey | null;
-    loggedInUserId:string | undefined;
+    shouldStoreKeys: boolean;
 }
 
-export const useStoreUserKeysInDatabase = ({encryptedPrivateKey,publicKeyJWK,loggedInUserId}:PropTypes) => {
+export const useStoreUserKeysInDatabase = ({encryptedPrivateKey,publicKeyJWK,shouldStoreKeys}:PropTypes) => {
 
     const [state,storeUserKeysInDatabaseAction] = useActionState(storeUserKeysInDatabase,undefined);
 
     useEffect(()=>{
-        if(encryptedPrivateKey && publicKeyJWK && loggedInUserId){
+        if(encryptedPrivateKey && publicKeyJWK && shouldStoreKeys){
             startTransition(()=>{
-                storeUserKeysInDatabaseAction({privateKey:encryptedPrivateKey,loggedInUserId,publicKey:publicKeyJWK})
+                storeUserKeysInDatabaseAction({privateKey:encryptedPrivateKey,publicKey:publicKeyJWK})
             })
         }
-    },[encryptedPrivateKey, publicKeyJWK,loggedInUserId]);
+    },[encryptedPrivateKey, publicKeyJWK,shouldStoreKeys]);
 
     return {
         publicKeyReturnedFromServerAfterBeingStored:state?.data?.publicKey

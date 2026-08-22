@@ -1,10 +1,19 @@
 "use server";
 
 import { prisma } from "@/lib/server/prisma";
+import { getAuthenticatedSession } from "@/lib/server/authenticatedSession";
 
 // --- SEARCH USER ---
 export async function searchUser(prevState: any, data: { username: string }) {
   try {
+    const session = await getAuthenticatedSession();
+    if (!session) {
+      return {
+        errors: { message: "Authentication is required." },
+        data: null,
+      };
+    }
+
     const { username } = data;
 
     // Input validation: Ensure username is provided and not just whitespace
@@ -56,26 +65,26 @@ export async function searchUser(prevState: any, data: { username: string }) {
 }
 
 // --- STORE FCM TOKEN ---
-export async function storeFcmToken(prevState: any, data: { fcmToken: string, loggedInUserId: string }) {
+export async function storeFcmToken(_prevState: unknown, data: { fcmToken: string }) {
   try {
-    const { fcmToken, loggedInUserId } = data;
+    const session = await getAuthenticatedSession();
+    if (!session) {
+      return {
+        errors: { message: "Authentication is required." },
+        data: null,
+      };
+    }
 
-    // Input validation: Ensure fcmToken and loggedInUserId are provided
+    const { fcmToken } = data;
+
     if (!fcmToken || typeof fcmToken !== 'string' || fcmToken.trim().length === 0) {
       return {
         errors: { message: "FCM token is required." },
         data: null,
       };
     }
-    if (!loggedInUserId || typeof loggedInUserId !== 'string' || loggedInUserId.trim().length === 0) {
-        return {
-          errors: { message: "User ID is required to store FCM token." },
-          data: null,
-        };
-      }
-
     const user = await prisma.user.findUnique({
-      where: { id: loggedInUserId }
+      where: { id: session.userId }
     });
 
     if (!user) {
@@ -88,7 +97,7 @@ export async function storeFcmToken(prevState: any, data: { fcmToken: string, lo
     }
 
     await prisma.user.update({
-      where: { id: loggedInUserId },
+      where: { id: session.userId },
       data: { fcmToken }
     });
 
@@ -111,17 +120,19 @@ export async function storeFcmToken(prevState: any, data: { fcmToken: string, lo
 }
 
 // --- UPDATE USER NOTIFICATION STATUS ---
-export async function updateUserNotificationStatus(prevState: any, data: { loggedInUserId: string, notificationStatus: boolean }) {
+export async function updateUserNotificationStatus(_prevState: unknown, data: { notificationStatus: boolean }) {
   try {
-    const { loggedInUserId, notificationStatus } = data;
+    const session = await getAuthenticatedSession();
+    if (!session) {
+      return {
+        errors: { message: "Authentication is required." },
+        success: { message: null }
+      };
+    }
+
+    const { notificationStatus } = data;
 
     // Input validation
-    if (!loggedInUserId || typeof loggedInUserId !== 'string' || loggedInUserId.trim().length === 0) {
-        return {
-            errors: { message: "User ID is required to update notification status." },
-            success: { message: null }
-        };
-    }
     // Ensure notificationStatus is a boolean
     if (typeof notificationStatus !== 'boolean') {
         return {
@@ -131,7 +142,7 @@ export async function updateUserNotificationStatus(prevState: any, data: { logge
     }
 
 
-    const user = await prisma.user.findUnique({ where: { id: loggedInUserId } });
+    const user = await prisma.user.findUnique({ where: { id: session.userId } });
 
     if (!user) {
       return {
@@ -145,7 +156,7 @@ export async function updateUserNotificationStatus(prevState: any, data: { logge
     }
 
     await prisma.user.update({
-      where: { id: loggedInUserId },
+      where: { id: session.userId },
       data: { notificationsEnabled: notificationStatus }
     });
 
