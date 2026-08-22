@@ -52,6 +52,8 @@ describe("OAuth session propagation", () => {
     mocks.verifyOAuthExchangeToken.mockResolvedValue({
       tokenType: "oauth_exchange",
       userId: USER_ID,
+      iss: "urn:nexuschat:api",
+      aud: "urn:nexuschat:web",
       isNewUser: false,
       exp: Math.floor(Date.now() / 1000) + 300,
     });

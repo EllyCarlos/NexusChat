@@ -2,6 +2,13 @@ import "server-only";
 
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { cookies } from "next/headers";
+import {
+  SESSION_TOKEN_AUDIENCES,
+  TOKEN_AUDIENCES,
+  TOKEN_ISSUERS,
+  type TokenAudience,
+  type TokenIssuer,
+} from "./token.constants";
 
 export const TOKEN_TYPES = {
   SESSION: "session",
@@ -15,6 +22,8 @@ type TokenType = (typeof TOKEN_TYPES)[keyof typeof TOKEN_TYPES];
 type BaseTokenPayload<T extends TokenType> = {
   tokenType: T;
   userId: string;
+  iss: TokenIssuer;
+  aud: string | string[];
   exp: number;
   iat?: number;
 };
@@ -39,6 +48,8 @@ type TokenInput = {
 type VerifiedPurposeTokenPayload = JWTPayload & {
   tokenType: TokenType;
   userId: string;
+  iss: TokenIssuer;
+  aud: string | string[];
   exp: number;
 };
 
@@ -64,9 +75,13 @@ const signPurposeToken = async ({
   tokenType,
   userId,
   expiresAt,
+  issuer,
+  audience,
   additionalClaims = {},
 }: TokenInput & {
   tokenType: TokenType;
+  issuer: TokenIssuer;
+  audience: TokenAudience | readonly TokenAudience[];
   additionalClaims?: Record<string, unknown>;
 }): Promise<string> => {
   validateTokenInput({ userId, expiresAt });
@@ -79,13 +94,37 @@ const signPurposeToken = async ({
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
+    .setIssuer(issuer)
+    .setAudience(typeof audience === "string" ? audience : [...audience])
     .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
     .sign(getEncodedJwtSecret());
+};
+
+const hasExactAudienceClaim = (
+  actualAudience: JWTPayload["aud"],
+  expectedAudience: TokenAudience | readonly TokenAudience[],
+): actualAudience is string | string[] => {
+  if (typeof expectedAudience === "string") {
+    return actualAudience === expectedAudience;
+  }
+
+  if (!Array.isArray(actualAudience) || actualAudience.length !== expectedAudience.length) {
+    return false;
+  }
+
+  const actualAudienceSet = new Set(actualAudience);
+  return (
+    actualAudienceSet.size === expectedAudience.length &&
+    expectedAudience.every((audience) => actualAudienceSet.has(audience))
+  );
 };
 
 const verifyPurposeToken = async (
   token: string | undefined,
   expectedTokenType: TokenType,
+  expectedIssuer: TokenIssuer,
+  expectedConsumerAudience: TokenAudience,
+  expectedAudienceClaim: TokenAudience | readonly TokenAudience[],
 ): Promise<VerifiedPurposeTokenPayload | null> => {
   if (!token) {
     return null;
@@ -94,10 +133,14 @@ const verifyPurposeToken = async (
   try {
     const { payload } = await jwtVerify(token, getEncodedJwtSecret(), {
       algorithms: ["HS256"],
+      issuer: expectedIssuer,
+      audience: expectedConsumerAudience,
     });
 
     if (
       payload.tokenType !== expectedTokenType ||
+      payload.iss !== expectedIssuer ||
+      !hasExactAudienceClaim(payload.aud, expectedAudienceClaim) ||
       typeof payload.userId !== "string" ||
       payload.userId.length === 0 ||
       typeof payload.exp !== "number" ||
@@ -111,6 +154,8 @@ const verifyPurposeToken = async (
       ...payload,
       tokenType: expectedTokenType,
       userId: payload.userId,
+      iss: expectedIssuer,
+      aud: payload.aud,
       exp: payload.exp,
     };
   } catch {
@@ -134,6 +179,8 @@ const getLinkTokenPayload = <T extends TokenType>(
   return {
     tokenType,
     userId: payload.userId,
+    iss: payload.iss,
+    aud: payload.aud,
     expiresAt: payload.expiresAt,
     exp: payload.exp,
     ...(typeof payload.iat === "number" ? { iat: payload.iat } : {}),
@@ -141,17 +188,38 @@ const getLinkTokenPayload = <T extends TokenType>(
 };
 
 export const signSessionToken = (input: TokenInput) =>
-  signPurposeToken({ ...input, tokenType: TOKEN_TYPES.SESSION });
+  signPurposeToken({
+    ...input,
+    tokenType: TOKEN_TYPES.SESSION,
+    issuer: TOKEN_ISSUERS.WEB,
+    audience: SESSION_TOKEN_AUDIENCES,
+  });
 
 export const signPasswordResetToken = (input: TokenInput) =>
-  signPurposeToken({ ...input, tokenType: TOKEN_TYPES.PASSWORD_RESET });
+  signPurposeToken({
+    ...input,
+    tokenType: TOKEN_TYPES.PASSWORD_RESET,
+    issuer: TOKEN_ISSUERS.WEB,
+    audience: TOKEN_AUDIENCES.WEB,
+  });
 
 export const signPrivateKeyRecoveryToken = (input: TokenInput) =>
-  signPurposeToken({ ...input, tokenType: TOKEN_TYPES.PRIVATE_KEY_RECOVERY });
+  signPurposeToken({
+    ...input,
+    tokenType: TOKEN_TYPES.PRIVATE_KEY_RECOVERY,
+    issuer: TOKEN_ISSUERS.WEB,
+    audience: TOKEN_AUDIENCES.WEB,
+  });
 
 export const verifySessionToken = async (token: string | undefined): Promise<SessionPayload | null> =>
   getLinkTokenPayload(
-    await verifyPurposeToken(token, TOKEN_TYPES.SESSION),
+    await verifyPurposeToken(
+      token,
+      TOKEN_TYPES.SESSION,
+      TOKEN_ISSUERS.WEB,
+      TOKEN_AUDIENCES.WEB,
+      SESSION_TOKEN_AUDIENCES,
+    ),
     TOKEN_TYPES.SESSION,
   );
 
@@ -159,7 +227,13 @@ export const verifyPasswordResetToken = async (
   token: string | undefined,
 ): Promise<PasswordResetTokenPayload | null> =>
   getLinkTokenPayload(
-    await verifyPurposeToken(token, TOKEN_TYPES.PASSWORD_RESET),
+    await verifyPurposeToken(
+      token,
+      TOKEN_TYPES.PASSWORD_RESET,
+      TOKEN_ISSUERS.WEB,
+      TOKEN_AUDIENCES.WEB,
+      TOKEN_AUDIENCES.WEB,
+    ),
     TOKEN_TYPES.PASSWORD_RESET,
   );
 
@@ -167,14 +241,26 @@ export const verifyPrivateKeyRecoveryToken = async (
   token: string | undefined,
 ): Promise<PrivateKeyRecoveryTokenPayload | null> =>
   getLinkTokenPayload(
-    await verifyPurposeToken(token, TOKEN_TYPES.PRIVATE_KEY_RECOVERY),
+    await verifyPurposeToken(
+      token,
+      TOKEN_TYPES.PRIVATE_KEY_RECOVERY,
+      TOKEN_ISSUERS.WEB,
+      TOKEN_AUDIENCES.WEB,
+      TOKEN_AUDIENCES.WEB,
+    ),
     TOKEN_TYPES.PRIVATE_KEY_RECOVERY,
   );
 
 export const verifyOAuthExchangeToken = async (
   token: string | undefined,
 ): Promise<OAuthExchangeTokenPayload | null> => {
-  const payload = await verifyPurposeToken(token, TOKEN_TYPES.OAUTH_EXCHANGE);
+  const payload = await verifyPurposeToken(
+    token,
+    TOKEN_TYPES.OAUTH_EXCHANGE,
+    TOKEN_ISSUERS.API,
+    TOKEN_AUDIENCES.WEB,
+    TOKEN_AUDIENCES.WEB,
+  );
   if (!payload || typeof payload.isNewUser !== "boolean") {
     return null;
   }
@@ -186,6 +272,8 @@ export const verifyOAuthExchangeToken = async (
   return {
     tokenType: TOKEN_TYPES.OAUTH_EXCHANGE,
     userId: payload.userId,
+    iss: payload.iss,
+    aud: payload.aud,
     isNewUser: payload.isNewUser,
     exp: payload.exp,
     ...(typeof payload.iat === "number" ? { iat: payload.iat } : {}),

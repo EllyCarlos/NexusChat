@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { Socket } from "socket.io";
 import { prisma } from "../lib/prisma.lib.js";
 import { CustomError } from "../utils/error.utils.js";
-import { verifySessionToken } from "../utils/jwt.utils.js";
+import { verifySocketSessionToken } from "../utils/jwt.utils.js";
 
 export const socketAuthenticatorMiddleware = async (socket: Socket, next: NextFunction) => {
     try {
@@ -19,7 +19,7 @@ export const socketAuthenticatorMiddleware = async (socket: Socket, next: NextFu
             return next(new CustomError("Server configuration error", 500));
         }
 
-        const decodedPayload = verifySessionToken(token);
+        const decodedPayload = verifySocketSessionToken(token);
 
         const existingUser = await prisma.user.findUnique({
             where: { id: decodedPayload.userId }

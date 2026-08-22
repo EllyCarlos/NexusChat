@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import type { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from "../lib/prisma.lib.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-import { verifySessionToken, type SessionTokenPayload } from "../utils/jwt.utils.js";
+import { verifyApiSessionToken, type SessionTokenPayload } from "../utils/jwt.utils.js";
 
 export const verifyToken = asyncErrorHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
 
@@ -37,7 +37,7 @@ export const verifyToken = asyncErrorHandler(async (req: AuthenticatedRequest, r
 
     let decodedInfo: SessionTokenPayload;
     try {
-        decodedInfo = verifySessionToken(token);
+        decodedInfo = verifyApiSessionToken(token);
     } catch (error) {
         // Catch specific JWT verification errors for clearer messages
         if (error instanceof jwt.TokenExpiredError) {
