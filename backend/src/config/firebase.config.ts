@@ -1,4 +1,5 @@
-import admin from "firebase-admin";
+import { cert, getApps, initializeApp, type ServiceAccount } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 import { createRequire } from "module";
 import { env } from "../schemas/env.schema.js";
 
@@ -8,7 +9,7 @@ interface ServiceAccountCredentials {
   client_email: string;
 }
 
-let serviceAccount: admin.ServiceAccount;
+let serviceAccount: ServiceAccount;
 
 if (env.NODE_ENV === 'production') {
   // Production: Use environment variables
@@ -40,10 +41,10 @@ if (env.NODE_ENV === 'production') {
 }
 
 // Initialize Firebase Admin SDK
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+if (!getApps().length) {
+  initializeApp({
+    credential: cert(serviceAccount),
   });
 }
 
-export const messaging = admin.messaging();
+export const messaging = getMessaging();

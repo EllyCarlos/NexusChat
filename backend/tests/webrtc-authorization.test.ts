@@ -25,6 +25,7 @@ import { Events } from "../src/enums/event/event.enum.js";
 import { userSocketIds } from "../src/index.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
+import { sendPushNotification } from "../src/utils/generic.js";
 
 const CALLER_ID = "caller-user";
 const CALLEE_ID = "callee-user";
@@ -36,6 +37,7 @@ const friendFindFirst = vi.mocked(prisma.friends.findFirst);
 const callFindFirst = vi.mocked(prisma.callHistory.findFirst);
 const callCreate = vi.mocked(prisma.callHistory.create);
 const callUpdate = vi.mocked(prisma.callHistory.update);
+const pushNotification = vi.mocked(sendPushNotification);
 
 const callRecord = ({
   callerId = CALLER_ID,
@@ -328,6 +330,46 @@ describe("WebRTC call authorization failures", () => {
 });
 
 describe("WebRTC authorized call operations", () => {
+  it("sends the expected missed-call notification to an offline callee", async () => {
+    userFindUnique.mockResolvedValue({
+      id: CALLEE_ID,
+      notificationsEnabled: true,
+      fcmToken: "callee-token",
+    } as never);
+    friendFindFirst.mockResolvedValue({ id: "friendship-1" } as never);
+    callCreate.mockResolvedValue({ id: CALL_ID } as never);
+    const harness = createHarness(CALLER_ID);
+
+    await harness.trigger(Events.CALL_USER, {
+      calleeId: CALLEE_ID,
+      offer: { type: "offer", sdp: "offline" },
+    });
+
+    expect(pushNotification).toHaveBeenCalledWith({
+      fcmToken: "callee-token",
+      title: "Missed Call",
+      body: `You have missed a call from user-${CALLER_ID}`,
+    });
+  });
+
+  it("does not notify an offline callee who disabled notifications", async () => {
+    userFindUnique.mockResolvedValue({
+      id: CALLEE_ID,
+      notificationsEnabled: false,
+      fcmToken: "callee-token",
+    } as never);
+    friendFindFirst.mockResolvedValue({ id: "friendship-1" } as never);
+    callCreate.mockResolvedValue({ id: CALL_ID } as never);
+    const harness = createHarness(CALLER_ID);
+
+    await harness.trigger(Events.CALL_USER, {
+      calleeId: CALLEE_ID,
+      offer: { type: "offer", sdp: "offline" },
+    });
+
+    expect(pushNotification).not.toHaveBeenCalled();
+  });
+
   it("allows a friend to initiate a call using only socket.user.id as caller", async () => {
     userFindUnique.mockResolvedValue({
       id: CALLEE_ID,

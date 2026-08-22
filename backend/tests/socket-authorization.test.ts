@@ -68,6 +68,7 @@ import {
   uploadAudioToCloudinary,
   uploadEncryptedAudioToCloudinary,
 } from "../src/utils/auth.util.js";
+import { sendPushNotification } from "../src/utils/generic.js";
 
 const ACTOR_ID = "socket-actor";
 const CHAT_ID = "chat-1";
@@ -102,6 +103,7 @@ const attachmentDeleteMany = vi.mocked(prisma.attachment.deleteMany);
 const deleteFromCloudinary = vi.mocked(deleteFilesFromCloudinary);
 const uploadAudio = vi.mocked(uploadAudioToCloudinary);
 const uploadEncryptedAudio = vi.mocked(uploadEncryptedAudioToCloudinary);
+const pushNotification = vi.mocked(sendPushNotification);
 
 const memberChat = () => ({
   id: CHAT_ID,
@@ -362,6 +364,78 @@ describe("Socket chat/message authorized operations", () => {
       data: expect.objectContaining({ chatId: CHAT_ID, senderId: ACTOR_ID }),
     }));
     expect(harness.roomEmit).toHaveBeenCalledWith(Events.MESSAGE, expect.objectContaining({ id: MESSAGE_ID }));
+  });
+
+  it("sends an offline chat member the expected notification", async () => {
+    chatFindFirst.mockResolvedValue(memberChat() as never);
+    messageCreate.mockResolvedValue({
+      id: MESSAGE_ID,
+      isTextMessage: true,
+      isPollMessage: false,
+      textMessageContent: "hello",
+      createdAt: new Date(),
+    } as never);
+    chatUpdate.mockResolvedValue({
+      ChatMembers: [{
+        user: {
+          id: "offline-member",
+          isOnline: false,
+          notificationsEnabled: true,
+          fcmToken: "offline-token",
+        },
+      }],
+    } as never);
+    messageFindUnique.mockResolvedValue({ id: MESSAGE_ID } as never);
+    unreadFindUnique.mockResolvedValue(null);
+    unreadCreate.mockResolvedValue({ id: "unread-1" } as never);
+    const harness = await connectSocket();
+
+    await harness.trigger(Events.MESSAGE, {
+      chatId: CHAT_ID,
+      isPollMessage: false,
+      textMessageContent: "hello",
+    });
+
+    expect(pushNotification).toHaveBeenCalledWith({
+      fcmToken: "offline-token",
+      body: "New message from actor",
+    });
+  });
+
+  it.each([
+    ["notifications are disabled", false, "offline-token"],
+    ["the token is missing", true, null],
+  ])("does not send when %s", async (_label, notificationsEnabled, fcmToken) => {
+    chatFindFirst.mockResolvedValue(memberChat() as never);
+    messageCreate.mockResolvedValue({
+      id: MESSAGE_ID,
+      isTextMessage: true,
+      isPollMessage: false,
+      textMessageContent: "hello",
+      createdAt: new Date(),
+    } as never);
+    chatUpdate.mockResolvedValue({
+      ChatMembers: [{
+        user: {
+          id: "offline-member",
+          isOnline: false,
+          notificationsEnabled,
+          fcmToken,
+        },
+      }],
+    } as never);
+    messageFindUnique.mockResolvedValue({ id: MESSAGE_ID } as never);
+    unreadFindUnique.mockResolvedValue(null);
+    unreadCreate.mockResolvedValue({ id: "unread-1" } as never);
+    const harness = await connectSocket();
+
+    await harness.trigger(Events.MESSAGE, {
+      chatId: CHAT_ID,
+      isPollMessage: false,
+      textMessageContent: "hello",
+    });
+
+    expect(pushNotification).not.toHaveBeenCalled();
   });
 
   it("marks only the member's own unread record as seen", async () => {
