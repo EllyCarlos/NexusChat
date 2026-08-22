@@ -5,7 +5,7 @@
 ### Real-time Secure Messaging — Reimagined
 
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=nextdotjs)](https://nextjs.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-24.x-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-99.5%25-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Socket.IO](https://img.shields.io/badge/Socket.IO-realtime-010101?style=flat-square&logo=socketdotio)](https://socket.io/)
 [![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
@@ -98,7 +98,7 @@ NexusChat/
 
 ### Prerequisites
 
-- **Node.js** v18 or later
+- **Node.js** 24.x
 - **npm** or **Yarn**
 - **Git**
 - **PostgreSQL** database (local or hosted — [Neon](https://neon.tech), [Supabase](https://supabase.com), or [Render](https://render.com) all work well)
