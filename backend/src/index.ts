@@ -25,7 +25,7 @@ import { prisma } from './lib/prisma.lib.js'
 // environment variables validation
 checkEnvVariables();
 // Create CORS origins array
-const corsOrigins = process.env.NODE_ENV === 'PRODUCTION' 
+const corsOrigins = env.NODE_ENV === 'production'
     ? [config.clientUrl, process.env.VERCEL_URL].filter((url): url is string => Boolean(url))
     : [config.clientUrl, 'http://localhost:3000'];
 
@@ -117,7 +117,7 @@ io.on('connection', (socket) => {
 });
 
 server.listen(env.PORT, () => {
-    const baseUrl = env.NODE_ENV === 'PRODUCTION' 
+    const baseUrl = env.NODE_ENV === 'production'
         ? `https://nexuschat-4slv.onrender.com` 
         : `http://localhost:${env.PORT}`;
     
@@ -126,7 +126,7 @@ server.listen(env.PORT, () => {
     console.log(`🌐 CORS Origin: ${config.clientUrl}`);
     console.log(`⚡ Socket.IO enabled with authentication`);
     
-    if (env.NODE_ENV === 'PRODUCTION') {
+    if (env.NODE_ENV === 'production') {
         console.log('🔒 Production mode - Security measures active');
     } else {
         console.log('🛠️  Development mode');

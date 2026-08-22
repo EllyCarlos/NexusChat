@@ -163,9 +163,9 @@ const logoutHandler = asyncErrorHandler(async (req: AuthenticatedRequest, res: R
   // Changed cookie name from 'sessionToken' to 'session'
   res.clearCookie('session', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: env.NODE_ENV === 'production',
     path: '/',
-    domain: process.env.NODE_ENV === 'production' ? config.cookieDomain : undefined,
+    domain: env.NODE_ENV === 'production' ? config.cookieDomain : undefined,
     partitioned: true // For CHIPS
   });
 

@@ -1,5 +1,6 @@
 import admin from "firebase-admin";
 import { createRequire } from "module";
+import { env } from "../schemas/env.schema.js";
 
 interface ServiceAccountCredentials {
   project_id: string;
@@ -9,7 +10,7 @@ interface ServiceAccountCredentials {
 
 let serviceAccount: admin.ServiceAccount;
 
-if (process.env.NODE_ENV === 'PRODUCTION') {
+if (env.NODE_ENV === 'production') {
   // Production: Use environment variables
   if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
     throw new Error('Missing Firebase environment variables. Please set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY');

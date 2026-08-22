@@ -17,6 +17,6 @@ const productionConfig: IConfig = {
     jwtAudience: "https://nexuswebapp.vercel.app"
 };
 
-export const config: IConfig = env.NODE_ENV === 'DEVELOPMENT' 
-    ? developmentConfig 
-    : productionConfig;
+export const config: IConfig = env.NODE_ENV === 'production'
+    ? productionConfig
+    : developmentConfig;

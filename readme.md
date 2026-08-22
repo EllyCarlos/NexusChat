@@ -148,7 +148,7 @@ cp .env.development.example .env.development
 
 Development Firebase Admin initialization currently loads `backend/firebase-admin-cred.json` directly. Download a Firebase service-account JSON file to that exact path and never commit it. The Google OAuth development redirect URI is `http://localhost:<PORT>/api/v1/auth/google/callback`.
 
-The loader chooses the env filename before dotenv runs. Until that behavior is normalized, `NODE_ENV=DEVELOPMENT` must already be present in the shell when starting the backend. The commands are shown after database setup.
+An external lowercase `NODE_ENV` selects the matching file. If it is absent, the backend safely defaults to `development` and loads `.env.development`. Supported values are `development`, `production`, and `test`; invalid values fail validation before any env file is loaded. The `test` value selects `.env.test`, but the repository does not currently provide that file, an example for it, or a test harness.
 
 The backend listens on the required `PORT` value. The example uses `5000`, so its local URL is `http://localhost:5000`.
 
@@ -189,14 +189,13 @@ macOS, Linux, or Git Bash:
 
 ```bash
 cd backend
-NODE_ENV=DEVELOPMENT npm run dev
+npm run dev
 ```
 
 PowerShell:
 
 ```powershell
 cd backend
-$env:NODE_ENV = "DEVELOPMENT"
 npm run dev
 ```
 
@@ -240,7 +239,7 @@ The current source configuration targets **Vercel** for the frontend and **Rende
    - **Root Directory:** `backend`
    - **Build Command:** `npm ci && npm run build`
    - **Start Command:** `npm start`
-3. Configure platform environment variables from `backend/.env.production.example`, including `NODE_ENV=PRODUCTION`, database credentials, and the production Firebase Admin values. Do not copy placeholder values unchanged.
+3. Configure platform environment variables from `backend/.env.production.example`, including `NODE_ENV=production`, database credentials, and the production Firebase Admin values. Do not copy placeholder values unchanged.
 
 ### Frontend → Vercel
 
