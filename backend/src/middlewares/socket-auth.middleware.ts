@@ -1,5 +1,4 @@
 import { NextFunction } from "connect";
-import cookie from 'cookie';
 import jwt from 'jsonwebtoken';
 import { Socket } from "socket.io";
 import { prisma } from "../lib/prisma.lib.js";

@@ -1,16 +1,16 @@
+import { randomUUID } from 'node:crypto'
 import multer from 'multer'
 import { MAX_FILE_SIZE } from '../constants/file.constant.js'
 import type { AuthenticatedRequest } from '../interfaces/auth/auth.interface.js'
 import { assertChatAdmin, assertChatMember, cacheAuthorizedChat, getCachedAuthorizedChat } from '../services/authorization.service.js'
 import { CustomError } from '../utils/error.utils.js'
-import {v4 as uuidV4 } from 'uuid'
 
 const limits = {fileSize:MAX_FILE_SIZE}
 
 const storage = multer.diskStorage({
     filename:(req:AuthenticatedRequest,file,cb)=>{
         const userId=req.user.id
-        const uniqueMiddleName = uuidV4()
+        const uniqueMiddleName = randomUUID()
         const newFileName = `${userId}-${uniqueMiddleName}-${file.originalname}`
         cb(null,newFileName)
     }

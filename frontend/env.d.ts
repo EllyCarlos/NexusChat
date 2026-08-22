@@ -24,8 +24,5 @@ declare namespace NodeJS {
     // Canonical Base64 encoding of exactly 32 random bytes. Server-only.
     PRIVATE_KEY_RECOVERY_KEK_V1?: string;
 
-    RAZORPAY_KEY_ID: string;
-    RAZORPAY_KEY_SECRET: string;
-    NEXT_PUBLIC_RAZORPAY_KEY_ID: string;
   }
 }
