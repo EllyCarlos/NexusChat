@@ -6,6 +6,7 @@ import type { fcmTokenSchemaType } from "../schemas/auth.schema.js";
 import { env } from "../schemas/env.schema.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { signOAuthExchangeToken } from "../utils/jwt.utils.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
 
 const getUserInfo = asyncErrorHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const user = req.user;
@@ -128,7 +129,7 @@ const completeKeyRecovery = asyncErrorHandler(async (req: AuthenticatedRequest, 
       },
     });
 
-    console.log(`✅ User ${userId} private key recovery marked as complete.`);
+    console.log("Private key recovery marked as complete.");
     return res.status(200).json({
       success: true,
       message: "Private key recovery status updated successfully.",
@@ -139,7 +140,7 @@ const completeKeyRecovery = asyncErrorHandler(async (req: AuthenticatedRequest, 
       },
     });
   } catch (error) {
-    console.error("🚨 Error completing private key recovery:", error);
+    logServerError("Private key recovery completion failed.", error);
     return next(new CustomError("Failed to complete private key recovery.", 500));
   }
 });

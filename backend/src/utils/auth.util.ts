@@ -2,6 +2,7 @@
 import { Prisma } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import { convertBufferToBase64 } from './generic.js';
+import { logServerError } from './safe-logger.utils.js';
 
 
 const thirtyDaysInMilliseconds = 30 * 24 * 60 * 60 * 1000;
@@ -23,8 +24,7 @@ export const uploadFilesToCloudinary = async({files}:{files:Express.Multer.File[
         const result = await Promise.all(uploadPromises)
         return result
     } catch (error) {
-        console.log('Error uploading files to cloudinary');
-        console.log(error);
+        logServerError('Cloudinary file upload failed.', error);
     }
 }
 
@@ -35,8 +35,7 @@ export const deleteFilesFromCloudinary = async({publicIds}:{publicIds:string[]})
         const uploadResult = await Promise.all(deletePromises)
         return uploadResult
     } catch (error) {
-        console.log('Error deleting files from cloudinary');
-        console.log(error);
+        logServerError('Cloudinary file deletion failed.', error);
     }
 }
 
@@ -49,7 +48,7 @@ export const uploadEncryptedAudioToCloudinary = async ({buffer}: {buffer: Uint8A
       });
       return uploadResult;
     } catch (error) {
-      console.error("Error uploading encrypted audio to Cloudinary:", error);
+      logServerError("Cloudinary encrypted-audio upload failed.", error);
     }
 };
 
@@ -62,7 +61,7 @@ export const uploadAudioToCloudinary = async ({buffer}: {buffer: Uint8Array<Arra
       });
       return uploadResult;
     } catch (error) {
-      console.error("Error uploading audio to Cloudinary:", error);
+      logServerError("Cloudinary audio upload failed.", error);
     }
 };
 

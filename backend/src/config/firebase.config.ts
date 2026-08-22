@@ -2,6 +2,7 @@ import { cert, getApps, initializeApp, type ServiceAccount } from "firebase-admi
 import { getMessaging } from "firebase-admin/messaging";
 import { createRequire } from "module";
 import { env } from "../schemas/env.schema.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
 
 interface ServiceAccountCredentials {
   project_id: string;
@@ -35,8 +36,8 @@ if (env.NODE_ENV === 'production') {
       clientEmail: typedCredentials.client_email,
     };
   } catch (error) {
-    console.error('Failed to load Firebase credentials file:', error);
-    throw new Error('Firebase credentials file not found. Please ensure firebase-admin-cred.json exists in development.');
+    logServerError('Firebase credentials loading failed.', error);
+    throw new Error('Firebase credentials unavailable.');
   }
 }
 

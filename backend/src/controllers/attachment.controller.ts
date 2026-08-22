@@ -37,9 +37,6 @@ export const uploadAttachment = asyncErrorHandler(async(req:AuthenticatedRequest
 
     const uploadResults =  await uploadFilesToCloudinary({files:attachments})
 
-    console.log("Cloudinary Upload Results:", uploadResults);
-
-
     if(!uploadResults){
         return next(new CustomError("Failed to upload files",500))
     }

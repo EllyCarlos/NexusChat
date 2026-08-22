@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma.lib.js";
 import { assertChatMember, assertMessageAccessible, assertMessageOwner, assertPinAccessible } from "../services/authorization.service.js";
 import { deleteFilesFromCloudinary, uploadAudioToCloudinary, uploadEncryptedAudioToCloudinary } from "../utils/auth.util.js";
 import { sendPushNotification } from "../utils/generic.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
 import registerWebRtcHandlers from "./webrtc/socket.js";
 
 // IMPORTANT: Instead of extending the Socket interface locally, we augment the
@@ -212,7 +213,7 @@ const registerSocketHandlers = (io: Server) => {
             return;
         }
 
-        console.log(socket.user.username, "connected");
+        console.log("Authenticated socket user connected.");
 
         await prisma.user.update({
             where: { id: socket.user.id },
@@ -526,7 +527,7 @@ const registerSocketHandlers = (io: Server) => {
                 io.to(chatId).emit(Events.UNREAD_MESSAGE, unreadMessagePayload)
 
             } catch (error) {
-                console.log('Error sending message:', error);
+                logServerError('Socket message send failed.', error);
             }
         })
 
@@ -569,7 +570,7 @@ const registerSocketHandlers = (io: Server) => {
                 io.to(chatId).emit(Events.MESSAGE_SEEN, payload)
 
             } catch (error) {
-                console.log('Error marking message as seen:', error)
+                logServerError('Socket mark-as-seen failed.', error)
             }
         })
 
@@ -595,7 +596,7 @@ const registerSocketHandlers = (io: Server) => {
 
                 io.to(chatId).emit(Events.MESSAGE_EDIT, payload)
             } catch (error) {
-                console.log('Error editing message:', error);
+                logServerError('Socket message edit failed.', error);
             }
         })
 
@@ -624,14 +625,12 @@ const registerSocketHandlers = (io: Server) => {
 
                 // Delete files from Cloudinary first
                 if (messageToBeDeleted?.attachments.length) {
-                    console.log('deleting attachments from Cloudinary');
                     const cloudinaryPublicIdsOfAttachments = messageToBeDeleted?.attachments.map(({ cloudinaryPublicId }) => cloudinaryPublicId);
                     publicIds.push(...cloudinaryPublicIdsOfAttachments);
                     await prisma.attachment.deleteMany({ where: { messageId: messageToBeDeleted.id } });
                 }
 
                 if (messageToBeDeleted?.audioPublicId) {
-                    console.log('deleting audio from Cloudinary');
                     publicIds.push(messageToBeDeleted.audioPublicId);
                 }
 
@@ -653,7 +652,7 @@ const registerSocketHandlers = (io: Server) => {
                     io.to(chatId).emit(Events.MESSAGE_DELETE, payload)
                 }
             } catch (error) {
-                console.log('Error deleting message:', error);
+                logServerError('Socket message deletion failed.', error);
             }
         })
 
@@ -694,7 +693,7 @@ const registerSocketHandlers = (io: Server) => {
 
                 io.to(chatId).emit(Events.NEW_REACTION, payload)
             } catch (error) {
-                console.log('Error adding reaction:', error);
+                logServerError('Socket reaction addition failed.', error);
             }
 
         })
@@ -718,7 +717,7 @@ const registerSocketHandlers = (io: Server) => {
                 }
                 io.to(chatId).emit(Events.DELETE_REACTION, payload)
             } catch (error) {
-                console.log('Error deleting reaction:', error);
+                logServerError('Socket reaction deletion failed.', error);
             }
         })
 
@@ -738,12 +737,11 @@ const registerSocketHandlers = (io: Server) => {
 
                 socket.broadcast.to(chatId).emit(Events.USER_TYPING, payload)
             } catch (error) {
-                console.log('Error user typing:', error);
+                logServerError('Socket typing event failed.', error);
             }
         })
 
         socket.on(Events.VOTE_IN, async ({ chatId, messageId, optionIndex }: VoteInEventReceivePayload) => {
-            console.log('vote in received');
 
             try {
                 const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
@@ -773,12 +771,11 @@ const registerSocketHandlers = (io: Server) => {
                 io.to(chatId).emit(Events.VOTE_IN, payload)
 
             } catch (error) {
-                console.log('error in vote in:', error);
+                logServerError('Socket poll vote failed.', error);
             }
         })
 
         socket.on(Events.VOTE_OUT, async ({ chatId, messageId, optionIndex }: VoteOutEventReceivePayload) => {
-            console.log('vote out received');
 
             try {
                 const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
@@ -814,13 +811,12 @@ const registerSocketHandlers = (io: Server) => {
                 io.to(chatId).emit(Events.VOTE_OUT, payload)
 
             } catch (error) {
-                console.log('error in vote out:', error);
+                logServerError('Socket poll vote removal failed.', error);
             }
         })
 
         socket.on(Events.PIN_MESSAGE, async ({ chatId, messageId }: PinMessageEventReceivePayload) => {
             try {
-                console.log('messageId for pinning message is:', messageId);
                 const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
 
                 const pinnedMessages = await prisma.pinnedMessages.findMany({
@@ -931,7 +927,7 @@ const registerSocketHandlers = (io: Server) => {
 
                 io.to(chatId).emit(Events.PIN_MESSAGE, pinnedMessage);
             } catch (error) {
-                console.log('error pinning message:', error);
+                logServerError('Socket message pin failed.', error);
             }
         })
 
@@ -959,7 +955,7 @@ const registerSocketHandlers = (io: Server) => {
                 }
                 io.to(deletedPinnedMessage.chatId).emit(Events.UNPIN_MESSAGE, payload);
             } catch (error) {
-                    console.log('error un-pinning message:', error);
+                    logServerError('Socket message unpin failed.', error);
             }
         })
 

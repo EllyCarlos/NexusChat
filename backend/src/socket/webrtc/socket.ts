@@ -10,6 +10,7 @@ import {
 } from "../../services/authorization.service.js";
 import { CustomError } from "../../utils/error.utils.js";
 import { sendPushNotification } from "../../utils/generic.js";
+import { logServerError } from "../../utils/safe-logger.utils.js";
 
 type CallUserEventReceivePayload = {
   calleeId: string;
@@ -160,7 +161,7 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
       socket.emit(Events.CALL_ID, callIdPayload);
       io.to(calleeSocketId).emit(Events.INCOMING_CALL, incomingCallPayload);
     } catch (error) {
-      console.log("Error in CALL_USER event", error);
+      logServerError("CALL_USER event failed.", error);
     }
   });
 
@@ -194,7 +195,7 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
       };
       socket.to(callerSocketId).emit(Events.CALL_ACCEPTED, payload);
     } catch (error) {
-      console.log("Error in CALL_ACCEPTED event", error);
+      logServerError("CALL_ACCEPTED event failed.", error);
     }
   });
 
@@ -214,7 +215,7 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
       }
       socket.emit(Events.CALL_END);
     } catch (error) {
-      console.log("Error in CALL_REJECTED event", error);
+      logServerError("CALL_REJECTED event failed.", error);
     }
   });
 
@@ -236,7 +237,7 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
       if (callerSocketId) io.to(callerSocketId).emit(Events.CALL_END);
       if (calleeSocketId) io.to(calleeSocketId).emit(Events.CALL_END);
     } catch (error) {
-      console.log("Error in CALL_END event", error);
+      logServerError("CALL_END event failed.", error);
     }
   });
 
@@ -255,7 +256,7 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
         socket.to(callerSocketId).emit(Events.CALL_END);
       }
     } catch (error) {
-      console.log("Error in CALLEE_BUSY event", error);
+      logServerError("CALLEE_BUSY event failed.", error);
     }
   });
 
@@ -274,7 +275,7 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
       };
       io.to(targetSocketId).emit(Events.ICE_CANDIDATE, payload);
     } catch (error) {
-      console.log("Error in ICE_CANDIDATE event", error);
+      logServerError("ICE_CANDIDATE event failed.", error);
     }
   });
 
@@ -302,7 +303,7 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
       };
       socket.to(targetSocketId).emit(Events.NEGO_NEEDED, payload);
     } catch (error) {
-      console.log("Error in NEGO_NEEDED event", error);
+      logServerError("NEGO_NEEDED event failed.", error);
     }
   });
 
@@ -330,7 +331,7 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
       };
       socket.to(targetSocketId).emit(Events.NEGO_FINAL, payload);
     } catch (error) {
-      console.log("Error in NEGO_DONE event", error);
+      logServerError("NEGO_DONE event failed.", error);
     }
   });
 };

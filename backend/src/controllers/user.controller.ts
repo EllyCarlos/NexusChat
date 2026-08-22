@@ -4,6 +4,7 @@ import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/aut
 import { sendMail } from "../utils/email.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { signPasswordResetToken } from "../utils/jwt.utils.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
 
 // Get base URL from environment variables
 const getBaseUrl = () => {
@@ -80,7 +81,7 @@ export const updateUser = asyncErrorHandler(async (req, res, next) => {
             try {
                 await deleteFilesFromCloudinary({ publicIds: [uploadResults[0].public_id] });
             } catch (cleanupError) {
-                console.error('Failed to cleanup uploaded file:', cleanupError);
+                logServerError('Uploaded-file cleanup failed.', cleanupError);
             }
         }
         
@@ -153,7 +154,7 @@ export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {
         });
 
     } catch (error) {
-        console.error(`Email sending error:`, error);
+        logServerError('Email sending failed.', error);
         return next(new CustomError(`Failed to send ${emailType} email`, 500));
     }
 });

@@ -133,7 +133,6 @@ export const createRequest = asyncErrorHandler(async(req:AuthenticatedRequest,re
     })
 
     if(isValidReceiverId.fcmToken && isValidReceiverId.notificationsEnabled){
-      console.log('push notification triggered for receiver');
       sendPushNotification({fcmToken:isValidReceiverId.fcmToken,body:`${req.user.username} sent you a friend request 😃`})
     }
 
