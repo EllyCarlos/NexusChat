@@ -6,6 +6,7 @@ import { Events } from "../enums/event/event.enum.js";
 import type { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from "../lib/prisma.lib.js";
 import type { addMemberToChatType, createChatSchemaType, removeMemberfromChatType, updateChatSchemaType } from "../schemas/chat.schema.js";
+import { assertChatAdmin, getCachedAuthorizedChat } from "../services/authorization.service.js";
 import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/auth.util.js";
 import { disconnectMembersFromChatRoom, joinMembersInChatRoom } from "../utils/chat.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
@@ -305,18 +306,7 @@ const addMemberToChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Res
     const {id}=req.params
     const {members}:addMemberToChatType = req.body
 
-    const chat =  await prisma.chat.findUnique({where:{id}})
-    
-    if(!chat){
-        return next(new CustomError("Chat does not exists",404))
-    }
-    if(!chat.isGroupChat){
-        return next(new CustomError("This is not a group chat, you cannot add members",400))
-    }
-    const isAdminAddingMember = chat.adminId === req.user.id;
-    if(!isAdminAddingMember){
-        return next(new CustomError("You are not allowed to add members as you are not the admin of this chat",400))
-    }
+    const chat = await assertChatAdmin(req.user.id, id)
 
     const areMembersToBeAddedAlreadyExists = await prisma.chatMembers.findMany({
       where: {
@@ -466,20 +456,7 @@ const removeMemberFromChat = asyncErrorHandler(async(req:AuthenticatedRequest,re
     const {id}=req.params
     const {members}:removeMemberfromChatType = req.body
 
-    const chat =  await prisma.chat.findUnique({where:{id}})
-    
-    if(!chat){
-        return next(new CustomError("Chat does not exists",404))
-    }
-
-    if(!chat.isGroupChat){
-        return next(new CustomError("This is not a group chat, you cannot remove members",400))
-    }
-
-    const isAdminRemovingMembers = req.user.id === chat.adminId;
-    if(!isAdminRemovingMembers){
-        return next(new CustomError("You are not allowed to remove members as you are not the admin of this chat",400))
-    }
+    const chat = await assertChatAdmin(req.user.id, id)
 
     const existingMembers =  await prisma.chatMembers.findMany({
       where:{
@@ -563,20 +540,13 @@ const updateChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response
     const avatar = req.file
 
     if(!name && !avatar){
-      return next(new CustomError("Either avatar or name is required for updating a chat, please provide one"))
+      return next(new CustomError("Either avatar or name is required for updating a chat, please provide one",400))
     }
 
-    const chat = await prisma.chat.findUnique({
-      where:{id}
-    })
-
-    if (!chat) {
-        return next(new CustomError("chat not found",404))
-    }
-
-    if(!chat.isGroupChat){
-      return next(new CustomError("You cannot update a private chat",400))
-    }
+    const cachedChat = getCachedAuthorizedChat(req, id)
+    const chat = cachedChat?.isGroupChat && cachedChat.adminId === req.user.id
+      ? cachedChat
+      : await assertChatAdmin(req.user.id, id)
 
     if(avatar){
             

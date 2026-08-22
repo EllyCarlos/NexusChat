@@ -1,12 +1,16 @@
-import { NextFunction, Request, Response } from "express";
+import { NextFunction, Response } from "express";
+import type { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from "../lib/prisma.lib.js";
+import { assertChatMember } from "../services/authorization.service.js";
 import { asyncErrorHandler } from "../utils/error.utils.js";
 import { calculateSkip } from "../utils/generic.js";
 
-export const getMessages = asyncErrorHandler(async(req:Request,res:Response,next:NextFunction)=>{
+export const getMessages = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
 
     const {id} = req.params
     const {page = 1, limit = 20} = req.query
+
+    await assertChatMember(req.user.id, id)
 
     const pageNumber = Number(page)
     const limitNumber = Number(limit)

@@ -5,6 +5,7 @@ import { Events } from "../enums/event/event.enum.js";
 import { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from "../lib/prisma.lib.js";
 import { uploadAttachmentSchemaType } from "../schemas/message.schema.js";
+import { assertChatMember, getCachedAuthorizedChat } from "../services/authorization.service.js";
 import { uploadFilesToCloudinary } from "../utils/auth.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { calculateSkip } from "../utils/generic.js";
@@ -22,22 +23,8 @@ export const uploadAttachment = asyncErrorHandler(async(req:AuthenticatedRequest
         return next(new CustomError("ChatId is required",400))
     }
 
-    const isExistingChat = await prisma.chat.findUnique({
-        where:{
-            id:chatId
-        },
-        include:{
-            ChatMembers:{
-                select:{
-                  userId:true,
-                }
-            }
-        }
-    })
-
-    if(!isExistingChat){
-        return next(new CustomError("Chat not found",404))
-    }
+    const isExistingChat = getCachedAuthorizedChat(req, chatId)
+      ?? await assertChatMember(req.user.id, chatId)
 
     const attachments = req.files as Express.Multer.File[]
 
@@ -156,6 +143,8 @@ export const fetchAttachments = asyncErrorHandler(async(req:AuthenticatedRequest
 
     const {id} = req.params
     const { page = 1, limit = 6 } = req.query;
+
+    await assertChatMember(req.user.id, id)
 
     const attachments = await prisma.attachment.findMany({
       where:{

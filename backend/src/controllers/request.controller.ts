@@ -159,7 +159,7 @@ export const handleRequest = asyncErrorHandler(async(req:AuthenticatedRequest,re
     }
 
     if(isExistingRequest.receiverId !== req.user.id){
-        return next(new CustomError("Only the receiver of this request can accept or reject it",401))
+        return next(new CustomError("Request not found",404))
     }
 
     if(action==='accept'){
