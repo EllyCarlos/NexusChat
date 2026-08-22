@@ -13,6 +13,7 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
 import { createApp } from "../src/app.js";
 import { createRequestLogger } from "../src/middlewares/request-logger.middleware.js";
 import { verifyToken } from "../src/middlewares/verify-token.middleware.js";
+import { createOriginPolicy } from "../src/security/origin-policy.js";
 import { CustomError } from "../src/utils/error.utils.js";
 
 const INTERNAL_MESSAGE = "Prisma connection failed with password=database-secret";
@@ -34,7 +35,10 @@ const createTestApplication = (writeLog: (line: string) => void = () => undefine
   router.post("/file", testUpload.single("file"), (_req, res) => res.status(204).send());
 
   return createApp({
-    corsOrigins: ["http://localhost:3000"],
+    originPolicy: createOriginPolicy({
+      environment: "test",
+      frontendOrigin: "http://localhost:3000",
+    }),
     environment: "test",
     routes: [{ path: "/test", router }],
     requestLogger: createRequestLogger({ stream: { write: writeLog } }),

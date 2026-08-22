@@ -14,19 +14,25 @@ import messageRoutes from "./routes/message.router.js";
 import requestRoutes from "./routes/request.router.js";
 import userRoutes from "./routes/user.router.js";
 import { checkEnvVariables, env } from "./schemas/env.schema.js";
+import {
+  createOriginPolicy,
+  createSocketAllowRequest,
+} from "./security/origin-policy.js";
 import registerSocketHandlers from "./socket/socket.js";
 import { logServerError } from "./utils/safe-logger.utils.js";
 
 export const userSocketIds = new Map<string, string>();
 
-const corsOrigins = env.NODE_ENV === "production"
-  ? [config.clientUrl, process.env.VERCEL_URL].filter((url): url is string => Boolean(url))
-  : [config.clientUrl, "http://localhost:3000"];
+const originPolicy = createOriginPolicy({
+  environment: env.NODE_ENV,
+  frontendOrigin: config.clientUrl,
+  vercelUrl: process.env.VERCEL_URL,
+});
 
 export const createBackendServer = () => {
   let io: Server | undefined;
   const app = createApp({
-    corsOrigins,
+    originPolicy,
     environment: env.NODE_ENV,
     routes: [
       { path: "/api/v1/auth", router: authRoutes },
@@ -42,8 +48,9 @@ export const createBackendServer = () => {
   io = new Server(server, {
     cors: {
       credentials: true,
-      origin: corsOrigins,
+      origin: [...originPolicy.origins],
     },
+    allowRequest: createSocketAllowRequest(originPolicy),
   });
 
   app.set("io", io);

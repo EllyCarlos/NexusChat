@@ -4,6 +4,11 @@ import express, { type Request, type Response, type Router } from "express";
 import passport from "passport";
 import { errorMiddleware, notFoundMiddleware } from "./middlewares/error.middleware.js";
 import { createRequestLogger } from "./middlewares/request-logger.middleware.js";
+import {
+  createCorsOriginDelegate,
+  createMutationOriginMiddleware,
+  type OriginPolicy,
+} from "./security/origin-policy.js";
 
 export type AppRoute = {
   path: string;
@@ -11,7 +16,7 @@ export type AppRoute = {
 };
 
 export type CreateAppOptions = {
-  corsOrigins: string[];
+  originPolicy: OriginPolicy;
   environment: string;
   routes?: AppRoute[];
   requestLogger?: ReturnType<typeof createRequestLogger>;
@@ -20,7 +25,7 @@ export type CreateAppOptions = {
 };
 
 export const createApp = ({
-  corsOrigins,
+  originPolicy,
   environment,
   routes = [],
   requestLogger = createRequestLogger(),
@@ -35,8 +40,9 @@ export const createApp = ({
 
   app.use(cors({
     credentials: true,
-    origin: corsOrigins,
+    origin: createCorsOriginDelegate(originPolicy),
   }));
+  app.use(createMutationOriginMiddleware(originPolicy));
   app.use(passport.initialize());
   app.use(express.json());
   app.use(express.json({ limit: "10mb" }));
