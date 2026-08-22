@@ -167,7 +167,7 @@ Copy the sanitized frontend template to the development filename and replace eve
 cp .env.example .env.development
 ```
 
-The frontend template contains both browser-exposed `NEXT_PUBLIC_` configuration and server-only values used by Next.js server code. In particular, `JWT_SECRET` is required during production page-data collection as well as at runtime.
+The frontend template contains both browser-exposed `NEXT_PUBLIC_` configuration and server-only values used by Next.js server code. `JWT_SECRET` is validated when session signing or verification executes at runtime; importing route modules during a production build does not require it.
 
 ### 4. Database Setup
 

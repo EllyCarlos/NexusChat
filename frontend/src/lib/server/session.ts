@@ -7,13 +7,13 @@ export type SessionPayload = {
   expiresAt: Date; // This will be the expiration date of the session
 };
 
-// --- IMPORTANT: Ensure JWT_SECRET is consistently set in your environment variables ---
-const secretKey = process.env.JWT_SECRET;
-if (!secretKey) {
-  // Throw an error if the secret is not defined. This is a critical configuration.
-  throw new Error("JWT_SECRET environment variable is not defined! Please set it securely.");
-}
-const encodedKey = new TextEncoder().encode(secretKey); // Encode the secret key for jose
+const getEncodedJwtSecret = () => {
+  const secretKey = process.env.JWT_SECRET;
+  if (!secretKey) {
+    throw new Error("JWT_SECRET environment variable is not defined! Please set it securely.");
+  }
+  return new TextEncoder().encode(secretKey);
+};
 
 /**
  * Creates a new user session and sets it as an HTTP-only cookie.
@@ -68,7 +68,7 @@ export async function encrypt(payload: SessionPayload): Promise<string> {
     .setProtectedHeader({ alg: "HS256" }) // Algorithm used for signing
     .setIssuedAt() // Set the issuance time
     .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
-    .sign(encodedKey); // Sign the JWT with the secret key
+    .sign(getEncodedJwtSecret()); // Sign the JWT with the secret key
 }
 
 /**
@@ -81,6 +81,7 @@ export async function decrypt(session: string | undefined = ""): Promise<Session
     // If no session token is provided, return an invalid/expired payload
     return { userId: "", expiresAt: new Date(0) };
   }
+  const encodedKey = getEncodedJwtSecret();
   try {
     const { payload } = await jwtVerify(session, encodedKey, {
       algorithms: ["HS256"], // Specify expected algorithms
@@ -106,6 +107,7 @@ export async function verifySession(sessionToken: string | undefined): Promise<s
   if (!sessionToken) {
     return null;
   }
+  getEncodedJwtSecret();
   try {
     const payload = await decrypt(sessionToken);
     // Check if the session is still valid based on its expiry date
