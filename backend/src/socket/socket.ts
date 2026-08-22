@@ -4,6 +4,7 @@ import { Server, Socket } from "socket.io";
 import { Events } from "../enums/event/event.enum.js";
 import { userSocketIds } from "../index.js";
 import { prisma } from "../lib/prisma.lib.js";
+import { assertChatMember, assertMessageAccessible, assertMessageOwner, assertPinAccessible } from "../services/authorization.service.js";
 import { deleteFilesFromCloudinary, uploadAudioToCloudinary, uploadEncryptedAudioToCloudinary } from "../utils/auth.util.js";
 import { sendPushNotification } from "../utils/generic.js";
 import registerWebRtcHandlers from "./webrtc/socket.js";
@@ -250,6 +251,12 @@ const registerSocketHandlers = (io: Server) => {
         socket.on(Events.MESSAGE, async ({ chatId, isPollMessage, pollData, textMessageContent, url, encryptedAudio, audio, replyToMessageId }: MessageEventReceivePayload) => {
 
             try {
+
+                await assertChatMember(socket.user.id, chatId);
+
+                if (replyToMessageId) {
+                    await assertMessageAccessible(socket.user.id, chatId, replyToMessageId);
+                }
 
                 let newMessage: Partial<Prisma.MessageCreateInput>;
 
@@ -526,6 +533,8 @@ const registerSocketHandlers = (io: Server) => {
         socket.on(Events.MESSAGE_SEEN, async ({ chatId }: MessageSeenEventReceivePayload) => {
 
             try {
+                await assertChatMember(socket.user.id, chatId);
+
                 const doesUnreadMessageExists = await prisma.unreadMessages.findUnique({
                     where: {
                         userId_chatId: {
@@ -566,10 +575,11 @@ const registerSocketHandlers = (io: Server) => {
 
         socket.on(Events.MESSAGE_EDIT, async ({ chatId, messageId, updatedTextContent }: MessageEditEventReceivePayload) => {
             try {
+                const authorizedMessage = await assertMessageOwner(socket.user.id, chatId, messageId);
+
                 const message = await prisma.message.update({
                     where: {
-                        chatId,
-                        id: messageId
+                        id: authorizedMessage.id
                     },
                     data: {
                         textMessageContent: updatedTextContent,
@@ -592,29 +602,23 @@ const registerSocketHandlers = (io: Server) => {
         socket.on(Events.MESSAGE_DELETE, async ({ chatId, messageId }: MessageDeleteEventReceivePayload) => {
 
             try {
-                await prisma.pinnedMessages.deleteMany({ where: { messageId } });
+                const messageToBeDeleted = await assertMessageOwner(socket.user.id, chatId, messageId);
+
+                await prisma.pinnedMessages.deleteMany({ where: { messageId: messageToBeDeleted.id } });
 
                 // if this message had any replies, then breaking the connection of the replies with this message
                 // and this message will be deleted
                 await prisma.message.updateMany({
-                    where: { replyToMessageId: messageId },
+                    where: { replyToMessageId: messageToBeDeleted.id },
                     data: { replyToMessageId: null },
                 });
 
 
                 // deleting unreadMessages of this message
-                await prisma.unreadMessages.deleteMany({ where: { messageId } });
+                await prisma.unreadMessages.deleteMany({ where: { messageId: messageToBeDeleted.id } });
 
                 // deleting reactions of this message
-                await prisma.reactions.deleteMany({ where: { messageId } });
-
-
-                const messageToBeDeleted = await prisma.message.findUnique({
-                    where: { chatId, id: messageId },
-                    select: { audioPublicId: true, attachments: { select: { cloudinaryPublicId: true } } }
-                });
-
-                if (!messageToBeDeleted) return;
+                await prisma.reactions.deleteMany({ where: { messageId: messageToBeDeleted.id } });
 
                 let publicIds: string[] = [];
 
@@ -623,7 +627,7 @@ const registerSocketHandlers = (io: Server) => {
                     console.log('deleting attachments from Cloudinary');
                     const cloudinaryPublicIdsOfAttachments = messageToBeDeleted?.attachments.map(({ cloudinaryPublicId }) => cloudinaryPublicId);
                     publicIds.push(...cloudinaryPublicIdsOfAttachments);
-                    await prisma.attachment.deleteMany({ where: { messageId } });
+                    await prisma.attachment.deleteMany({ where: { messageId: messageToBeDeleted.id } });
                 }
 
                 if (messageToBeDeleted?.audioPublicId) {
@@ -637,7 +641,7 @@ const registerSocketHandlers = (io: Server) => {
 
                 // Now safely delete the original message
                 const deletedMessage = await prisma.message.delete({
-                    where: { id: messageId },
+                    where: { id: messageToBeDeleted.id },
                     select: { id: true }
                 });
 
@@ -655,11 +659,13 @@ const registerSocketHandlers = (io: Server) => {
 
         socket.on(Events.NEW_REACTION, async ({ chatId, messageId, reaction }: NewReactionEventReceivePayload) => {
             try {
+                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
+
                 const result = await prisma.reactions.findFirst({
                     where: {
                         // Using non-null assertion (!) for socket.user.id here.
                         userId: socket.user!.id,
-                        messageId
+                        messageId: authorizedMessage.id
                     }
                 })
 
@@ -670,7 +676,7 @@ const registerSocketHandlers = (io: Server) => {
                         reaction,
                         // Using non-null assertion (!) for socket.user.id here.
                         userId: socket.user!.id,
-                        messageId,
+                        messageId: authorizedMessage.id,
                     }
                 })
 
@@ -695,11 +701,13 @@ const registerSocketHandlers = (io: Server) => {
 
         socket.on(Events.DELETE_REACTION, async ({ chatId, messageId }: DeleteReactionEventReceivePayload) => {
             try {
+                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
+
                 await prisma.reactions.deleteMany({
                     where: {
                         // Using non-null assertion (!) for socket.user.id here.
                         userId: socket.user!.id,
-                        messageId
+                        messageId: authorizedMessage.id
                     }
                 })
                 const payload: DeleteReactionEventSendPayload = {
@@ -714,8 +722,10 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.USER_TYPING, ({ chatId }: UserTypingEventReceivePayload) => {
+        socket.on(Events.USER_TYPING, async ({ chatId }: UserTypingEventReceivePayload) => {
             try {
+                await assertChatMember(socket.user.id, chatId);
+
                 const payload: UserTypingEventSendPayload = {
                     user: {
                         // Using non-null assertion (!) for socket.user.id, username, and avatar here.
@@ -736,22 +746,13 @@ const registerSocketHandlers = (io: Server) => {
             console.log('vote in received');
 
             try {
-                const isValidPoll = await prisma.message.findFirst({
-                    where: { chatId, id: messageId },
-                    include: {
-                        poll: {
-                            select: {
-                                id: true
-                            }
-                        }
-                    }
-                })
+                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
 
-                if (!isValidPoll?.poll?.id) return
+                if (!authorizedMessage.pollId) return
 
                 await prisma.vote.create({
                     data: {
-                        pollId: isValidPoll.poll.id,
+                        pollId: authorizedMessage.pollId,
                         // Using non-null assertion (!) for socket.user.id here.
                         userId: socket.user!.id,
                         optionIndex
@@ -780,24 +781,15 @@ const registerSocketHandlers = (io: Server) => {
             console.log('vote out received');
 
             try {
-                const isValidPoll = await prisma.message.findFirst({
-                    where: { chatId, id: messageId },
-                    include: {
-                        poll: {
-                            select: {
-                                id: true
-                            }
-                        }
-                    },
-                })
+                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
 
-                if (!isValidPoll?.poll?.id) return
+                if (!authorizedMessage.pollId) return
 
                 const vote = await prisma.vote.findFirst({
                     where: {
                         // Using non-null assertion (!) for socket.user.id here.
                         userId: socket.user!.id,
-                        pollId: isValidPoll.poll.id,
+                        pollId: authorizedMessage.pollId,
                         optionIndex
                     }
                 })
@@ -808,7 +800,7 @@ const registerSocketHandlers = (io: Server) => {
                     where: {
                         // Using non-null assertion (!) for socket.user.id here.
                         userId: socket.user!.id,
-                        pollId: isValidPoll.poll.id,
+                        pollId: authorizedMessage.pollId,
                         optionIndex
                     }
                 });
@@ -829,6 +821,8 @@ const registerSocketHandlers = (io: Server) => {
         socket.on(Events.PIN_MESSAGE, async ({ chatId, messageId }: PinMessageEventReceivePayload) => {
             try {
                 console.log('messageId for pinning message is:', messageId);
+                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
+
                 const pinnedMessages = await prisma.pinnedMessages.findMany({
                     where: { chatId },
                     orderBy: { createdAt: "asc" } // Get the oldest pinned message first
@@ -847,7 +841,7 @@ const registerSocketHandlers = (io: Server) => {
 
                 const pinnedMessage = await prisma.pinnedMessages.create({
                     data: {
-                        messageId,
+                        messageId: authorizedMessage.id,
                         chatId
                     },
                     include: {
@@ -933,7 +927,7 @@ const registerSocketHandlers = (io: Server) => {
                         messageId: true
                     }
                 })
-                await prisma.message.update({ where: { id: messageId }, data: { isPinned: true } });
+                await prisma.message.update({ where: { id: authorizedMessage.id }, data: { isPinned: true } });
 
                 io.to(chatId).emit(Events.PIN_MESSAGE, pinnedMessage);
             } catch (error) {
@@ -943,9 +937,11 @@ const registerSocketHandlers = (io: Server) => {
 
         socket.on(Events.UNPIN_MESSAGE, async ({ pinId }: UnpinMessageEventReceivePayload) => {
             try {
+                const authorizedPin = await assertPinAccessible(socket.user.id, pinId);
+
                 const deletedPinnedMessage = await prisma.pinnedMessages.delete({
                     where: {
-                        id: pinId
+                        id: authorizedPin.id
                     },
                     select: {
                         id: true,

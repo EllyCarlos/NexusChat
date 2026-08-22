@@ -19,6 +19,33 @@ export type AuthorizedChat = Prisma.ChatGetPayload<{
   select: typeof authorizedChatSelect;
 }>;
 
+const authorizedMessageSelect = {
+  id: true,
+  chatId: true,
+  senderId: true,
+  pollId: true,
+  audioPublicId: true,
+  attachments: {
+    select: {
+      cloudinaryPublicId: true,
+    },
+  },
+} satisfies Prisma.MessageSelect;
+
+export type AuthorizedMessage = Prisma.MessageGetPayload<{
+  select: typeof authorizedMessageSelect;
+}>;
+
+const authorizedPinSelect = {
+  id: true,
+  chatId: true,
+  messageId: true,
+} satisfies Prisma.PinnedMessagesSelect;
+
+export type AuthorizedPin = Prisma.PinnedMessagesGetPayload<{
+  select: typeof authorizedPinSelect;
+}>;
+
 const authorizedChatKey: unique symbol = Symbol("authorizedChat");
 
 type RequestWithAuthorizedChat = Request & {
@@ -71,6 +98,88 @@ export const assertChatAdmin = async (
   }
 
   return chat;
+};
+
+export const assertMessageAccessible = async (
+  actorUserId: string,
+  chatId: string,
+  messageId: string,
+): Promise<AuthorizedMessage> => {
+  if (!actorUserId) {
+    throw new CustomError("Authentication is required", 401);
+  }
+
+  if (!chatId?.trim() || !messageId?.trim()) {
+    throw new CustomError("ChatId and messageId are required", 400);
+  }
+
+  const message = await prisma.message.findFirst({
+    where: {
+      id: messageId,
+      chatId,
+      chat: {
+        ChatMembers: {
+          some: {
+            userId: actorUserId,
+          },
+        },
+      },
+    },
+    select: authorizedMessageSelect,
+  });
+
+  if (!message) {
+    throw new CustomError("Message not found", 404);
+  }
+
+  return message;
+};
+
+export const assertMessageOwner = async (
+  actorUserId: string,
+  chatId: string,
+  messageId: string,
+): Promise<AuthorizedMessage> => {
+  const message = await assertMessageAccessible(actorUserId, chatId, messageId);
+
+  if (message.senderId !== actorUserId) {
+    throw new CustomError("Message owner permission is required", 403);
+  }
+
+  return message;
+};
+
+export const assertPinAccessible = async (
+  actorUserId: string,
+  pinId: string,
+): Promise<AuthorizedPin> => {
+  if (!actorUserId) {
+    throw new CustomError("Authentication is required", 401);
+  }
+
+  if (!pinId?.trim()) {
+    throw new CustomError("PinId is required", 400);
+  }
+
+  const pin = await prisma.pinnedMessages.findFirst({
+    where: {
+      id: pinId,
+      chat: {
+        ChatMembers: {
+          some: {
+            userId: actorUserId,
+          },
+        },
+      },
+    },
+    select: authorizedPinSelect,
+  });
+
+  if (!pin) {
+    throw new CustomError("Pinned message not found", 404);
+  }
+
+  return pin;
 };
 
 export const cacheAuthorizedChat = (request: Request, chat: AuthorizedChat): void => {
