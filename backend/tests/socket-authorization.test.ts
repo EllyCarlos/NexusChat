@@ -1,10 +1,6 @@
 import type { Server, Socket } from "socket.io";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/index.js", () => ({
-  userSocketIds: new Map<string, string>(),
-}));
-
 vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: {
     user: { update: vi.fn() },
@@ -62,7 +58,9 @@ vi.mock("../src/socket/webrtc/socket.js", () => ({
 
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
+import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import registerSocketHandlers from "../src/socket/socket.js";
+import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import {
   deleteFilesFromCloudinary,
   uploadAudioToCloudinary,
@@ -70,10 +68,12 @@ import {
 } from "../src/utils/auth.util.js";
 import { sendPushNotification } from "../src/utils/generic.js";
 
-const ACTOR_ID = "socket-actor";
-const CHAT_ID = "chat-1";
-const MESSAGE_ID = "message-1";
-const PIN_ID = "pin-1";
+const ACTOR_ID = "cm00000000000000000000001";
+const CHAT_ID = "cm00000000000000000000002";
+const MESSAGE_ID = "cm00000000000000000000003";
+const PIN_ID = "cm00000000000000000000004";
+const OTHER_MESSAGE_ID = "cm00000000000000000000005";
+const OTHER_PIN_ID = "cm00000000000000000000006";
 
 const chatFindFirst = vi.mocked(prisma.chat.findFirst);
 const chatUpdate = vi.mocked(prisma.chat.update);
@@ -169,7 +169,10 @@ const connectSocket = async () => {
     to: vi.fn(() => ({ emit: roomEmit })),
   };
 
-  registerSocketHandlers(io as unknown as Server);
+  registerSocketHandlers(io as unknown as Server, {
+    registry: new SocketConnectionRegistry(),
+    limiter: new SocketEventRateLimiter(),
+  });
   expect(connectionHandler).toBeDefined();
   await connectionHandler!(socket as unknown as Socket);
 
@@ -290,11 +293,12 @@ describe("Socket chat/message authorization failures", () => {
       chatId: CHAT_ID,
       isPollMessage: false,
       audio: new Uint8Array([1, 2, 3]),
-      replyToMessageId: "other-chat-message",
+      audioMimeType: "audio/webm",
+      replyToMessageId: OTHER_MESSAGE_ID,
     });
 
     expect(messageFindFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ chatId: CHAT_ID, id: "other-chat-message" }),
+      where: expect.objectContaining({ chatId: CHAT_ID, id: OTHER_MESSAGE_ID }),
     }));
     expectNoMutationOrTrustedEmit(harness.roomEmit, harness.broadcastRoomEmit);
   });
@@ -305,12 +309,12 @@ describe("Socket chat/message authorization failures", () => {
 
     await harness.trigger(event, {
       chatId: CHAT_ID,
-      messageId: "other-chat-message",
-      updatedTextContent: "edit",
+      messageId: OTHER_MESSAGE_ID,
+      ...(event === Events.MESSAGE_EDIT ? { updatedTextContent: "edit" } : {}),
     });
 
     expect(messageFindFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ chatId: CHAT_ID, id: "other-chat-message" }),
+      where: expect.objectContaining({ chatId: CHAT_ID, id: OTHER_MESSAGE_ID }),
     }));
     expectNoMutationOrTrustedEmit(harness.roomEmit, harness.broadcastRoomEmit);
   });
@@ -319,11 +323,11 @@ describe("Socket chat/message authorization failures", () => {
     pinFindFirst.mockResolvedValue(null);
     const harness = await connectSocket();
 
-    await harness.trigger(Events.UNPIN_MESSAGE, { pinId: "other-chat-pin" });
+    await harness.trigger(Events.UNPIN_MESSAGE, { pinId: OTHER_PIN_ID });
 
     expect(pinFindFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        id: "other-chat-pin",
+        id: OTHER_PIN_ID,
         chat: { ChatMembers: { some: { userId: ACTOR_ID } } },
       }),
     }));
@@ -333,7 +337,7 @@ describe("Socket chat/message authorization failures", () => {
 });
 
 describe("Socket chat/message authorized operations", () => {
-  it("allows a member to send after authorization and ignores payload userId/senderId", async () => {
+  it("allows a member to send after authorization and derives the sender from socket identity", async () => {
     chatFindFirst.mockResolvedValue(memberChat() as never);
     uploadAudio.mockResolvedValue({
       public_id: "audio-public-id",
@@ -354,8 +358,7 @@ describe("Socket chat/message authorized operations", () => {
       chatId: CHAT_ID,
       isPollMessage: false,
       audio: new Uint8Array([1, 2, 3]),
-      userId: "attacker-user",
-      senderId: "attacker-user",
+      audioMimeType: "audio/webm",
     });
 
     expect(chatFindFirst.mock.invocationCallOrder[0]).toBeLessThan(uploadAudio.mock.invocationCallOrder[0]);
@@ -379,6 +382,7 @@ describe("Socket chat/message authorized operations", () => {
       chatId: CHAT_ID,
       isPollMessage: false,
       audio: new Uint8Array([1, 2, 3]),
+      audioMimeType: "audio/webm",
     });
 
     expect(deleteFromCloudinary).toHaveBeenCalledWith({
@@ -466,7 +470,7 @@ describe("Socket chat/message authorized operations", () => {
     unreadUpdate.mockResolvedValue({ readAt: new Date() } as never);
     const harness = await connectSocket();
 
-    await harness.trigger(Events.MESSAGE_SEEN, { chatId: CHAT_ID, userId: "attacker-user" });
+    await harness.trigger(Events.MESSAGE_SEEN, { chatId: CHAT_ID });
 
     expect(unreadFindUnique).toHaveBeenCalledWith({
       where: { userId_chatId: { userId: ACTOR_ID, chatId: CHAT_ID } },
@@ -521,12 +525,10 @@ describe("Socket chat/message authorized operations", () => {
       chatId: CHAT_ID,
       messageId: MESSAGE_ID,
       reaction: "like",
-      userId: "attacker-user",
     });
     await harness.trigger(Events.DELETE_REACTION, {
       chatId: CHAT_ID,
       messageId: MESSAGE_ID,
-      userId: "attacker-user",
     });
 
     expect(reactionCreate).toHaveBeenCalledWith({
@@ -548,13 +550,11 @@ describe("Socket chat/message authorized operations", () => {
       chatId: CHAT_ID,
       messageId: MESSAGE_ID,
       optionIndex: 1,
-      userId: "attacker-user",
     });
     await harness.trigger(Events.VOTE_OUT, {
       chatId: CHAT_ID,
       messageId: MESSAGE_ID,
       optionIndex: 1,
-      userId: "attacker-user",
     });
 
     expect(voteCreate).toHaveBeenCalledWith({

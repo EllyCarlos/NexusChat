@@ -21,8 +21,6 @@ import {
 import registerSocketHandlers from "./socket/socket.js";
 import { logServerError } from "./utils/safe-logger.utils.js";
 
-export const userSocketIds = new Map<string, string>();
-
 const originPolicy = createOriginPolicy({
   environment: env.NODE_ENV,
   frontendOrigin: config.clientUrl,
@@ -46,6 +44,8 @@ export const createBackendServer = () => {
   });
   const server = createServer(app);
   io = new Server(server, {
+    connectTimeout: 10_000,
+    maxHttpBufferSize: 1_000_000,
     cors: {
       credentials: true,
       origin: [...originPolicy.origins],
@@ -56,21 +56,6 @@ export const createBackendServer = () => {
   app.set("io", io);
   io.use(socketAuthenticatorMiddleware);
   registerSocketHandlers(io);
-  io.on("connection", (socket) => {
-    console.log("Socket client connected.");
-
-    socket.on("disconnect", () => {
-      console.log("Socket client disconnected.");
-
-      for (const [userId, socketId] of userSocketIds.entries()) {
-        if (socketId === socket.id) {
-          userSocketIds.delete(userId);
-          console.log("Socket user mapping removed.");
-          break;
-        }
-      }
-    });
-  });
 
   return { app, server, io };
 };

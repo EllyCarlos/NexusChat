@@ -2,53 +2,38 @@ import { Prisma } from "@prisma/client";
 import { UploadApiResponse } from "cloudinary";
 import { Server, Socket } from "socket.io";
 import { Events } from "../enums/event/event.enum.js";
-import { userSocketIds } from "../index.js";
 import { prisma } from "../lib/prisma.lib.js";
+import {
+    deleteReactionEventSchema,
+    messageDeleteEventSchema,
+    messageEditEventSchema,
+    messageEventSchema,
+    messageSeenEventSchema,
+    newReactionEventSchema,
+    pinMessageEventSchema,
+    unpinMessageEventSchema,
+    userTypingEventSchema,
+    voteEventSchema,
+} from "../schemas/socket.schema.js";
 import { assertChatMember, assertMessageAccessible, assertMessageOwner, assertPinAccessible } from "../services/authorization.service.js";
 import { deleteFilesFromCloudinary, uploadAudioToCloudinary, uploadEncryptedAudioToCloudinary } from "../utils/auth.util.js";
 import { sendPushNotification } from "../utils/generic.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
+import {
+    socketConnectionRegistry,
+    socketPresenceWriteQueue,
+    type SocketConnectionRegistry,
+    type SocketPresenceWriteQueue,
+} from "./connection-registry.js";
+import {
+    emitSocketSecurityError,
+    enforceSocketEventLimits,
+    parseSocketPayload,
+    SOCKET_EVENT_LIMITS,
+    socketEventRateLimiter,
+    type SocketEventRateLimiter,
+} from "./socket-security.js";
 import registerWebRtcHandlers from "./webrtc/socket.js";
-
-// IMPORTANT: Instead of extending the Socket interface locally, we augment the
-// 'socket.io' module globally. This is the correct TypeScript approach
-// to add custom properties to the Socket object provided by socket.io.
-//
-// You should create a file named, for example, `src/socket-io.d.ts`
-// placed directly in your `src` directory with the following content,
-// and ensure your `tsconfig.json` includes it.
-//
-// // src/socket-io.d.ts
-// import { Socket } from "socket.io";
-// import { Prisma } from "@prisma/client"; // Corrected: Ensures Prisma is properly imported
-//
-// declare module "socket.io" {
-//   interface Socket {
-//     // Simplified: Assumes your authentication attaches a complete Prisma.User object.
-//     // This will allow TypeScript to infer the correct types for user properties
-//     // based on your Prisma schema.
-//     user?: Prisma.User;
-//   }
-// }
-//
-// With the above declaration file, the 'Socket' type will automatically include
-// the 'user' property, resolving the type compatibility issues.
-
-type MessageEventReceivePayload = {
-    chatId: string
-    isPollMessage: boolean
-    textMessageContent?: string | ArrayBuffer
-    encryptedAudio?: Uint8Array<ArrayBuffer>
-    audio?: Uint8Array<ArrayBuffer>
-    url?: string
-    pollData?: {
-        pollQuestion?: string
-        pollOptions?: string[]
-        isMultipleAnswers?: boolean
-    },
-    replyToMessageId?: string
-}
-
 
 type UnreadMessageEventSendPayload = {
     chatId: string,
@@ -67,10 +52,6 @@ type UnreadMessageEventSendPayload = {
     }
 }
 
-type MessageSeenEventReceivePayload = {
-    chatId: string
-}
-
 type MessageSeenEventSendPayload = {
     user: {
         id: string
@@ -81,29 +62,15 @@ type MessageSeenEventSendPayload = {
     readAt: Date
 }
 
-type MessageEditEventReceivePayload = {
-    chatId: string
-    messageId: string
-    updatedTextContent: string
-}
-
 type MessageEditEventSendPayload = {
     chatId: string
     messageId: string
     updatedTextMessageContent: string
 }
 
-type MessageDeleteEventReceivePayload = {
+type MessageDeleteEventSendPayload = {
     chatId: string
     messageId: string
-}
-
-type MessageDeleteEventSendPayload = MessageDeleteEventReceivePayload
-
-type NewReactionEventReceivePayload = {
-    chatId: string
-    messageId: string
-    reaction: string
 }
 
 type NewReactionEventSendPayload = {
@@ -117,19 +84,10 @@ type NewReactionEventSendPayload = {
     reaction: string
 }
 
-type DeleteReactionEventReceivePayload = {
-    chatId: string
-    messageId: string
-}
-
 type DeleteReactionEventSendPayload = {
     chatId: string
     messageId: string
     userId: string
-}
-
-type UserTypingEventReceivePayload = {
-    chatId: string
 }
 
 type UserTypingEventSendPayload = {
@@ -139,12 +97,6 @@ type UserTypingEventSendPayload = {
         avatar: string
     },
     chatId: string
-}
-
-type VoteInEventReceivePayload = {
-    chatId: string
-    messageId: string
-    optionIndex: number
 }
 
 type VoteInEventSendPayload = {
@@ -157,8 +109,6 @@ type VoteInEventSendPayload = {
     optionIndex: number,
     chatId: string
 }
-
-type VoteOutEventReceivePayload = VoteInEventReceivePayload
 
 type VoteOutEventSendPayload = {
     chatId: string
@@ -177,14 +127,6 @@ type OnlineUsersListEventSendPayload = {
     onlineUserIds: string[]
 }
 
-type PinMessageEventReceivePayload = {
-    chatId: string
-    messageId: string
-}
-
-type UnpinMessageEventReceivePayload = {
-    pinId: string
-}
 type UnpinMessageEventSendPayload = {
     pinId: string
     chatId: string
@@ -197,67 +139,110 @@ type PinLimitReachedEventSendPayload = {
     chatId: string
 }
 
-const registerSocketHandlers = (io: Server) => {
+type SocketHandlerDependencies = {
+    registry?: SocketConnectionRegistry;
+    limiter?: SocketEventRateLimiter;
+    presenceWriteQueue?: SocketPresenceWriteQueue;
+};
 
-    // Now, 'socket: Socket' will implicitly include the 'user' property due to module augmentation.
+const registerSocketHandlers = (
+    io: Server,
+    dependencies: SocketHandlerDependencies = {},
+) => {
+    const registry = dependencies.registry ?? socketConnectionRegistry;
+    const limiter = dependencies.limiter ?? socketEventRateLimiter;
+    const presenceWriteQueue = dependencies.presenceWriteQueue ?? socketPresenceWriteQueue;
+
     io.on("connection", async (socket: Socket) => {
-
-        // Ensure socket.user is defined before proceeding.
-        // If socket.user is not guaranteed to be set at this point in your authentication flow,
-        // you should implement proper error handling or a redirection mechanism.
-        // For the purpose of resolving TS18048, we'll assume it's set or will be set shortly.
-        // If it can genuinely be undefined, add an early return:
         if (!socket.user) {
-            console.error("Socket user is undefined on connection, disconnecting socket.");
-            socket.disconnect(true); // Disconnect if user is not attached
+            socket.disconnect(true);
             return;
         }
 
-        console.log("Authenticated socket user connected.");
-
-        await prisma.user.update({
-            where: { id: socket.user.id },
-            data: { isOnline: true }
-        })
-
-        userSocketIds.set(socket.user.id, socket.id)
-
-        // telling everyone that user is online
-        const payload: OnlineUserEventSendPayload = {
-            userId: socket.user.id
+        const userId = socket.user.id;
+        const registration = registry.add(userId, socket.id);
+        if (!registration.accepted) {
+            emitSocketSecurityError(socket, "CONNECTION_LIMIT", "connection");
+            socket.disconnect(true);
+            return;
         }
-        socket.broadcast.emit(Events.ONLINE_USER, payload)
 
-        // getting all other online users
-        const onlineUserIds = Array.from(userSocketIds.keys());
+        socket.on("disconnect", async () => {
+            const removal = registry.remove(userId, socket.id);
+            if (!removal.lastConnection) return;
 
-        // sending the online users to the user who just connected
-        let payloadOnlineUsers: OnlineUsersListEventSendPayload = {
-            onlineUserIds,
+            try {
+                await presenceWriteQueue.run(userId, () => prisma.user.update({
+                    where: { id: userId },
+                    data: { isOnline: false, lastSeen: new Date() }
+                }));
+            } catch (error) {
+                logServerError("Socket offline presence update failed.", error);
+            }
+
+            if (registry.isOnline(userId)) return;
+            const payload: OfflineUserEventSendPayload = { userId };
+            socket.broadcast.emit(Events.OFFLINE_USER, payload);
+        });
+
+        if (registration.firstConnection) {
+            try {
+                await presenceWriteQueue.run(userId, () => prisma.user.update({
+                    where: { id: userId },
+                    data: { isOnline: true }
+                }));
+            } catch (error) {
+                logServerError("Socket online presence update failed.", error);
+            }
+
+            if (registry.isOnline(userId)) {
+                const payload: OnlineUserEventSendPayload = { userId };
+                socket.broadcast.emit(Events.ONLINE_USER, payload);
+            }
         }
+
+        const payloadOnlineUsers: OnlineUsersListEventSendPayload = {
+            onlineUserIds: registry.onlineUserIds(),
+        };
         socket.emit(Events.ONLINE_USERS_LIST, payloadOnlineUsers);
 
-        // getting all chats of the user
-        const userChats = await prisma.chatMembers.findMany({
-            where: {
-                userId: socket.user.id
-            },
-            select: { chatId: true }
-        })
+        try {
+            const userChats = await prisma.chatMembers.findMany({
+                where: { userId },
+                select: { chatId: true }
+            });
+            socket.join(userChats.map(({ chatId }) => chatId));
+        } catch (error) {
+            logServerError("Socket room initialization failed.", error);
+        }
 
-        // joining the user to all of its chats via chatIds (i.e rooms)
-        const chatIds = userChats.map(({ chatId }) => chatId);
-        socket.join(chatIds)
-
-        socket.on(Events.MESSAGE, async ({ chatId, isPollMessage, pollData, textMessageContent, url, encryptedAudio, audio, replyToMessageId }: MessageEventReceivePayload) => {
+        socket.on(Events.MESSAGE, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.MESSAGE, messageEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId, isPollMessage, pollData, textMessageContent, url, encryptedAudio, audio, replyToMessageId } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.MESSAGE,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.messageActorBurst],
+                keyParts: [userId],
+            })) return;
 
             try {
 
-                await assertChatMember(socket.user.id, chatId);
+                await assertChatMember(userId, chatId);
 
                 if (replyToMessageId) {
-                    await assertMessageAccessible(socket.user.id, chatId, replyToMessageId);
+                    await assertMessageAccessible(userId, chatId, replyToMessageId);
                 }
+
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.MESSAGE,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.messageChatBurst, SOCKET_EVENT_LIMITS.messageChatWindow],
+                    keyParts: [userId, chatId],
+                })) return;
 
                 let newMessage: Partial<Prisma.MessageCreateInput>;
 
@@ -547,10 +532,27 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.MESSAGE_SEEN, async ({ chatId }: MessageSeenEventReceivePayload) => {
+        socket.on(Events.MESSAGE_SEEN, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_SEEN, messageSeenEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.MESSAGE_SEEN,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.seenActor],
+                keyParts: [userId],
+            })) return;
 
             try {
-                await assertChatMember(socket.user.id, chatId);
+                await assertChatMember(userId, chatId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.MESSAGE_SEEN,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.seenChat],
+                    keyParts: [userId, chatId],
+                })) return;
 
                 const doesUnreadMessageExists = await prisma.unreadMessages.findUnique({
                     where: {
@@ -590,9 +592,26 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.MESSAGE_EDIT, async ({ chatId, messageId, updatedTextContent }: MessageEditEventReceivePayload) => {
+        socket.on(Events.MESSAGE_EDIT, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_EDIT, messageEditEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId, messageId, updatedTextContent } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.MESSAGE_EDIT,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.mutationActor],
+                keyParts: [userId],
+            })) return;
             try {
-                const authorizedMessage = await assertMessageOwner(socket.user.id, chatId, messageId);
+                const authorizedMessage = await assertMessageOwner(userId, chatId, messageId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.MESSAGE_EDIT,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.editMessage],
+                    keyParts: [userId, authorizedMessage.id],
+                })) return;
 
                 const message = await prisma.message.update({
                     where: {
@@ -616,10 +635,27 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.MESSAGE_DELETE, async ({ chatId, messageId }: MessageDeleteEventReceivePayload) => {
+        socket.on(Events.MESSAGE_DELETE, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_DELETE, messageDeleteEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId, messageId } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.MESSAGE_DELETE,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.mutationActor],
+                keyParts: [userId],
+            })) return;
 
             try {
-                const messageToBeDeleted = await assertMessageOwner(socket.user.id, chatId, messageId);
+                const messageToBeDeleted = await assertMessageOwner(userId, chatId, messageId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.MESSAGE_DELETE,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.deleteMessage],
+                    keyParts: [userId, messageToBeDeleted.id],
+                })) return;
 
                 await prisma.pinnedMessages.deleteMany({ where: { messageId: messageToBeDeleted.id } });
 
@@ -675,9 +711,26 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.NEW_REACTION, async ({ chatId, messageId, reaction }: NewReactionEventReceivePayload) => {
+        socket.on(Events.NEW_REACTION, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.NEW_REACTION, newReactionEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId, messageId, reaction } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.NEW_REACTION,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.mutationActor],
+                keyParts: [userId],
+            })) return;
             try {
-                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
+                const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.NEW_REACTION,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.reactionMessage],
+                    keyParts: [userId, authorizedMessage.id],
+                })) return;
 
                 const result = await prisma.reactions.findFirst({
                     where: {
@@ -717,9 +770,26 @@ const registerSocketHandlers = (io: Server) => {
 
         })
 
-        socket.on(Events.DELETE_REACTION, async ({ chatId, messageId }: DeleteReactionEventReceivePayload) => {
+        socket.on(Events.DELETE_REACTION, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.DELETE_REACTION, deleteReactionEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId, messageId } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.DELETE_REACTION,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.mutationActor],
+                keyParts: [userId],
+            })) return;
             try {
-                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
+                const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.DELETE_REACTION,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.reactionMessage],
+                    keyParts: [userId, authorizedMessage.id],
+                })) return;
 
                 await prisma.reactions.deleteMany({
                     where: {
@@ -740,9 +810,26 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.USER_TYPING, async ({ chatId }: UserTypingEventReceivePayload) => {
+        socket.on(Events.USER_TYPING, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.USER_TYPING, userTypingEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.USER_TYPING,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.typingActor],
+                keyParts: [userId],
+            })) return;
             try {
-                await assertChatMember(socket.user.id, chatId);
+                await assertChatMember(userId, chatId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.USER_TYPING,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.typingChat],
+                    keyParts: [userId, chatId],
+                })) return;
 
                 const payload: UserTypingEventSendPayload = {
                     user: {
@@ -760,10 +847,27 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.VOTE_IN, async ({ chatId, messageId, optionIndex }: VoteInEventReceivePayload) => {
+        socket.on(Events.VOTE_IN, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.VOTE_IN, voteEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId, messageId, optionIndex } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.VOTE_IN,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.mutationActor],
+                keyParts: [userId],
+            })) return;
 
             try {
-                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
+                const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.VOTE_IN,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.voteMessage],
+                    keyParts: [userId, authorizedMessage.id],
+                })) return;
 
                 if (!authorizedMessage.pollId) return
 
@@ -794,10 +898,27 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.VOTE_OUT, async ({ chatId, messageId, optionIndex }: VoteOutEventReceivePayload) => {
+        socket.on(Events.VOTE_OUT, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.VOTE_OUT, voteEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId, messageId, optionIndex } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.VOTE_OUT,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.mutationActor],
+                keyParts: [userId],
+            })) return;
 
             try {
-                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
+                const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.VOTE_OUT,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.voteMessage],
+                    keyParts: [userId, authorizedMessage.id],
+                })) return;
 
                 if (!authorizedMessage.pollId) return
 
@@ -834,9 +955,26 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.PIN_MESSAGE, async ({ chatId, messageId }: PinMessageEventReceivePayload) => {
+        socket.on(Events.PIN_MESSAGE, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.PIN_MESSAGE, pinMessageEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { chatId, messageId } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.PIN_MESSAGE,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.mutationActor],
+                keyParts: [userId],
+            })) return;
             try {
-                const authorizedMessage = await assertMessageAccessible(socket.user.id, chatId, messageId);
+                const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.PIN_MESSAGE,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.pinMessage],
+                    keyParts: [userId, authorizedMessage.id],
+                })) return;
 
                 const pinnedMessages = await prisma.pinnedMessages.findMany({
                     where: { chatId },
@@ -950,9 +1088,26 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        socket.on(Events.UNPIN_MESSAGE, async ({ pinId }: UnpinMessageEventReceivePayload) => {
+        socket.on(Events.UNPIN_MESSAGE, async (rawPayload: unknown) => {
+            const parsedPayload = parseSocketPayload(socket, Events.UNPIN_MESSAGE, unpinMessageEventSchema, rawPayload);
+            if (!parsedPayload) return;
+            const { pinId } = parsedPayload;
+            if (!enforceSocketEventLimits({
+                socket,
+                event: Events.UNPIN_MESSAGE,
+                limiter,
+                policies: [SOCKET_EVENT_LIMITS.mutationActor],
+                keyParts: [userId],
+            })) return;
             try {
-                const authorizedPin = await assertPinAccessible(socket.user.id, pinId);
+                const authorizedPin = await assertPinAccessible(userId, pinId);
+                if (!enforceSocketEventLimits({
+                    socket,
+                    event: Events.UNPIN_MESSAGE,
+                    limiter,
+                    policies: [SOCKET_EVENT_LIMITS.pinMessage],
+                    keyParts: [userId, authorizedPin.messageId],
+                })) return;
 
                 const deletedPinnedMessage = await prisma.pinnedMessages.delete({
                     where: {
@@ -978,36 +1133,7 @@ const registerSocketHandlers = (io: Server) => {
             }
         })
 
-        // The registerWebRtcHandlers function will also benefit from the global module augmentation
-        // for the Socket type, resolving TS18048 errors in that file as well.
-        registerWebRtcHandlers(socket, io);
-
-        socket.on("disconnect", async () => {
-            // Check if socket.user is defined before accessing its properties during disconnect
-            if (!socket.user) {
-                console.warn("Socket user was undefined during disconnect event.");
-                return;
-            }
-
-            await prisma.user.update({
-                where: {
-                    // Using non-null assertion (!) for socket.user.id here.
-                    id: socket.user!.id
-                },
-                data: {
-                    isOnline: false,
-                    lastSeen: new Date
-                }
-            })
-            // Using non-null assertion (!) for socket.user.id here.
-            userSocketIds.delete(socket.user!.id);
-
-            const payload: OfflineUserEventSendPayload = {
-                // Using non-null assertion (!) for socket.user.id here.
-                userId: socket.user!.id
-            }
-            socket.broadcast.emit(Events.OFFLINE_USER, payload)
-        })
+        registerWebRtcHandlers(socket, io, { registry, limiter });
     })
 }
 

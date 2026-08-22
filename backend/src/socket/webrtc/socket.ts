@@ -1,7 +1,14 @@
 import { Server, Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
-import { userSocketIds } from "../../index.js";
 import { prisma } from "../../lib/prisma.lib.js";
+import {
+  callAcceptedEventSchema,
+  callStateEventSchema,
+  callUserEventSchema,
+  iceCandidateEventSchema,
+  negoDoneEventSchema,
+  negoNeededEventSchema,
+} from "../../schemas/socket.schema.js";
 import type { AuthorizedCall } from "../../services/authorization.service.js";
 import {
   assertCallCallee,
@@ -11,21 +18,21 @@ import {
 import { CustomError } from "../../utils/error.utils.js";
 import { sendPushNotification } from "../../utils/generic.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
-
-type CallUserEventReceivePayload = {
-  calleeId: string;
-  offer: RTCSessionDescriptionInit;
-};
+import {
+  socketConnectionRegistry,
+  type SocketConnectionRegistry,
+} from "../connection-registry.js";
+import {
+  enforceSocketEventLimits,
+  parseSocketPayload,
+  SOCKET_EVENT_LIMITS,
+  socketEventRateLimiter,
+  type SocketEventRateLimiter,
+} from "../socket-security.js";
 
 type IncomingCallEventSendPayload = {
   caller: { id: string; username: string; avatar: string };
   offer: RTCSessionDescriptionInit;
-  callHistoryId: string;
-};
-
-type CallAcceptedEventReceivePayload = {
-  callerId: string;
-  answer: RTCSessionDescriptionInit;
   callHistoryId: string;
 };
 
@@ -35,20 +42,8 @@ type CallAcceptedEventSendPayload = {
   callHistoryId: string;
 };
 
-type NegoNeededEventReceivePayload = {
-  calleeId: string;
-  offer: RTCSessionDescriptionInit;
-  callHistoryId: string;
-};
-
 type NegoNeededEventSendPayload = {
   offer: RTCSessionDescriptionInit;
-  callerId: string;
-  callHistoryId: string;
-};
-
-type NegoDoneEventReceivePayload = {
-  answer: RTCSessionDescriptionInit;
   callerId: string;
   callHistoryId: string;
 };
@@ -59,18 +54,15 @@ type NegoFinalEventSendPayload = {
   callHistoryId: string;
 };
 
-type CallEndEventReceivePayload = { callHistoryId: string };
-type CallRejectedEventReceivePayload = { callHistoryId: string };
-type CalleeBusyEventReceivePayload = { callHistoryId: string };
-
-type IceCandidateEventReceivePayload = {
-  candidate: RTCIceCandidate;
-  calleeId: string;
-  callHistoryId: string;
+type SerializedIceCandidate = {
+  candidate: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
 };
 
 type IceCandidateEventSendPayload = {
-  candidate: RTCIceCandidate;
+  candidate: SerializedIceCandidate;
   callerId: string;
   callHistoryId: string;
 };
@@ -115,11 +107,41 @@ const assertOtherParticipant = (
   return otherParticipantId;
 };
 
-const registerWebRtcHandlers = (socket: Socket, io: Server) => {
-  socket.on(Events.CALL_USER, async ({ calleeId, offer }: CallUserEventReceivePayload) => {
+type WebRtcHandlerDependencies = {
+  registry?: SocketConnectionRegistry;
+  limiter?: SocketEventRateLimiter;
+};
+
+const registerWebRtcHandlers = (
+  socket: Socket,
+  io: Server,
+  dependencies: WebRtcHandlerDependencies = {},
+) => {
+  const registry = dependencies.registry ?? socketConnectionRegistry;
+  const limiter = dependencies.limiter ?? socketEventRateLimiter;
+  const userId = socket.user.id;
+
+  socket.on(Events.CALL_USER, async (rawPayload: unknown) => {
+    const parsedPayload = parseSocketPayload(socket, Events.CALL_USER, callUserEventSchema, rawPayload);
+    if (!parsedPayload) return;
+    const { calleeId, offer } = parsedPayload;
+    if (!enforceSocketEventLimits({
+      socket,
+      event: Events.CALL_USER,
+      limiter,
+      policies: [SOCKET_EVENT_LIMITS.callActor],
+      keyParts: [userId],
+    })) return;
     try {
-      const callee = await assertCanCallUser(socket.user.id, calleeId);
-      const calleeSocketId = userSocketIds.get(callee.id);
+      const callee = await assertCanCallUser(userId, calleeId);
+      if (!enforceSocketEventLimits({
+        socket,
+        event: Events.CALL_USER,
+        limiter,
+        policies: [SOCKET_EVENT_LIMITS.callInitiation],
+        keyParts: [userId, callee.id],
+      })) return;
+      const calleeSocketId = registry.getLatestSocket(callee.id);
 
       if (!calleeSocketId) {
         socket.emit(Events.CALLEE_OFFLINE);
@@ -165,15 +187,33 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
     }
   });
 
-  socket.on(Events.CALL_ACCEPTED, async ({ answer, callerId, callHistoryId }: CallAcceptedEventReceivePayload) => {
+  socket.on(Events.CALL_ACCEPTED, async (rawPayload: unknown) => {
+    const parsedPayload = parseSocketPayload(socket, Events.CALL_ACCEPTED, callAcceptedEventSchema, rawPayload);
+    if (!parsedPayload) return;
+    const { answer, callerId, callHistoryId } = parsedPayload;
+    if (!enforceSocketEventLimits({
+      socket,
+      event: Events.CALL_ACCEPTED,
+      limiter,
+      policies: [SOCKET_EVENT_LIMITS.callActor],
+      keyParts: [userId],
+    })) return;
     try {
-      const call = await assertCallCallee(socket.user.id, callHistoryId);
+      const call = await assertCallCallee(userId, callHistoryId);
       assertRingingCall(call);
       if (callerId !== call.callerId) {
         throw new CustomError("Call participant mismatch", 403);
       }
 
-      const callerSocketId = userSocketIds.get(call.callerId);
+      if (!enforceSocketEventLimits({
+        socket,
+        event: Events.CALL_ACCEPTED,
+        limiter,
+        policies: [SOCKET_EVENT_LIMITS.callState],
+        keyParts: [userId, call.id],
+      })) return;
+
+      const callerSocketId = registry.getLatestSocket(call.callerId);
       if (!callerSocketId) {
         await prisma.callHistory.update({
           where: { id: call.id },
@@ -199,16 +239,33 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
     }
   });
 
-  socket.on(Events.CALL_REJECTED, async ({ callHistoryId }: CallRejectedEventReceivePayload) => {
+  socket.on(Events.CALL_REJECTED, async (rawPayload: unknown) => {
+    const parsedPayload = parseSocketPayload(socket, Events.CALL_REJECTED, callStateEventSchema, rawPayload);
+    if (!parsedPayload) return;
+    const { callHistoryId } = parsedPayload;
+    if (!enforceSocketEventLimits({
+      socket,
+      event: Events.CALL_REJECTED,
+      limiter,
+      policies: [SOCKET_EVENT_LIMITS.callActor],
+      keyParts: [userId],
+    })) return;
     try {
-      const call = await assertCallCallee(socket.user.id, callHistoryId);
+      const call = await assertCallCallee(userId, callHistoryId);
       assertRingingCall(call);
+      if (!enforceSocketEventLimits({
+        socket,
+        event: Events.CALL_REJECTED,
+        limiter,
+        policies: [SOCKET_EVENT_LIMITS.callState],
+        keyParts: [userId, call.id],
+      })) return;
       await prisma.callHistory.update({
         where: { id: call.id },
         data: { status: "REJECTED", ...callEndData(call) },
       });
 
-      const callerSocketId = userSocketIds.get(call.callerId);
+      const callerSocketId = registry.getLatestSocket(call.callerId);
       if (callerSocketId) {
         socket.to(callerSocketId).emit(Events.CALL_REJECTED);
         socket.to(callerSocketId).emit(Events.CALL_END);
@@ -219,12 +276,30 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
     }
   });
 
-  socket.on(Events.CALL_END, async ({ callHistoryId }: CallEndEventReceivePayload) => {
+  socket.on(Events.CALL_END, async (rawPayload: unknown) => {
+    const parsedPayload = parseSocketPayload(socket, Events.CALL_END, callStateEventSchema, rawPayload);
+    if (!parsedPayload) return;
+    const { callHistoryId } = parsedPayload;
+    if (!enforceSocketEventLimits({
+      socket,
+      event: Events.CALL_END,
+      limiter,
+      policies: [SOCKET_EVENT_LIMITS.callActor],
+      keyParts: [userId],
+    })) return;
     try {
-      const call = await assertCallParticipant(socket.user.id, callHistoryId);
+      const call = await assertCallParticipant(userId, callHistoryId);
       if (call.endedAt || !["RINGING", "COMPLETED"].includes(call.status)) {
         throw new CustomError("Call is already terminal", 409);
       }
+
+      if (!enforceSocketEventLimits({
+        socket,
+        event: Events.CALL_END,
+        limiter,
+        policies: [SOCKET_EVENT_LIMITS.callState],
+        keyParts: [userId, call.id],
+      })) return;
 
       const finalStatus = call.status === "RINGING" ? "MISSED" : "COMPLETED";
       await prisma.callHistory.update({
@@ -232,8 +307,8 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
         data: { status: finalStatus, ...callEndData(call) },
       });
 
-      const callerSocketId = userSocketIds.get(call.callerId);
-      const calleeSocketId = userSocketIds.get(call.calleeId);
+      const callerSocketId = registry.getLatestSocket(call.callerId);
+      const calleeSocketId = registry.getLatestSocket(call.calleeId);
       if (callerSocketId) io.to(callerSocketId).emit(Events.CALL_END);
       if (calleeSocketId) io.to(calleeSocketId).emit(Events.CALL_END);
     } catch (error) {
@@ -241,16 +316,33 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
     }
   });
 
-  socket.on(Events.CALLEE_BUSY, async ({ callHistoryId }: CalleeBusyEventReceivePayload) => {
+  socket.on(Events.CALLEE_BUSY, async (rawPayload: unknown) => {
+    const parsedPayload = parseSocketPayload(socket, Events.CALLEE_BUSY, callStateEventSchema, rawPayload);
+    if (!parsedPayload) return;
+    const { callHistoryId } = parsedPayload;
+    if (!enforceSocketEventLimits({
+      socket,
+      event: Events.CALLEE_BUSY,
+      limiter,
+      policies: [SOCKET_EVENT_LIMITS.callActor],
+      keyParts: [userId],
+    })) return;
     try {
-      const call = await assertCallCallee(socket.user.id, callHistoryId);
+      const call = await assertCallCallee(userId, callHistoryId);
       assertRingingCall(call);
+      if (!enforceSocketEventLimits({
+        socket,
+        event: Events.CALLEE_BUSY,
+        limiter,
+        policies: [SOCKET_EVENT_LIMITS.callState],
+        keyParts: [userId, call.id],
+      })) return;
       await prisma.callHistory.update({
         where: { id: call.id },
         data: { status: "MISSED", ...callEndData(call) },
       });
 
-      const callerSocketId = userSocketIds.get(call.callerId);
+      const callerSocketId = registry.getLatestSocket(call.callerId);
       if (callerSocketId) {
         socket.to(callerSocketId).emit(Events.CALLEE_BUSY);
         socket.to(callerSocketId).emit(Events.CALL_END);
@@ -260,12 +352,29 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
     }
   });
 
-  socket.on(Events.ICE_CANDIDATE, async ({ candidate, calleeId, callHistoryId }: IceCandidateEventReceivePayload) => {
+  socket.on(Events.ICE_CANDIDATE, async (rawPayload: unknown) => {
+    const parsedPayload = parseSocketPayload(socket, Events.ICE_CANDIDATE, iceCandidateEventSchema, rawPayload);
+    if (!parsedPayload) return;
+    const { candidate, calleeId, callHistoryId } = parsedPayload;
+    if (!enforceSocketEventLimits({
+      socket,
+      event: Events.ICE_CANDIDATE,
+      limiter,
+      policies: [SOCKET_EVENT_LIMITS.iceActor],
+      keyParts: [userId],
+    })) return;
     try {
-      const call = await assertCallParticipant(socket.user.id, callHistoryId);
+      const call = await assertCallParticipant(userId, callHistoryId);
       assertActiveCall(call);
-      const targetUserId = assertOtherParticipant(call, socket.user.id, calleeId);
-      const targetSocketId = userSocketIds.get(targetUserId);
+      const targetUserId = assertOtherParticipant(call, userId, calleeId);
+      if (!enforceSocketEventLimits({
+        socket,
+        event: Events.ICE_CANDIDATE,
+        limiter,
+        policies: [SOCKET_EVENT_LIMITS.iceCall],
+        keyParts: [userId, call.id],
+      })) return;
+      const targetSocketId = registry.getLatestSocket(targetUserId);
       if (!targetSocketId) return;
 
       const payload: IceCandidateEventSendPayload = {
@@ -279,12 +388,29 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
     }
   });
 
-  socket.on(Events.NEGO_NEEDED, async ({ offer, calleeId, callHistoryId }: NegoNeededEventReceivePayload) => {
+  socket.on(Events.NEGO_NEEDED, async (rawPayload: unknown) => {
+    const parsedPayload = parseSocketPayload(socket, Events.NEGO_NEEDED, negoNeededEventSchema, rawPayload);
+    if (!parsedPayload) return;
+    const { offer, calleeId, callHistoryId } = parsedPayload;
+    if (!enforceSocketEventLimits({
+      socket,
+      event: Events.NEGO_NEEDED,
+      limiter,
+      policies: [SOCKET_EVENT_LIMITS.negotiationActor],
+      keyParts: [userId],
+    })) return;
     try {
-      const call = await assertCallParticipant(socket.user.id, callHistoryId);
+      const call = await assertCallParticipant(userId, callHistoryId);
       assertActiveCall(call);
-      const targetUserId = assertOtherParticipant(call, socket.user.id, calleeId);
-      const targetSocketId = userSocketIds.get(targetUserId);
+      const targetUserId = assertOtherParticipant(call, userId, calleeId);
+      if (!enforceSocketEventLimits({
+        socket,
+        event: Events.NEGO_NEEDED,
+        limiter,
+        policies: [SOCKET_EVENT_LIMITS.negotiationCall],
+        keyParts: [userId, call.id],
+      })) return;
+      const targetSocketId = registry.getLatestSocket(targetUserId);
 
       if (!targetSocketId) {
         await prisma.callHistory.update({
@@ -307,12 +433,29 @@ const registerWebRtcHandlers = (socket: Socket, io: Server) => {
     }
   });
 
-  socket.on(Events.NEGO_DONE, async ({ answer, callerId, callHistoryId }: NegoDoneEventReceivePayload) => {
+  socket.on(Events.NEGO_DONE, async (rawPayload: unknown) => {
+    const parsedPayload = parseSocketPayload(socket, Events.NEGO_DONE, negoDoneEventSchema, rawPayload);
+    if (!parsedPayload) return;
+    const { answer, callerId, callHistoryId } = parsedPayload;
+    if (!enforceSocketEventLimits({
+      socket,
+      event: Events.NEGO_DONE,
+      limiter,
+      policies: [SOCKET_EVENT_LIMITS.negotiationActor],
+      keyParts: [userId],
+    })) return;
     try {
-      const call = await assertCallParticipant(socket.user.id, callHistoryId);
+      const call = await assertCallParticipant(userId, callHistoryId);
       assertActiveCall(call);
-      const targetUserId = assertOtherParticipant(call, socket.user.id, callerId);
-      const targetSocketId = userSocketIds.get(targetUserId);
+      const targetUserId = assertOtherParticipant(call, userId, callerId);
+      if (!enforceSocketEventLimits({
+        socket,
+        event: Events.NEGO_DONE,
+        limiter,
+        policies: [SOCKET_EVENT_LIMITS.negotiationCall],
+        keyParts: [userId, call.id],
+      })) return;
+      const targetSocketId = registry.getLatestSocket(targetUserId);
 
       if (!targetSocketId) {
         await prisma.callHistory.update({

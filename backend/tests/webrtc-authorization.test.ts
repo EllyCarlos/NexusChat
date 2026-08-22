@@ -1,10 +1,6 @@
 import type { Server, Socket } from "socket.io";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/index.js", () => ({
-  userSocketIds: new Map<string, string>(),
-}));
-
 vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: {
     user: { findUnique: vi.fn() },
@@ -22,15 +18,20 @@ vi.mock("../src/utils/generic.js", () => ({
 }));
 
 import { Events } from "../src/enums/event/event.enum.js";
-import { userSocketIds } from "../src/index.js";
 import { prisma } from "../src/lib/prisma.lib.js";
+import { MAX_SOCKET_ICE_CANDIDATE_LENGTH, MAX_SOCKET_SDP_LENGTH } from "../src/schemas/socket.schema.js";
+import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { sendPushNotification } from "../src/utils/generic.js";
 
-const CALLER_ID = "caller-user";
-const CALLEE_ID = "callee-user";
-const CALL_ID = "call-1";
+const CALLER_ID = "cm10000000000000000000001";
+const CALLEE_ID = "cm10000000000000000000002";
+const CALL_ID = "cm10000000000000000000003";
+const FOREIGN_ID = "cm10000000000000000000004";
+const FOREIGN_CALL_ID = "cm10000000000000000000005";
 const startedAt = new Date(Date.now() - 5_000);
+const registry = new SocketConnectionRegistry();
 
 const userFindUnique = vi.mocked(prisma.user.findUnique);
 const friendFindFirst = vi.mocked(prisma.friends.findFirst);
@@ -65,6 +66,7 @@ const createHarness = (actorUserId: string) => {
   const socketEmit = vi.fn();
   const socketRelayEmit = vi.fn();
   const ioRelayEmit = vi.fn();
+  const ioTo = vi.fn(() => ({ emit: ioRelayEmit }));
 
   const socket = {
     user: {
@@ -81,13 +83,17 @@ const createHarness = (actorUserId: string) => {
     disconnect: vi.fn(),
   };
   const io = {
-    to: vi.fn(() => ({ emit: ioRelayEmit })),
+    to: ioTo,
   };
 
-  registerWebRtcHandlers(socket as unknown as Socket, io as unknown as Server);
+  registerWebRtcHandlers(socket as unknown as Socket, io as unknown as Server, {
+    registry,
+    limiter: new SocketEventRateLimiter(),
+  });
 
   return {
     ioRelayEmit,
+    ioTo,
     socket,
     socketEmit,
     socketRelayEmit,
@@ -118,7 +124,7 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  userSocketIds.clear();
+  registry.clear();
 });
 
 describe("WebRTC call authorization failures", () => {
@@ -162,7 +168,7 @@ describe("WebRTC call authorization failures", () => {
 
   it("prevents a non-callee from accepting a call", async () => {
     callFindFirst.mockResolvedValue(null);
-    const harness = createHarness("foreign-user");
+    const harness = createHarness(FOREIGN_ID);
 
     await harness.trigger(Events.CALL_ACCEPTED, {
       callerId: CALLER_ID,
@@ -178,7 +184,7 @@ describe("WebRTC call authorization failures", () => {
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.CALL_ACCEPTED, {
-      callerId: "attacker-target",
+      callerId: FOREIGN_ID,
       callHistoryId: CALL_ID,
       answer: { type: "answer", sdp: "answer" },
     });
@@ -197,24 +203,20 @@ describe("WebRTC call authorization failures", () => {
 
   it("prevents a nonparticipant from ending a call", async () => {
     callFindFirst.mockResolvedValue(null);
-    const harness = createHarness("foreign-user");
+    const harness = createHarness(FOREIGN_ID);
 
-    await harness.trigger(Events.CALL_END, {
-      callHistoryId: CALL_ID,
-      wasCallAccepted: true,
-    });
+    await harness.trigger(Events.CALL_END, { callHistoryId: CALL_ID });
 
     expectNoMutationOrRelay(harness);
   });
 
-  it("ignores client acceptance claims and derives a ringing call as missed", async () => {
+  it("derives a ringing call as missed from authoritative call state", async () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({} as never);
     const harness = createHarness(CALLER_ID);
 
     await harness.trigger(Events.CALL_END, {
       callHistoryId: CALL_ID,
-      wasCallAccepted: true,
     });
 
     expect(callUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -226,14 +228,11 @@ describe("WebRTC call authorization failures", () => {
     }));
   });
 
-  it.each([
-    ["missing binding", CALLEE_ID, {}],
-    ["foreign call ID", CALLEE_ID, { callHistoryId: "foreign-call" }],
-  ])("CALLEE_BUSY rejects %s", async (_label, actorId, payload) => {
+  it("CALLEE_BUSY rejects a foreign call ID", async () => {
     callFindFirst.mockResolvedValue(null);
-    const harness = createHarness(actorId);
+    const harness = createHarness(CALLEE_ID);
 
-    await harness.trigger(Events.CALLEE_BUSY, payload);
+    await harness.trigger(Events.CALLEE_BUSY, { callHistoryId: FOREIGN_CALL_ID });
 
     expectNoMutationOrRelay(harness);
   });
@@ -249,7 +248,7 @@ describe("WebRTC call authorization failures", () => {
 
   it("prevents ICE relay by a nonparticipant", async () => {
     callFindFirst.mockResolvedValue(null);
-    const harness = createHarness("foreign-user");
+    const harness = createHarness(FOREIGN_ID);
 
     await harness.trigger(Events.ICE_CANDIDATE, {
       callHistoryId: CALL_ID,
@@ -266,7 +265,7 @@ describe("WebRTC call authorization failures", () => {
 
     await harness.trigger(Events.ICE_CANDIDATE, {
       callHistoryId: CALL_ID,
-      calleeId: "arbitrary-user",
+      calleeId: FOREIGN_ID,
       candidate: { candidate: "candidate" },
     });
 
@@ -288,7 +287,7 @@ describe("WebRTC call authorization failures", () => {
 
   it("prevents a nonparticipant from requesting negotiation", async () => {
     callFindFirst.mockResolvedValue(null);
-    const harness = createHarness("foreign-user");
+    const harness = createHarness(FOREIGN_ID);
 
     await harness.trigger(Events.NEGO_NEEDED, {
       callHistoryId: CALL_ID,
@@ -305,7 +304,7 @@ describe("WebRTC call authorization failures", () => {
 
     await harness.trigger(Events.NEGO_NEEDED, {
       callHistoryId: CALL_ID,
-      calleeId: "arbitrary-user",
+      calleeId: FOREIGN_ID,
       offer: { type: "offer", sdp: "offer" },
     });
 
@@ -313,8 +312,8 @@ describe("WebRTC call authorization failures", () => {
   });
 
   it.each([
-    ["nonparticipant", "foreign-user", null, CALLER_ID],
-    ["wrong target", CALLEE_ID, callRecord({ status: "COMPLETED" }), "arbitrary-user"],
+    ["nonparticipant", FOREIGN_ID, null, CALLER_ID],
+    ["wrong target", CALLEE_ID, callRecord({ status: "COMPLETED" }), FOREIGN_ID],
   ])("NEGO_DONE rejects a %s", async (_label, actorId, call, targetId) => {
     callFindFirst.mockResolvedValue(call as never);
     const harness = createHarness(actorId);
@@ -378,13 +377,11 @@ describe("WebRTC authorized call operations", () => {
     } as never);
     friendFindFirst.mockResolvedValue({ id: "friendship-1" } as never);
     callCreate.mockResolvedValue({ id: CALL_ID } as never);
-    userSocketIds.set(CALLEE_ID, "callee-socket");
+    registry.add(CALLEE_ID, "callee-socket");
     const harness = createHarness(CALLER_ID);
 
     await harness.trigger(Events.CALL_USER, {
       calleeId: CALLEE_ID,
-      callerId: "attacker-user",
-      userId: "attacker-user",
       offer: { type: "offer", sdp: "offer" },
     });
 
@@ -402,7 +399,7 @@ describe("WebRTC authorized call operations", () => {
   it("allows the recorded callee to accept and transitions the call before relay", async () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({} as never);
-    userSocketIds.set(CALLER_ID, "caller-socket");
+    registry.add(CALLER_ID, "caller-socket");
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.CALL_ACCEPTED, {
@@ -426,7 +423,7 @@ describe("WebRTC authorized call operations", () => {
   it("allows the recorded callee to reject", async () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({} as never);
-    userSocketIds.set(CALLER_ID, "caller-socket");
+    registry.add(CALLER_ID, "caller-socket");
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.CALL_REJECTED, { callHistoryId: CALL_ID });
@@ -440,13 +437,12 @@ describe("WebRTC authorized call operations", () => {
   it.each([CALLER_ID, CALLEE_ID])("allows participant %s to end an accepted call", async (actorId) => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
     callUpdate.mockResolvedValue({} as never);
-    userSocketIds.set(CALLER_ID, "caller-socket");
-    userSocketIds.set(CALLEE_ID, "callee-socket");
+    registry.add(CALLER_ID, "caller-socket");
+    registry.add(CALLEE_ID, "callee-socket");
     const harness = createHarness(actorId);
 
     await harness.trigger(Events.CALL_END, {
       callHistoryId: CALL_ID,
-      wasCallAccepted: false,
     });
 
     expect(callUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -458,7 +454,7 @@ describe("WebRTC authorized call operations", () => {
   it("allows the recorded callee to report busy for the bound call", async () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({} as never);
-    userSocketIds.set(CALLER_ID, "caller-socket");
+    registry.add(CALLER_ID, "caller-socket");
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.CALLEE_BUSY, { callHistoryId: CALL_ID });
@@ -474,7 +470,7 @@ describe("WebRTC authorized call operations", () => {
     [CALLEE_ID, CALLER_ID],
   ])("allows ICE relay from participant %s to participant %s", async (actorId, targetId) => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
-    userSocketIds.set(targetId, "target-socket");
+    registry.add(targetId, "target-socket");
     const harness = createHarness(actorId);
 
     await harness.trigger(Events.ICE_CANDIDATE, {
@@ -492,7 +488,7 @@ describe("WebRTC authorized call operations", () => {
 
   it("allows a valid negotiation request", async () => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
-    userSocketIds.set(CALLEE_ID, "callee-socket");
+    registry.add(CALLEE_ID, "callee-socket");
     const harness = createHarness(CALLER_ID);
 
     await harness.trigger(Events.NEGO_NEEDED, {
@@ -510,7 +506,7 @@ describe("WebRTC authorized call operations", () => {
 
   it("allows a valid negotiation response", async () => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
-    userSocketIds.set(CALLER_ID, "caller-socket");
+    registry.add(CALLER_ID, "caller-socket");
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.NEGO_DONE, {
@@ -524,5 +520,125 @@ describe("WebRTC authorized call operations", () => {
       calleeId: CALLEE_ID,
       callHistoryId: CALL_ID,
     });
+  });
+});
+
+describe("WebRTC payload and abuse controls", () => {
+  it("rejects malformed signaling before authorization or mutation", async () => {
+    const harness = createHarness(CALLER_ID);
+
+    await harness.trigger(Events.CALL_USER, { calleeId: CALLEE_ID });
+
+    expect(harness.socketEmit).toHaveBeenCalledWith(Events.SECURITY_ERROR, {
+      category: "INVALID_PAYLOAD",
+      event: Events.CALL_USER,
+    });
+    expect(userFindUnique).not.toHaveBeenCalled();
+    expect(callCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized SDP and ICE candidate fields", async () => {
+    const harness = createHarness(CALLER_ID);
+
+    await harness.trigger(Events.CALL_USER, {
+      calleeId: CALLEE_ID,
+      offer: { type: "offer", sdp: "s".repeat(MAX_SOCKET_SDP_LENGTH + 1) },
+    });
+    await harness.trigger(Events.ICE_CANDIDATE, {
+      callHistoryId: CALL_ID,
+      calleeId: CALLEE_ID,
+      candidate: { candidate: "c".repeat(MAX_SOCKET_ICE_CANDIDATE_LENGTH + 1) },
+    });
+
+    expect(harness.socketEmit).toHaveBeenCalledTimes(2);
+    expect(callFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("throttles repeated call initiation after friendship authorization", async () => {
+    userFindUnique.mockResolvedValue({
+      id: CALLEE_ID,
+      notificationsEnabled: false,
+      fcmToken: null,
+    } as never);
+    friendFindFirst.mockResolvedValue({ id: "friendship" } as never);
+    callCreate.mockResolvedValue({ id: CALL_ID } as never);
+    registry.add(CALLEE_ID, "callee-socket");
+    const harness = createHarness(CALLER_ID);
+
+    for (let index = 0; index < 4; index += 1) {
+      await harness.trigger(Events.CALL_USER, {
+        calleeId: CALLEE_ID,
+        offer: { type: "offer", sdp: "offer" },
+      });
+    }
+
+    expect(callCreate).toHaveBeenCalledTimes(3);
+    expect(harness.socketEmit).toHaveBeenCalledWith(Events.SECURITY_ERROR, {
+      category: "RATE_LIMITED",
+      event: Events.CALL_USER,
+    });
+  });
+
+  it("permits a legitimate ICE burst and throttles an extreme flood", async () => {
+    callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
+    registry.add(CALLEE_ID, "callee-socket");
+    const harness = createHarness(CALLER_ID);
+    const payload = {
+      callHistoryId: CALL_ID,
+      calleeId: CALLEE_ID,
+      candidate: { candidate: "candidate" },
+    };
+
+    for (let index = 0; index < 121; index += 1) {
+      await harness.trigger(Events.ICE_CANDIDATE, payload);
+    }
+
+    expect(harness.ioRelayEmit).toHaveBeenCalledTimes(120);
+    expect(harness.socketEmit).toHaveBeenCalledWith(Events.SECURITY_ERROR, {
+      category: "RATE_LIMITED",
+      event: Events.ICE_CANDIDATE,
+    });
+  });
+
+  it("throttles negotiation floods separately from ICE", async () => {
+    callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
+    registry.add(CALLEE_ID, "callee-socket");
+    const harness = createHarness(CALLER_ID);
+    const payload = {
+      callHistoryId: CALL_ID,
+      calleeId: CALLEE_ID,
+      offer: { type: "offer", sdp: "offer" },
+    };
+
+    for (let index = 0; index < 11; index += 1) {
+      await harness.trigger(Events.NEGO_NEEDED, payload);
+    }
+
+    expect(harness.socketRelayEmit).toHaveBeenCalledTimes(10);
+    expect(harness.socketEmit).toHaveBeenCalledWith(Events.SECURITY_ERROR, {
+      category: "RATE_LIMITED",
+      event: Events.NEGO_NEEDED,
+    });
+  });
+
+  it("rings only the most-recent callee socket under the single-target call policy", async () => {
+    userFindUnique.mockResolvedValue({
+      id: CALLEE_ID,
+      notificationsEnabled: false,
+      fcmToken: null,
+    } as never);
+    friendFindFirst.mockResolvedValue({ id: "friendship" } as never);
+    callCreate.mockResolvedValue({ id: CALL_ID } as never);
+    registry.add(CALLEE_ID, "older-callee-socket");
+    registry.add(CALLEE_ID, "newer-callee-socket");
+    const harness = createHarness(CALLER_ID);
+
+    await harness.trigger(Events.CALL_USER, {
+      calleeId: CALLEE_ID,
+      offer: { type: "offer", sdp: "offer" },
+    });
+
+    expect(harness.ioTo).toHaveBeenCalledWith("newer-callee-socket");
+    expect(harness.ioTo).not.toHaveBeenCalledWith("older-callee-socket");
   });
 });
