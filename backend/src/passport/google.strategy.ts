@@ -64,9 +64,9 @@ passport.use(new GoogleStrategy({
       else{
         throw new Error("Some Error occured")
       }
-    } catch (error) {
-      console.log(error);
-      done('Some error occured',undefined)
+    } catch {
+      console.error("Google OAuth profile processing failed.");
+      done(null, false)
     }
   }
 ));

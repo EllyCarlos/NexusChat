@@ -80,12 +80,6 @@ const checkAuth = asyncErrorHandler(async (req: AuthenticatedRequest, res: Respo
 const redirectHandler = asyncErrorHandler(async (req: OAuthAuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     if (req.user) {
-      console.log('🔄 OAuth redirect - Processing user:', {
-        userId: req.user.id,
-        email: req.user.email,
-        isNewUser: req.user.newUser
-      });
-
       const userId = String(req.user.id);
       const isNewUser = Boolean(req.user.newUser);
 
@@ -96,18 +90,17 @@ const redirectHandler = asyncErrorHandler(async (req: OAuthAuthenticatedRequest,
         email: req.user.email,
       });
 
-      console.log('✅ OAuth token created successfully');
-
-      const redirectUrl = `${config.clientUrl}/auth/oauth-redirect?token=${tempToken}`;
-      console.log('🔗 Redirecting to:', redirectUrl);
-
-      return res.redirect(307, redirectUrl);
+      console.log('OAuth redirect issued.');
+      return res.redirect(
+        307,
+        `${config.clientUrl}/auth/oauth-redirect#token=${encodeURIComponent(tempToken)}`
+      );
     }
 
-    console.warn('❌ No user data in OAuth request for redirect.'); // Changed to warn
+    console.warn('OAuth callback did not produce a user.');
     return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?error=no_user_data`);
-  } catch (error) {
-    console.error('🚨 OAuth redirect error:', error); // Use console.error
+  } catch {
+    console.error('OAuth redirect failed.');
     return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?error=oauth_failed`);
   }
 });

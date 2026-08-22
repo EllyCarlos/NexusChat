@@ -2,7 +2,6 @@ import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import express, { Request, Response } from 'express'
 import { createServer } from 'http'
-import morgan from 'morgan'
 import passport from 'passport'
 import { Server } from 'socket.io'
 import './config/cloudinary.config.js'
@@ -19,6 +18,7 @@ import requestRoutes from './routes/request.router.js'
 import userRoutes from './routes/user.router.js'
 
 import { socketAuthenticatorMiddleware } from './middlewares/socket-auth.middleware.js'
+import { createRequestLogger } from './middlewares/request-logger.middleware.js'
 import registerSocketHandlers from './socket/socket.js'
 import { prisma } from './lib/prisma.lib.js'
 
@@ -53,7 +53,7 @@ app.use(express.json())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
-app.use(morgan('tiny'))
+app.use(createRequestLogger())
 
 
 // route middlewares
