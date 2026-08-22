@@ -222,6 +222,7 @@ Run each command from the relevant package directory.
 | Backend | `npm run dev` | Start the TypeScript development server |
 | Backend | `npm run ts.check` | Type-check without emitting JavaScript |
 | Backend | `npm run build` | Clean `backend/dist` and compile TypeScript |
+| Backend | `npm run build:production` | Build, then prune development and unused optional dependencies for the production runtime |
 | Backend | `npm run start` | Run `backend/dist/index.js` after a build |
 
 The repository currently has no root npm scripts and no automated test script.
@@ -237,9 +238,11 @@ The current source configuration targets **Vercel** for the frontend and **Rende
 1. Provision a PostgreSQL database and apply the checked-in frontend migration from a controlled environment using `npm run migrate:prod` and an untracked `frontend/.env.production` created from `frontend/.env.example`.
 2. Create a Web Service and set:
    - **Root Directory:** `backend`
-   - **Build Command:** `npm ci && npm run build`
+   - **Build Command:** `npm ci && npm run build:production`
    - **Start Command:** `npm start`
 3. Configure platform environment variables from `backend/.env.production.example`, including `NODE_ENV=production`, database credentials, and the production Firebase Admin values. Do not copy placeholder values unchanged.
+
+The Render build uses a full `npm ci` first so the backend postinstall can generate Prisma Client and the TypeScript build has its development tooling. `npm run build:production` then compiles the backend and prunes development dependencies plus optional dependencies without re-running lifecycle scripts. The final runtime keeps generated `@prisma/client` and Firebase Admin App/Messaging, while omitting the unused Firebase Admin Storage and Firestore dependency graphs. Continue using plain `npm ci` for local development and validation; optional-dependency omission is intentionally limited to the final production runtime tree.
 
 ### Frontend → Vercel
 
