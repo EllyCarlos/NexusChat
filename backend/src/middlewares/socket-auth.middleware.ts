@@ -4,11 +4,8 @@ import jwt from 'jsonwebtoken';
 import { Socket } from "socket.io";
 import { prisma } from "../lib/prisma.lib.js";
 import { CustomError } from "../utils/error.utils.js";
+import { verifySessionToken } from "../utils/jwt.utils.js";
 
-type SessionPayload = {
-    userId: string;
-    expiresAt: Date;
-};
 export const socketAuthenticatorMiddleware = async (socket: Socket, next: NextFunction) => {
     try {
         const token = socket.handshake.query.token as string;
@@ -22,21 +19,10 @@ export const socketAuthenticatorMiddleware = async (socket: Socket, next: NextFu
             return next(new CustomError("Server configuration error", 500));
         }
 
-        // Verify JWT and get payload
-        const decodedPayload = jwt.verify(token, secret, { algorithms: ["HS256"] }) as jwt.JwtPayload;
-
-        // Validate the decoded payload
-        if (!decodedPayload || typeof decodedPayload !== 'object' || !decodedPayload.userId) {
-            return next(new CustomError("Invalid token please login again", 401));
-        }
-
-        // Check token expiration if needed
-        if (decodedPayload.exp && Date.now() >= decodedPayload.exp * 1000) {
-            return next(new CustomError("Token expired, please login again", 401));
-        }
+        const decodedPayload = verifySessionToken(token);
 
         const existingUser = await prisma.user.findUnique({
-            where: { id: decodedPayload.userId as string }
+            where: { id: decodedPayload.userId }
         });
 
         if (!existingUser) {

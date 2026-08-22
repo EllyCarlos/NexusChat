@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma.lib.js";
 import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/auth.util.js";
 import { sendMail } from "../utils/email.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-import jwt from 'jsonwebtoken';
+import { signPasswordResetToken } from "../utils/jwt.utils.js";
 
 // Get base URL from environment variables
 const getBaseUrl = () => {
@@ -12,16 +12,10 @@ const getBaseUrl = () => {
 
 // Generate password reset token
 const generateResetToken = (userId: string) => {
-    return jwt.sign(
-        { 
-            userId,
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
-        },
-        process.env.JWT_SECRET || 'your-secret-key',
-        { 
-            expiresIn: '24h' 
-        }
-    );
+    return signPasswordResetToken({
+        userId,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000)
+    });
 };
 
 export const updateUser = asyncErrorHandler(async (req, res, next) => {
@@ -93,7 +87,6 @@ export const updateUser = asyncErrorHandler(async (req, res, next) => {
         return next(new CustomError("Failed to update user profile", 500));
     }
 });
-
 export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {
     const { emailType } = req.query;
     const baseUrl = getBaseUrl();
@@ -162,57 +155,5 @@ export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {
     } catch (error) {
         console.error(`Email sending error:`, error);
         return next(new CustomError(`Failed to send ${emailType} email`, 500));
-    }
-});
-
-// Function to handle actual password reset requests
-export const requestPasswordReset = asyncErrorHandler(async (req, res, next) => {
-    const { email } = req.body;
-    
-    if (!email) {
-        return next(new CustomError("Email is required", 400));
-    }
-
-    try {
-        const user = await prisma.user.findUnique({
-            where: { email }
-        });
-
-        // Always return success to prevent email enumeration attacks
-        const baseUrl = getBaseUrl();
-        
-        if (user) {
-            const resetToken = generateResetToken(user.id);
-            const resetUrl = `${baseUrl}/auth/reset-password?token=${resetToken}`;
-            
-            // Store reset token in database (optional but recommended)
-           // Delete any existing reset tokens for this user
-await prisma.resetPasswordToken.deleteMany({
-    where: { userId: user.id }
-});
-
-// Create a new reset token
-await prisma.resetPasswordToken.create({
-    data: {
-        userId: user.id,
-        hashedToken: resetToken, // Consider hashing this for security
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
-    }
-});            
-            await sendMail(
-                email, 
-                user.username, 
-                'resetPassword',
-                resetUrl
-            );
-        }
-
-        return res.status(200).json({ 
-            message: "If your email is registered with us, you'll receive a password reset link shortly." 
-        });
-
-    } catch (error) {
-        console.error('Password reset request error:', error);
-        return next(new CustomError("Failed to process password reset request", 500));
     }
 });

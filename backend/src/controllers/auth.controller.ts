@@ -1,11 +1,11 @@
 import { NextFunction, Response } from "express";
-import jwt from 'jsonwebtoken';
 import { config } from "../config/env.config.js";
 import type { AuthenticatedRequest, OAuthAuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from '../lib/prisma.lib.js';
 import type { fcmTokenSchemaType } from "../schemas/auth.schema.js";
 import { env } from "../schemas/env.schema.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
+import { signOAuthExchangeToken } from "../utils/jwt.utils.js";
 
 const getUserInfo = asyncErrorHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const user = req.user;
@@ -90,17 +90,10 @@ const redirectHandler = asyncErrorHandler(async (req: OAuthAuthenticatedRequest,
       const isNewUser = Boolean(req.user.newUser);
 
       // Create temporary OAuth token (5 minutes expiry)
-      const oauthTokenPayload = {
-        userId: userId,
-        isNewUser: isNewUser,
-        type: 'oauth-temp',
-        email: req.user.email, // Include email for additional validation
-        iat: Math.floor(Date.now() / 1000)
-      };
-
-      const tempToken = jwt.sign(oauthTokenPayload, env.JWT_SECRET, {
-        expiresIn: "5m",
-        algorithm: 'HS256'
+      const tempToken = signOAuthExchangeToken({
+        userId,
+        isNewUser,
+        email: req.user.email,
       });
 
       console.log('✅ OAuth token created successfully');

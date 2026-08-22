@@ -3,16 +3,7 @@ import jwt from 'jsonwebtoken';
 import type { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from "../lib/prisma.lib.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-
-
-type SessionPayload = {
-    userId: string;
-    expiresAt: number; // JWT expiration is usually a Unix timestamp (number), not a Date object directly in the payload
-    // Add other properties you expect in your JWT payload here, e.g.:
-    // isNewUser?: boolean;
-    // type?: string; // e.g., "oauth-temp"
-    // email?: string;
-};
+import { verifySessionToken, type SessionTokenPayload } from "../utils/jwt.utils.js";
 
 export const verifyToken = asyncErrorHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
 
@@ -44,10 +35,9 @@ export const verifyToken = asyncErrorHandler(async (req: AuthenticatedRequest, r
         return next(new CustomError("Server configuration error: JWT secret missing.", 500));
     }
 
-    let decodedInfo: SessionPayload;
+    let decodedInfo: SessionTokenPayload;
     try {
-        // Verify the token using the secret key and explicitly specify the algorithm
-        decodedInfo = jwt.verify(token, secretKey, { algorithms: ['HS256'] }) as SessionPayload;
+        decodedInfo = verifySessionToken(token);
     } catch (error) {
         // Catch specific JWT verification errors for clearer messages
         if (error instanceof jwt.TokenExpiredError) {
@@ -60,12 +50,6 @@ export const verifyToken = asyncErrorHandler(async (req: AuthenticatedRequest, r
         // Catch any other unexpected errors during verification
         console.error("Unexpected error during JWT verification:", error);
         return next(new CustomError("Authentication failed: An unexpected error occurred.", 401));
-    }
-
-    // Validate the decoded payload structure
-    if (!decodedInfo || typeof decodedInfo.userId !== 'string') {
-        console.warn("Authentication: Invalid token payload structure or missing userId.");
-        return next(new CustomError("Invalid token payload, please login again", 401));
     }
 
     // Fetch the user from the database

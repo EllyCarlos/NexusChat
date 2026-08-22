@@ -13,7 +13,8 @@
     "dev": "ts-node-dev --respawn src/index.ts",
     "ts.check": "tsc --project tsconfig.json --noEmit",
     "build": "rimraf dist && tsc",
-    "postinstall": "npx prisma generate"
+    "postinstall": "npx prisma generate",
+    "test:security": "vitest run tests/token-purpose.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -58,7 +59,8 @@
     "prisma": "^6.3.0",
     "rimraf": "^5.0.7",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.11"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

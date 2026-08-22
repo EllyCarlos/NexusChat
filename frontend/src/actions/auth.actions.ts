@@ -18,10 +18,19 @@ import {
 } from "@/lib/server/privateKeyRecoveryKeyWrap";
 import { prisma } from "@/lib/server/prisma";
 import { FetchUserInfoResponse } from "@/lib/server/services/userService";
-import { createSession, decrypt, deleteSession, encrypt, SessionPayload, verifySession } from "@/lib/server/session"; // Make sure SessionPayload is exported from session.ts
+import {
+  createSession,
+  deleteSession,
+  signPasswordResetToken,
+  signPrivateKeyRecoveryToken,
+  verifyOAuthExchangeToken,
+  verifyPasswordResetToken,
+  verifyPrivateKeyRecoveryToken as verifyPrivateKeyRecoveryJwt,
+  verifySession,
+  verifySessionToken,
+} from "@/lib/server/session";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import jwt from 'jsonwebtoken'; // Keep this for verifyOAuthToken
 
 const PRIVATE_KEY_RECOVERY_TOKEN_VALIDITY_MS = 60 * 60 * 1000;
 
@@ -64,12 +73,6 @@ const createOAuthV2MigrationMaterial = async ({
   };
 };
 
-type OAuthTokenPayload = {
-  userId: string;
-  isNewUser: boolean;
-  type: "oauth-temp";
-};
-
 export type PrivateKeyRecoveryData =
   | {
       userId: string;
@@ -92,16 +95,9 @@ export type PrivateKeyRecoveryData =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isOAuthTokenPayload = (value: unknown): value is OAuthTokenPayload =>
-  isRecord(value) &&
-  typeof value.userId === "string" &&
-  value.userId.length > 0 &&
-  typeof value.isNewUser === "boolean" &&
-  value.type === "oauth-temp";
-
 async function issuePrivateKeyRecoveryToken(userId: string) {
   const expiresAt = new Date(Date.now() + PRIVATE_KEY_RECOVERY_TOKEN_VALIDITY_MS);
-  const recoveryToken = await encrypt({ userId, expiresAt });
+  const recoveryToken = await signPrivateKeyRecoveryToken({ userId, expiresAt });
   const hashedToken = await bcrypt.hash(recoveryToken, 10);
 
   await prisma.privateKeyRecoveryToken.deleteMany({ where: { userId } });
@@ -269,7 +265,13 @@ export async function sendPrivateKeyRecoveryEmail(prevState: any, user: Pick<Fet
     }
 
     const sessionToken = (await cookies()).get("session")?.value;
-    const session = await decrypt(sessionToken);
+    const session = await verifySessionToken(sessionToken);
+    if (!session) {
+      return {
+        errors: { message: "User session not found. Please log in again." },
+        success: { message: null }
+      };
+    }
     const sessionExpiresAt = new Date(session.expiresAt);
 
     if (
@@ -332,7 +334,15 @@ export async function verifyPrivateKeyRecoveryToken(_prevState: unknown, data: {
       };
     }
 
-    const decodedPayload = await decrypt(data.recoveryToken);
+    const decodedPayload = await verifyPrivateKeyRecoveryJwt(data.recoveryToken);
+    if (!decodedPayload) {
+      return {
+        errors: {
+          message: 'Verification link is invalid or expired. Please request a new one.'
+        },
+        data: null
+      };
+    }
     const tokenUserId = decodedPayload.userId;
     const tokenExpiresAt = new Date(decodedPayload.expiresAt);
 
@@ -573,9 +583,10 @@ export async function forgotPassword(prevState: any, email: string) {
       };
     }
 
-    const resetPasswordToken = await encrypt({
+    const resetTokenExpiresAt = new Date(Date.now() + 1000 * 60 * 60);
+    const resetPasswordToken = await signPasswordResetToken({
       userId: user.id,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60) // Token valid for 1 hour for URL
+      expiresAt: resetTokenExpiresAt
     });
 
     const hashedResetToken = await bcrypt.hash(resetPasswordToken, 10);
@@ -588,7 +599,7 @@ export async function forgotPassword(prevState: any, email: string) {
       data: {
         userId: user.id,
         hashedToken: hashedResetToken,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24) // Database record valid for 24 hours
+        expiresAt: resetTokenExpiresAt
       }
     });
 
@@ -648,12 +659,12 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       };
     }
 
-    const decoded: unknown = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = await verifyOAuthExchangeToken(token);
 
-    if (!isOAuthTokenPayload(decoded)) {
+    if (!decoded) {
       return {
         errors: {
-          message: "Invalid token structure"
+          message: "Invalid or expired OAuth exchange token"
         },
         data: null
       };
@@ -663,7 +674,7 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       keys: Object.keys(decoded),
       userId: decoded.userId,
       isNewUser: decoded.isNewUser,
-      type: decoded.type
+      tokenType: decoded.tokenType
     });
 
     if (!decoded.userId) {
@@ -776,8 +787,8 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       }
     }
 
-    // Create session
-    await createSession(user.id);
+    // Create and persist the real session that REST and Socket.IO will use.
+    const sessionToken = await createSession(user.id);
 
     const { privateKey: _storedPrivateKey, ...clientUser } = user;
     const responseData: {
@@ -788,7 +799,7 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       oauthMigrationError: boolean;
     } = {
       user: clientUser,
-      sessionToken: token,
+      sessionToken,
       oauthSetup,
       oauthMigration,
       oauthMigrationError
@@ -849,8 +860,7 @@ export async function resetPassword(prevState: any, data: { token: string, newPa
       };
     }
 
-    // Decrypt the token to get the userId and check its internal expiry
-    const decodedPayload = await decrypt(token);
+    const decodedPayload = await verifyPasswordResetToken(token);
 
     if (!decodedPayload || !decodedPayload.userId || new Date(decodedPayload.expiresAt) < new Date()) {
       return {

@@ -15,7 +15,8 @@
     "db:push:prod": "dotenv -e .env.production -- npx prisma db push",
     "migrate:dev": "dotenv -e .env.development -- npx prisma migrate deploy",
     "migrate:prod": "dotenv -e .env.production -- npx prisma migrate deploy",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:security": "vitest run tests/token-purpose.test.ts tests/oauth-session-flow.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -59,6 +60,7 @@
     "postcss": "^8",
     "prisma": "^6.3.1",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   }
 }
