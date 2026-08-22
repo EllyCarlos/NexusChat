@@ -21,12 +21,11 @@ export const attachmentApi = createApi({
     sendAttachments: builder.mutation<void,{ chatId: string; attachments: Blob[] }>({
       query: ({ chatId, attachments }) => {
         const formData = new FormData();
-        formData.append("chatId", chatId);
         for (const attachment of attachments)
           formData.append("attachments[]", attachment);
         return {
           method: "POST",
-          url: "/",
+          url: `/${encodeURIComponent(chatId)}`,
           body: formData,
         };
       },

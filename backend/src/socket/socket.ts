@@ -267,17 +267,25 @@ const registerSocketHandlers = (io: Server) => {
                         console.error("Audio upload failed.");
                         return;
                     }
-                    newMessage = await prisma.message.create({
-                        data: {
-                            senderId: socket.user.id,
-                            chatId: chatId,
-                            isTextMessage: false,
-                            isPollMessage: false,
-                            audioPublicId: uploadResult.public_id,
-                            audioUrl: uploadResult.secure_url,
-                            replyToMessageId
-                        },
-                    })
+                    try {
+                        newMessage = await prisma.message.create({
+                            data: {
+                                senderId: socket.user.id,
+                                chatId: chatId,
+                                isTextMessage: false,
+                                isPollMessage: false,
+                                audioPublicId: uploadResult.public_id,
+                                audioUrl: uploadResult.secure_url,
+                                replyToMessageId
+                            },
+                        })
+                    } catch (error) {
+                        await deleteFilesFromCloudinary({
+                            publicIds: [uploadResult.public_id],
+                            resourceType: "raw",
+                        });
+                        throw error;
+                    }
                 }
 
                 else if (encryptedAudio) {
@@ -287,17 +295,25 @@ const registerSocketHandlers = (io: Server) => {
                         return;
                     }
 
-                    newMessage = await prisma.message.create({
-                        data: {
-                            senderId: socket.user.id,
-                            chatId: chatId,
-                            isTextMessage: false,
-                            isPollMessage: false,
-                            audioPublicId: uploadResult.public_id,
-                            audioUrl: uploadResult.secure_url,
-                            replyToMessageId
-                        },
-                    })
+                    try {
+                        newMessage = await prisma.message.create({
+                            data: {
+                                senderId: socket.user.id,
+                                chatId: chatId,
+                                isTextMessage: false,
+                                isPollMessage: false,
+                                audioPublicId: uploadResult.public_id,
+                                audioUrl: uploadResult.secure_url,
+                                replyToMessageId
+                            },
+                        })
+                    } catch (error) {
+                        await deleteFilesFromCloudinary({
+                            publicIds: [uploadResult.public_id],
+                            resourceType: "raw",
+                        });
+                        throw error;
+                    }
 
                 }
 
@@ -621,21 +637,24 @@ const registerSocketHandlers = (io: Server) => {
                 // deleting reactions of this message
                 await prisma.reactions.deleteMany({ where: { messageId: messageToBeDeleted.id } });
 
-                let publicIds: string[] = [];
+                const attachmentPublicIds: string[] = [];
 
                 // Delete files from Cloudinary first
                 if (messageToBeDeleted?.attachments.length) {
                     const cloudinaryPublicIdsOfAttachments = messageToBeDeleted?.attachments.map(({ cloudinaryPublicId }) => cloudinaryPublicId);
-                    publicIds.push(...cloudinaryPublicIdsOfAttachments);
+                    attachmentPublicIds.push(...cloudinaryPublicIdsOfAttachments);
                     await prisma.attachment.deleteMany({ where: { messageId: messageToBeDeleted.id } });
                 }
 
-                if (messageToBeDeleted?.audioPublicId) {
-                    publicIds.push(messageToBeDeleted.audioPublicId);
+                if (attachmentPublicIds.length) {
+                    await deleteFilesFromCloudinary({ publicIds: attachmentPublicIds });
                 }
 
-                if (publicIds.length) {
-                    await deleteFilesFromCloudinary({ publicIds });
+                if (messageToBeDeleted?.audioPublicId) {
+                    await deleteFilesFromCloudinary({
+                        publicIds: [messageToBeDeleted.audioPublicId],
+                        resourceType: "raw",
+                    });
                 }
 
                 // Now safely delete the original message

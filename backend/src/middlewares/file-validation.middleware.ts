@@ -1,22 +1,46 @@
-import { NextFunction, Request, Response } from "express";
-import { ACCEPTED_IMAGE_TYPES, MAX_FILE_SIZE } from "../constants/file.constant.js";
+import type { NextFunction, Request, Response } from "express";
+import { fileTypeFromFile } from "file-type";
 import { CustomError } from "../utils/error.utils.js";
+import { cleanupRequestTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 
-export const fileValidation = (req:Request,res:Response,next:NextFunction)=>{
+const INVALID_FILE_MESSAGE = "Unsupported or invalid file type";
+const AVATAR_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
+const ATTACHMENT_MIME_TYPES = new Set([...AVATAR_MIME_TYPES, "application/pdf"]);
 
-    if(req.file){
-        
-        if(!ACCEPTED_IMAGE_TYPES.includes(req.file.mimetype)){
-            return next(new CustomError(`Only ${ACCEPTED_IMAGE_TYPES.join(" ")} file types are supported and you are trying to upload a file with ${req.file.mimetype} type`,400))
-        }
-        
-        if(req.file.size > MAX_FILE_SIZE){
-            return next(new CustomError(`Avatar must not be larger than ${MAX_FILE_SIZE/1000000.}MB`,400))
-        }
+const normalizedClaimedMime = (mime: string): string =>
+  mime === "image/jpg" ? "image/jpeg" : mime;
 
-        return next()
+const validateFiles = (
+  getFiles: (request: Request) => Express.Multer.File[],
+  acceptedDetectedMimes: ReadonlySet<string>,
+) => async (request: Request, _response: Response, next: NextFunction) => {
+  const files = getFiles(request);
+  try {
+    for (const file of files) {
+      const detected = await fileTypeFromFile(file.path);
+      if (
+        !detected
+        || !acceptedDetectedMimes.has(detected.mime)
+        || normalizedClaimedMime(file.mimetype) !== detected.mime
+      ) {
+        await cleanupRequestTemporaryFiles(request);
+        next(new CustomError(INVALID_FILE_MESSAGE, 400));
+        return;
+      }
     }
+    next();
+  } catch {
+    await cleanupRequestTemporaryFiles(request);
+    next(new CustomError(INVALID_FILE_MESSAGE, 400));
+  }
+};
 
-    return next()
+export const fileValidation = validateFiles(
+  (request) => request.file ? [request.file] : [],
+  AVATAR_MIME_TYPES,
+);
 
-}
+export const attachmentFileValidation = validateFiles(
+  (request) => Array.isArray(request.files) ? request.files : [],
+  ATTACHMENT_MIME_TYPES,
+);

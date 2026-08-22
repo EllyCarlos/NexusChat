@@ -11,6 +11,8 @@ import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/aut
 import { disconnectMembersFromChatRoom, joinMembersInChatRoom } from "../utils/chat.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { emitEvent, emitEventToRoom } from "../utils/socket.util.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
+import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 
 
 type GroupChatUpdateEventSendPayload = {
@@ -42,8 +44,11 @@ type DeleteChatEventSendPayload = {
 }
 
 const createChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
+    let uploadedPublicId: string | null = null
+    let avatarCommitted = false
 
-    let uploadResults:UploadApiResponse[] | void = []
+    try {
+    let uploadResults:UploadApiResponse[] = []
 
     const {isGroupChat,members,name}:createChatSchemaType = req.body
 
@@ -62,30 +67,38 @@ const createChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response
         if(req.file){
             hasAvatar = true;
             uploadResults = await uploadFilesToCloudinary({files:[req.file]})
+            if (!uploadResults[0]) {
+              throw new Error("Group avatar upload returned no result")
+            }
+            uploadedPublicId = uploadResults[0]?.public_id ?? null
         }
 
         const avatar = (hasAvatar && uploadResults && uploadResults[0]) ? uploadResults[0].secure_url : DEFAULT_AVATAR;
         const avatarCloudinaryPublicId = (hasAvatar && uploadResults && uploadResults[0]) ? uploadResults[0].public_id : null;
         
-        const newChat =  await prisma.chat.create({
-          data:{
-            avatar,                    
-            avatarCloudinaryPublicId,
-            isGroupChat:true,
-            adminId:req.user.id,
-            name,
-          },
-          select:{
-            id:true,
-          }
-        })
+        const newChat = await prisma.$transaction(async transaction => {
+          const chat = await transaction.chat.create({
+            data:{
+              avatar,
+              avatarCloudinaryPublicId,
+              isGroupChat:true,
+              adminId:req.user.id,
+              name,
+            },
+            select:{
+              id:true,
+            }
+          })
 
-        await prisma.chatMembers.createMany({
-          data: memberIds.map(id=>({
-            chatId:newChat.id,
-            userId:id
-          }))
+          await transaction.chatMembers.createMany({
+            data: memberIds.map(id=>({
+              chatId:chat.id,
+              userId:id
+            }))
+          })
+          return chat
         })
+        avatarCommitted = true
 
         const populatedChat = await prisma.chat.findUnique({
           where:{id:newChat.id},
@@ -188,6 +201,20 @@ const createChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response
         joinMembersInChatRoom({memberIds,roomToJoin:newChat.id,io})
         emitEventToRoom({event:Events.NEW_CHAT,io,room:newChat.id,data:{...populatedChat,typingUsers:[]}});
         return res.status(201);
+    }
+    } catch (error) {
+      if (!avatarCommitted && uploadedPublicId) {
+        try {
+          await deleteFilesFromCloudinary({ publicIds: [uploadedPublicId] })
+        } catch (cleanupError) {
+          logServerError("New group avatar rollback failed.", cleanupError)
+        }
+      }
+      return next(error instanceof CustomError
+        ? error
+        : new CustomError("Failed to create group chat", 500))
+    } finally {
+      await cleanupTemporaryFiles(req.file ? [req.file] : [])
     }
 })
 
@@ -534,69 +561,75 @@ const removeMemberFromChat = asyncErrorHandler(async(req:AuthenticatedRequest,re
 })
 
 const updateChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
-
     const { id } = req.params
     const { name }:updateChatSchemaType = req.body;
     const avatar = req.file
+    let uploadedPublicId: string | null = null
+    let avatarCommitted = false
 
-    if(!name && !avatar){
-      return next(new CustomError("Either avatar or name is required for updating a chat, please provide one",400))
-    }
-
-    const cachedChat = getCachedAuthorizedChat(req, id)
-    const chat = cachedChat?.isGroupChat && cachedChat.adminId === req.user.id
-      ? cachedChat
-      : await assertChatAdmin(req.user.id, id)
-
-    if(avatar){
-            
-      if(chat.avatarCloudinaryPublicId){
-        // removing old group chat avatar from cloudinary (to free up cloud space)
-        await deleteFilesFromCloudinary({publicIds:[chat.avatarCloudinaryPublicId]})
-      }
-      // now uploading the new group chat avatar to cloudinary
-      const uploadResult = await uploadFilesToCloudinary({files:[avatar]})
-
-      if(!uploadResult){
-        return next(new CustomError("Error updating chat avatar",404))    
+    try {
+      if(!name && !avatar){
+        return next(new CustomError("Either avatar or name is required for updating a chat, please provide one",400))
       }
 
-      await prisma.chat.update({
+      const cachedChat = getCachedAuthorizedChat(req, id)
+      const chat = cachedChat?.isGroupChat && cachedChat.adminId === req.user.id
+        ? cachedChat
+        : await assertChatAdmin(req.user.id, id)
+
+      const [uploadedAvatar] = avatar
+        ? await uploadFilesToCloudinary({files:[avatar]})
+        : []
+      if (avatar && !uploadedAvatar) {
+        throw new Error("Group avatar upload returned no result")
+      }
+      uploadedPublicId = uploadedAvatar?.public_id ?? null
+
+      const updatedChat = await prisma.chat.update({
         where:{id},
         data:{
-          avatarCloudinaryPublicId:uploadResult[0].public_id,
-          avatar:uploadResult[0].secure_url
+          ...(uploadedAvatar ? {
+            avatarCloudinaryPublicId: uploadedAvatar.public_id,
+            avatar: uploadedAvatar.secure_url,
+          } : {}),
+          ...(name ? { name } : {}),
+        },
+        select:{name:true,avatar:true,id:true}
+      })
+      avatarCommitted = Boolean(uploadedAvatar)
+
+      if (uploadedAvatar && chat.avatarCloudinaryPublicId && chat.avatarCloudinaryPublicId !== uploadedAvatar.public_id) {
+        try {
+          await deleteFilesFromCloudinary({publicIds:[chat.avatarCloudinaryPublicId]})
+        } catch (cleanupError) {
+          logServerError("Previous group avatar cleanup failed.", cleanupError)
         }
-      })
+      }
+
+      const payload:GroupChatUpdateEventSendPayload = {
+        chatId:updatedChat.id,
+        chatAvatar:updatedChat.avatar,
+        chatName:updatedChat.name!
+      }
+
+      const io:Server = req.app.get("io");
+      emitEventToRoom({io,event:Events.GROUP_CHAT_UPDATE,room:id,data:payload})
+
+      return res.status(200)
+    } catch (error) {
+      if (!avatarCommitted && uploadedPublicId) {
+        try {
+          await deleteFilesFromCloudinary({ publicIds: [uploadedPublicId] })
+        } catch (cleanupError) {
+          logServerError("New group avatar rollback failed.", cleanupError)
+        }
+      }
+      return next(error instanceof CustomError
+        ? error
+        : new CustomError("Failed to update chat", 500))
+    } finally {
+      await cleanupTemporaryFiles(avatar ? [avatar] : [])
     }
-
-    if(name){
-      await prisma.chat.update({
-        where:{id},
-        data:{name}
-      })
-    }
-
-    const updatedChat = await prisma.chat.findUnique({
-      where:{id},
-      select:{name:true,avatar:true,id:true}
-    })
-
-    if(!updatedChat){
-      return next(new CustomError("Error updating chat",404))
-    }
-
-    
-    const payload:GroupChatUpdateEventSendPayload = {
-      chatId:updatedChat.id,
-      chatAvatar:updatedChat.avatar,
-      chatName:updatedChat.name!
-    }
-    
-    const io:Server = req.app.get("io");
-    emitEventToRoom({io,event:Events.GROUP_CHAT_UPDATE,room:id,data:payload})
-
-    return res.status(200)
 })
 
 export { addMemberToChat, createChat, getUserChats, removeMemberFromChat, updateChat };

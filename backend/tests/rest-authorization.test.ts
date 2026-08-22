@@ -53,7 +53,10 @@ import { getMessages } from "../src/controllers/message.controller.js";
 import { handleRequest } from "../src/controllers/request.controller.js";
 import type { AuthenticatedRequest } from "../src/interfaces/auth/auth.interface.js";
 import { prisma } from "../src/lib/prisma.lib.js";
-import { authorizeAttachmentFile, authorizeGroupChatFile } from "../src/middlewares/multer.middleware.js";
+import {
+  authorizeAttachmentUpload,
+  authorizeGroupChatUpload,
+} from "../src/middlewares/upload-authorization.middleware.js";
 import { assertChatAdmin, assertChatMember } from "../src/services/authorization.service.js";
 import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../src/utils/auth.util.js";
 
@@ -78,7 +81,7 @@ const memberChat = ({
 
 const request = (overrides: Record<string, unknown> = {}) => ({
   user: { id: ACTOR_ID },
-  params: { id: CHAT_ID },
+  params: { id: CHAT_ID, chatId: CHAT_ID },
   query: {},
   body: {},
   app: { get: vi.fn(() => ({})) },
@@ -217,16 +220,14 @@ describe("attachment upload authorization", () => {
     vi.clearAllMocks();
   });
 
-  it("rejects a non-member in the Multer filter before disk storage is accepted", async () => {
+  it("rejects a non-member before Multer disk storage is reached", async () => {
     chatFindFirst.mockResolvedValue(null);
-    const callback = vi.fn();
-    const req = request({ body: { chatId: CHAT_ID } });
+    const next = vi.fn();
+    const req = request();
 
-    authorizeAttachmentFile(req, {} as Express.Multer.File, callback);
+    await authorizeAttachmentUpload(req, response(), next as NextFunction);
 
-    await vi.waitFor(() => expect(callback).toHaveBeenCalledTimes(1));
-    expect(callback.mock.calls[0]?.[0]).toMatchObject({ statusCode: 404 });
-    expect(callback.mock.calls[0]?.[1]).not.toBe(true);
+    errorFrom(next, 404);
   });
 
   it("rejects a non-member controller call before Cloudinary or database writes", async () => {
@@ -300,15 +301,13 @@ describe("group metadata authorization", () => {
     expect(chatUpdate).not.toHaveBeenCalled();
   });
 
-  it("rejects a non-admin avatar in the Multer filter before disk storage is accepted", async () => {
+  it("rejects a non-admin group avatar before Multer disk storage is reached", async () => {
     chatFindFirst.mockResolvedValue(memberChat() as never);
-    const callback = vi.fn();
+    const next = vi.fn();
 
-    authorizeGroupChatFile(request(), {} as Express.Multer.File, callback);
+    await authorizeGroupChatUpload(request(), response(), next as NextFunction);
 
-    await vi.waitFor(() => expect(callback).toHaveBeenCalledTimes(1));
-    expect(callback.mock.calls[0]?.[0]).toMatchObject({ statusCode: 403 });
-    expect(callback.mock.calls[0]?.[1]).not.toBe(true);
+    errorFrom(next, 403);
   });
 
   it("allows an admin avatar update only after authorization", async () => {
@@ -318,7 +317,7 @@ describe("group metadata authorization", () => {
       secure_url: "https://example.test/avatar.png",
       public_id: "new-avatar",
     }] as never);
-    chatUpdate.mockResolvedValue({} as never);
+    chatUpdate.mockResolvedValue({ id: CHAT_ID, name: "Group", avatar: "avatar" } as never);
     chatFindUnique.mockResolvedValue({ id: CHAT_ID, name: "Group", avatar: "avatar" } as never);
     const res = response();
 
@@ -326,9 +325,9 @@ describe("group metadata authorization", () => {
       file: { mimetype: "image/png", originalname: "avatar.png" },
     }), res, vi.fn() as NextFunction);
 
-    expect(chatFindFirst.mock.invocationCallOrder[0]).toBeLessThan(deleteFromCloudinary.mock.invocationCallOrder[0]);
-    expect(deleteFromCloudinary.mock.invocationCallOrder[0]).toBeLessThan(uploadToCloudinary.mock.invocationCallOrder[0]);
+    expect(chatFindFirst.mock.invocationCallOrder[0]).toBeLessThan(uploadToCloudinary.mock.invocationCallOrder[0]);
     expect(uploadToCloudinary.mock.invocationCallOrder[0]).toBeLessThan(chatUpdate.mock.invocationCallOrder[0]);
+    expect(chatUpdate.mock.invocationCallOrder[0]).toBeLessThan(deleteFromCloudinary.mock.invocationCallOrder[0]);
     expect(res.status).toHaveBeenCalledWith(200);
   });
 

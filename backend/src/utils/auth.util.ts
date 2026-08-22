@@ -1,5 +1,6 @@
 // Add this import at the top of auth.util.ts
 import { Prisma } from '@prisma/client';
+import type { UploadApiResponse } from 'cloudinary';
 import { v2 as cloudinary } from 'cloudinary';
 import { convertBufferToBase64 } from './generic.js';
 import { logServerError } from './safe-logger.utils.js';
@@ -18,24 +19,38 @@ const thirtyDaysInMilliseconds = 30 * 24 * 60 * 60 * 1000;
 //     partitioned:true,
 // }
 
-export const uploadFilesToCloudinary = async({files}:{files:Express.Multer.File[]})=>{
-    try {
-        const uploadPromises = files.map(file=>cloudinary.uploader.upload(file.path))
-        const result = await Promise.all(uploadPromises)
-        return result
-    } catch (error) {
-        logServerError('Cloudinary file upload failed.', error);
+export const deleteFilesFromCloudinary = async ({
+    publicIds,
+    resourceType = 'image',
+}: {
+    publicIds: string[];
+    resourceType?: 'image' | 'raw' | 'video';
+}): Promise<void> => {
+    const uniquePublicIds = [...new Set(publicIds.filter(Boolean))]
+    const results = await Promise.allSettled(
+      uniquePublicIds.map(publicId => cloudinary.uploader.destroy(publicId, { resource_type: resourceType }))
+    )
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        logServerError('Cloudinary file deletion failed.', result.reason)
+      }
     }
 }
 
-export const deleteFilesFromCloudinary = async({publicIds}:{publicIds:string[]}):Promise<any[] | undefined>=>{
+export const uploadFilesToCloudinary = async ({ files }: { files: Express.Multer.File[] }): Promise<UploadApiResponse[]> => {
+    const uploadedFiles: UploadApiResponse[] = []
     try {
-        await cloudinary.uploader.destroy(publicIds[0])
-        const deletePromises = publicIds.map(publicId=>cloudinary.uploader.destroy(publicId))
-        const uploadResult = await Promise.all(deletePromises)
-        return uploadResult
+      for (const file of files) {
+        uploadedFiles.push(await cloudinary.uploader.upload(file.path))
+      }
+      return uploadedFiles
     } catch (error) {
-        logServerError('Cloudinary file deletion failed.', error);
+      await deleteFilesFromCloudinary({
+        publicIds: uploadedFiles.map(file => file.public_id)
+      })
+      logServerError('Cloudinary file upload failed.', error)
+      throw error
     }
 }
 

@@ -5,6 +5,7 @@ import { sendMail } from "../utils/email.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { signPasswordResetToken } from "../utils/jwt.utils.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
+import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 
 // Get base URL from environment variables
 const getBaseUrl = () => {
@@ -24,39 +25,35 @@ export const updateUser = asyncErrorHandler(async (req, res, next) => {
         return next(new CustomError("Please provide an image", 400));
     }
 
-    let uploadResults;
     const existingAvatarPublicId = req.user.avatarCloudinaryPublicId;
+    let uploadedPublicId: string | null = null;
+    let avatarCommitted = false;
 
     try {
-        if (!existingAvatarPublicId) {
-            uploadResults = await uploadFilesToCloudinary({ files: [req.file] });
-            if (!uploadResults || uploadResults.length === 0) {
-                return next(new CustomError("Failed to upload image", 500));
-            }
-        } else {
-            const cloudinaryFilePromises = [
-                deleteFilesFromCloudinary({ publicIds: [existingAvatarPublicId] }),
-                uploadFilesToCloudinary({ files: [req.file] })
-            ];
-            
-            const [_, result] = await Promise.all(cloudinaryFilePromises);
-            
-            if (!result || result.length === 0) {
-                return next(new CustomError("Failed to update image", 500));
-            }
-            
-            uploadResults = result;
+        const [uploadedAvatar] = await uploadFilesToCloudinary({ files: [req.file] });
+        if (!uploadedAvatar) {
+            throw new Error("Avatar upload returned no result");
         }
+        uploadedPublicId = uploadedAvatar.public_id;
 
         const user = await prisma.user.update({
             where: {
                 id: req.user.id
             },
             data: {
-                avatar: uploadResults[0].secure_url,
-                avatarCloudinaryPublicId: uploadResults[0].public_id
+                avatar: uploadedAvatar.secure_url,
+                avatarCloudinaryPublicId: uploadedAvatar.public_id
             }
         });
+        avatarCommitted = true;
+
+        if (existingAvatarPublicId && existingAvatarPublicId !== uploadedAvatar.public_id) {
+            try {
+                await deleteFilesFromCloudinary({ publicIds: [existingAvatarPublicId] });
+            } catch (cleanupError) {
+                logServerError('Previous avatar cleanup failed.', cleanupError);
+            }
+        }
 
         const secureUserInfo = {
             id: user.id,
@@ -77,15 +74,16 @@ export const updateUser = asyncErrorHandler(async (req, res, next) => {
         return res.status(200).json(secureUserInfo);
 
     } catch (error) {
-        if (uploadResults && uploadResults[0]) {
+        if (!avatarCommitted && uploadedPublicId) {
             try {
-                await deleteFilesFromCloudinary({ publicIds: [uploadResults[0].public_id] });
+                await deleteFilesFromCloudinary({ publicIds: [uploadedPublicId] });
             } catch (cleanupError) {
                 logServerError('Uploaded-file cleanup failed.', cleanupError);
             }
         }
-        
         return next(new CustomError("Failed to update user profile", 500));
+    } finally {
+        await cleanupTemporaryFiles([req.file]);
     }
 });
 export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {

@@ -1,77 +1,99 @@
-import { randomUUID } from 'node:crypto'
-import multer from 'multer'
-import { MAX_FILE_SIZE } from '../constants/file.constant.js'
-import type { AuthenticatedRequest } from '../interfaces/auth/auth.interface.js'
-import { assertChatAdmin, assertChatMember, cacheAuthorizedChat, getCachedAuthorizedChat } from '../services/authorization.service.js'
-import { CustomError } from '../utils/error.utils.js'
+import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { RequestHandler } from "express";
+import multer from "multer";
+import {
+  ACCEPTED_FILE_MIME_TYPES,
+  ACCEPTED_IMAGE_TYPES,
+  MAX_FILE_SIZE,
+} from "../constants/file.constant.js";
+import { CustomError } from "../utils/error.utils.js";
+import {
+  cleanupRequestTemporaryFiles,
+  trackTemporaryUploadPath,
+} from "../utils/upload-lifecycle.util.js";
 
-const limits = {fileSize:MAX_FILE_SIZE}
+const COMMON_LIMITS = {
+  fileSize: MAX_FILE_SIZE,
+  fieldNameSize: 100,
+  fieldSize: 64 * 1024,
+  headerPairs: 20,
+} as const;
+
+export const resolveUploadTempDirectory = (): string =>
+  process.env.NEXUSCHAT_UPLOAD_TEMP_DIR || join(tmpdir(), "nexuschat-uploads");
 
 const storage = multer.diskStorage({
-    filename:(req:AuthenticatedRequest,file,cb)=>{
-        const userId=req.user.id
-        const uniqueMiddleName = randomUUID()
-        const newFileName = `${userId}-${uniqueMiddleName}-${file.originalname}`
-        cb(null,newFileName)
+  destination: (_request, _file, callback) => {
+    const uploadDirectory = resolveUploadTempDirectory();
+    mkdirSync(uploadDirectory, { recursive: true });
+    callback(null, uploadDirectory);
+  },
+  filename: (request, _file, callback) => {
+    const filename = randomUUID();
+    trackTemporaryUploadPath(request, join(resolveUploadTempDirectory(), filename));
+    callback(null, filename);
+  },
+});
+
+const claimedTypeFilter = (
+  acceptedTypes: readonly string[],
+): NonNullable<multer.Options["fileFilter"]> => (_request, file, callback) => {
+  if (!acceptedTypes.includes(file.mimetype)) {
+    callback(new CustomError("Unsupported or invalid file type", 400));
+    return;
+  }
+  callback(null, true);
+};
+
+const cleanupOnMulterError = (middleware: RequestHandler): RequestHandler =>
+  (request, response, next) => middleware(request, response, (error?: unknown) => {
+    if (!error) {
+      next();
+      return;
     }
-})
+    void cleanupRequestTemporaryFiles(request).then(() => next(error));
+  });
 
-export const authorizeAttachmentFile: NonNullable<multer.Options['fileFilter']> = (req,file,cb) => {
-    const authenticatedRequest = req as AuthenticatedRequest
-    const chatId = req.body?.chatId
+const avatarMulter = multer({
+  storage,
+  fileFilter: claimedTypeFilter(ACCEPTED_IMAGE_TYPES),
+  limits: { ...COMMON_LIMITS, files: 1, fields: 0, parts: 2 },
+});
 
-    if(typeof chatId !== 'string' || !chatId.trim()){
-        cb(new CustomError('ChatId must be provided before attachments',400))
-        return
-    }
+const createChatMulter = multer({
+  storage,
+  fileFilter: claimedTypeFilter(ACCEPTED_IMAGE_TYPES),
+  limits: { ...COMMON_LIMITS, files: 1, fields: 100, parts: 102 },
+});
 
-    const cachedChat = getCachedAuthorizedChat(req,chatId)
-    if(cachedChat){
-        cb(null,true)
-        return
-    }
+const groupChatMulter = multer({
+  storage,
+  fileFilter: claimedTypeFilter(ACCEPTED_IMAGE_TYPES),
+  limits: { ...COMMON_LIMITS, files: 1, fields: 1, parts: 3 },
+});
 
-    void assertChatMember(authenticatedRequest.user?.id,chatId)
-        .then(chat=>{
-            cacheAuthorizedChat(req,chat)
-            cb(null,true)
-        })
-        .catch(error=>{
-            cb(error instanceof Error ? error : new CustomError('Unable to authorize attachment upload',500))
-        })
-}
+const attachmentMulter = multer({
+  storage,
+  fileFilter: claimedTypeFilter(ACCEPTED_FILE_MIME_TYPES),
+  limits: { ...COMMON_LIMITS, files: 5, fields: 0, parts: 6 },
+});
 
-export const authorizeGroupChatFile: NonNullable<multer.Options['fileFilter']> = (req,file,cb) => {
-    const authenticatedRequest = req as AuthenticatedRequest
-    const chatId = req.params.id
-    const cachedChat = getCachedAuthorizedChat(req,chatId)
+export const avatarUpload = {
+  single: (fieldName: string): RequestHandler => cleanupOnMulterError(avatarMulter.single(fieldName)),
+};
 
-    if(cachedChat?.isGroupChat && cachedChat.adminId === authenticatedRequest.user?.id){
-        cb(null,true)
-        return
-    }
+export const createChatUpload = {
+  single: (fieldName: string): RequestHandler => cleanupOnMulterError(createChatMulter.single(fieldName)),
+};
 
-    void assertChatAdmin(authenticatedRequest.user?.id,chatId)
-        .then(chat=>{
-            cacheAuthorizedChat(req,chat)
-            cb(null,true)
-        })
-        .catch(error=>{
-            cb(error instanceof Error ? error : new CustomError('Unable to authorize group avatar upload',500))
-        })
-}
+export const groupChatUpload = {
+  single: (fieldName: string): RequestHandler => cleanupOnMulterError(groupChatMulter.single(fieldName)),
+};
 
-export const upload = multer({limits,storage})
-
-export const attachmentUpload = multer({
-    limits,
-    storage,
-    fileFilter:authorizeAttachmentFile,
-})
-
-export const groupChatUpload = multer({
-    limits,
-    storage,
-    fileFilter:authorizeGroupChatFile,
-})
-
+export const attachmentUpload = {
+  array: (fieldName: string, maxCount: number): RequestHandler =>
+    cleanupOnMulterError(attachmentMulter.array(fieldName, maxCount)),
+};

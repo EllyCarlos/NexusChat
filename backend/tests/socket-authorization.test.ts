@@ -366,6 +366,28 @@ describe("Socket chat/message authorized operations", () => {
     expect(harness.roomEmit).toHaveBeenCalledWith(Events.MESSAGE, expect.objectContaining({ id: MESSAGE_ID }));
   });
 
+  it("destroys a newly uploaded audio asset when message persistence fails", async () => {
+    chatFindFirst.mockResolvedValue(memberChat() as never);
+    uploadAudio.mockResolvedValue({
+      public_id: "orphan-audio-id",
+      secure_url: "https://example.test/audio",
+    } as never);
+    messageCreate.mockRejectedValue(new Error("database failure"));
+    const harness = await connectSocket();
+
+    await harness.trigger(Events.MESSAGE, {
+      chatId: CHAT_ID,
+      isPollMessage: false,
+      audio: new Uint8Array([1, 2, 3]),
+    });
+
+    expect(deleteFromCloudinary).toHaveBeenCalledWith({
+      publicIds: ["orphan-audio-id"],
+      resourceType: "raw",
+    });
+    expect(harness.roomEmit).not.toHaveBeenCalledWith(Events.MESSAGE, expect.anything());
+  });
+
   it("sends an offline chat member the expected notification", async () => {
     chatFindFirst.mockResolvedValue(memberChat() as never);
     messageCreate.mockResolvedValue({

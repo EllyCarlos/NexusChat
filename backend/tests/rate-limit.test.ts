@@ -28,12 +28,17 @@ vi.mock("../src/middlewares/verify-token.middleware.js", () => ({
 }));
 
 vi.mock("../src/middlewares/multer.middleware.js", () => ({
-  upload: { single: () => mocks.avatarMultipartWork },
+  avatarUpload: { single: () => mocks.avatarMultipartWork },
   attachmentUpload: { array: () => mocks.attachmentMultipartWork },
 }));
 
 vi.mock("../src/middlewares/file-validation.middleware.js", () => ({
   fileValidation: (_req: Request, _res: Response, next: NextFunction) => next(),
+  attachmentFileValidation: (_req: Request, _res: Response, next: NextFunction) => next(),
+}));
+
+vi.mock("../src/middlewares/upload-authorization.middleware.js", () => ({
+  authorizeAttachmentUpload: (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 
 vi.mock("../src/controllers/user.controller.js", () => ({
@@ -207,7 +212,7 @@ describe("test-email route method, authentication, origin, and throttling", () =
 describe("upload and FCM request controls", () => {
   it.each([
     ["avatar", "patch", "/api/v1/user", 10, mocks.avatarMultipartWork],
-    ["attachment", "post", "/api/v1/attachment", 60, mocks.attachmentMultipartWork],
+    ["attachment", "post", "/api/v1/attachment/chat-a", 60, mocks.attachmentMultipartWork],
   ] as const)(
     "throttles repeated %s requests before multipart expense and isolates users",
     async (_label, method, path, limit, multipartWork) => {

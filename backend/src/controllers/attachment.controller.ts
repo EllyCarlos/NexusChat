@@ -1,49 +1,43 @@
 import { NextFunction, Response } from "express";
 import { Server } from "socket.io";
-import { ACCEPTED_FILE_MIME_TYPES } from "../constants/file.constant.js";
 import { Events } from "../enums/event/event.enum.js";
 import { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from "../lib/prisma.lib.js";
-import { uploadAttachmentSchemaType } from "../schemas/message.schema.js";
 import { assertChatMember, getCachedAuthorizedChat } from "../services/authorization.service.js";
-import { uploadFilesToCloudinary } from "../utils/auth.util.js";
+import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/auth.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { calculateSkip } from "../utils/generic.js";
 import { emitEventToRoom } from "../utils/socket.util.js";
+import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
 
 export const uploadAttachment = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
-
-    if(!req.files?.length){
-        return next(new CustomError("Please provide the files",400))
-    }
-
-    const {chatId}:uploadAttachmentSchemaType = req.body
-
-    if(!chatId){
-        return next(new CustomError("ChatId is required",400))
-    }
-
-    const isExistingChat = getCachedAuthorizedChat(req, chatId)
-      ?? await assertChatMember(req.user.id, chatId)
-
     const attachments = req.files as Express.Multer.File[]
+    const chatId = req.params.chatId
+    let uploadedPublicIds: string[] = []
+    let attachmentsCommitted = false
 
-    const invalidFiles = attachments.filter(file=>!ACCEPTED_FILE_MIME_TYPES.includes(file.mimetype))
-    
-    if(invalidFiles.length) {
-        const invalidFileNames = invalidFiles.map(file => file.originalname).join(', ');
-        return next(new CustomError(`Unsupported file types: ${invalidFileNames}, please provide valid files`, 400));
-    }
+    try {
+      if(!attachments?.length){
+          return next(new CustomError("Please provide the files",400))
+      }
 
-    const uploadResults =  await uploadFilesToCloudinary({files:attachments})
+      if(!chatId){
+          return next(new CustomError("ChatId is required",400))
+      }
 
-    if(!uploadResults){
-        return next(new CustomError("Failed to upload files",500))
-    }
+      const isExistingChat = getCachedAuthorizedChat(req, chatId)
+        ?? await assertChatMember(req.user.id, chatId)
 
-    const attachmentsArray = uploadResults.map(({secure_url,public_id})=>({cloudinaryPublicId:public_id,secureUrl:secure_url}))
+      const uploadResults = await uploadFilesToCloudinary({files:attachments})
+      uploadedPublicIds = uploadResults.map(({public_id}) => public_id)
+      if(uploadResults.length !== attachments.length){
+          throw new Error("Cloudinary returned incomplete attachment results")
+      }
 
-    const newMessage = await prisma.message.create({
+      const attachmentsArray = uploadResults.map(({secure_url,public_id})=>({cloudinaryPublicId:public_id,secureUrl:secure_url}))
+
+      const newMessage = await prisma.message.create({
         data:{
             chatId:chatId,
             senderId:req.user.id,
@@ -89,7 +83,8 @@ export const uploadAttachment = asyncErrorHandler(async(req:AuthenticatedRequest
           pollId:true,
           audioPublicId:true
         },
-    })
+      })
+      attachmentsCommitted = true
 
 
     const io:Server = req.app.get("io");
@@ -132,8 +127,21 @@ export const uploadAttachment = asyncErrorHandler(async(req:AuthenticatedRequest
     }
 
     emitEventToRoom({data:unreadMessageData,event:Events.UNREAD_MESSAGE,io,room:chatId})
-    return res.status(201).json({});
-
+      return res.status(201).json({});
+    } catch (error) {
+      if (!attachmentsCommitted && uploadedPublicIds.length) {
+        try {
+          await deleteFilesFromCloudinary({ publicIds: uploadedPublicIds })
+        } catch (cleanupError) {
+          logServerError("New attachment rollback failed.", cleanupError)
+        }
+      }
+      return next(error instanceof CustomError
+        ? error
+        : new CustomError("Failed to upload attachments", 500))
+    } finally {
+      await cleanupTemporaryFiles(attachments ?? [])
+    }
 })
 
 export const fetchAttachments = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{

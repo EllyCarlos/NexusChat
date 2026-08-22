@@ -18,7 +18,7 @@ export const notFoundMiddleware = (_req: Request, res: Response) =>
 
 export const errorMiddleware = (
   err: unknown,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction,
 ) => {
@@ -37,6 +37,14 @@ export const errorMiddleware = (
       default:
         return sendError(res, 400, "Invalid multipart request");
     }
+  }
+
+  if (
+    req.is("multipart/form-data")
+    && err instanceof Error
+    && ["Unexpected end of form", "Malformed part header"].includes(err.message)
+  ) {
+    return sendError(res, 400, "Invalid multipart request");
   }
 
   if (err instanceof jwt.TokenExpiredError || err instanceof jwt.JsonWebTokenError) {
