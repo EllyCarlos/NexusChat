@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
+import { createSecurityHeaderRules } from "./security-headers";
 
 const nextConfig: NextConfig = {
   /* Basic config */
+  async headers() {
+    return createSecurityHeaderRules(process.env.NODE_ENV, process.env);
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.pexels.com" },

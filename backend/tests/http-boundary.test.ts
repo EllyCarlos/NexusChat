@@ -147,7 +147,7 @@ describe("HTTP application boundary", () => {
     expect(output).not.toContain("?");
   });
 
-  it("preserves the current root and health response fields", async () => {
+  it("keeps the public status routes minimal", async () => {
     const app = createTestApplication();
     const [root, health] = await Promise.all([
       request(app).get("/"),
@@ -155,15 +155,8 @@ describe("HTTP application boundary", () => {
     ]);
 
     expect(root.status).toBe(200);
-    expect(root.body).toMatchObject({ status: "OK", running: true, environment: "test", connectedClients: 3 });
-    expect(root.body.timestamp).toBeTypeOf("string");
-    expect(root.body.uptime).toBeTypeOf("number");
+    expect(root.body).toEqual({ status: "ok" });
     expect(health.status).toBe(200);
-    expect(health.body).toMatchObject({
-      status: "healthy",
-      services: { server: "running", socket: "3 clients connected" },
-    });
-    expect(health.body.services.memory.used).toMatch(/ MB$/);
-    expect(health.body.services.memory.total).toMatch(/ MB$/);
+    expect(health.body).toEqual({ status: "ok" });
   });
 });
