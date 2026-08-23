@@ -15,6 +15,7 @@
     "build": "rimraf dist && tsc",
     "build:production": "npm run build && npm prune --omit=dev --omit=optional --ignore-scripts",
     "postinstall": "npx prisma generate",
+    "test": "vitest run",
     "test:security": "vitest run tests/token-purpose.test.ts tests/rest-authorization.test.ts tests/socket-authorization.test.ts tests/webrtc-authorization.test.ts tests/socket-lifecycle-hardening.test.ts tests/socket-event-hardening.test.ts"
   },
   "keywords": [],

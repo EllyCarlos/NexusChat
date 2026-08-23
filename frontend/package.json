@@ -16,6 +16,8 @@
     "migrate:dev": "dotenv -e .env.development -- npx prisma migrate deploy",
     "migrate:prod": "dotenv -e .env.production -- npx prisma migrate deploy",
     "postinstall": "prisma generate",
+    "test": "vitest run",
+    "ts.check": "next typegen && tsc --noEmit",
     "test:security": "vitest run tests/token-purpose.test.ts tests/oauth-session-flow.test.ts"
   },
   "dependencies": {
