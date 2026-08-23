@@ -1,0 +1,272 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - refactor/phase1-stabilization
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  frontend-validation:
+    name: frontend-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Verify Node.js and npm versions
+        run: |
+          node --version
+          npm --version
+          node_major="$(node -p "process.versions.node.split('.')[0]")"
+          npm_version="$(npm --version)"
+          npm_major="${npm_version%%.*}"
+          if [ "$node_major" != "24" ] || [ "$npm_major" != "11" ]; then
+            echo "Expected Node.js 24 and npm 11, got Node.js $node_major and npm $npm_major" >&2
+            exit 1
+          fi
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        env:
+          NODE_ENV: test
+        run: npm test
+
+      - name: Typecheck frontend
+        env:
+          NEXT_PUBLIC_CLIENT_URL: https://web.ci.nexuschat.example
+          NEXT_PUBLIC_API_URL: https://api.ci.nexuschat.example
+          NEXT_PUBLIC_BASE_URL: https://api.ci.nexuschat.example/api/v1
+          NEXT_PUBLIC_ABSOLUTE_BASE_URL: https://api.ci.nexuschat.example
+        run: npm run ts.check
+
+      - name: Build frontend for production
+        env:
+          NEXT_PUBLIC_CLIENT_URL: https://web.ci.nexuschat.example
+          NEXT_PUBLIC_API_URL: https://api.ci.nexuschat.example
+          NEXT_PUBLIC_BASE_URL: https://api.ci.nexuschat.example/api/v1
+          NEXT_PUBLIC_ABSOLUTE_BASE_URL: https://api.ci.nexuschat.example
+        run: npm run build
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=low
+
+      - name: Assert clean repository
+        if: ${{ !cancelled() }}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git diff --exit-code
+          git diff --cached --exit-code
+          status="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$status" ]; then
+            printf '%s\n' "$status"
+            exit 1
+          fi
+
+  backend-validation:
+    name: backend-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Verify Node.js and npm versions
+        run: |
+          node --version
+          npm --version
+          node_major="$(node -p "process.versions.node.split('.')[0]")"
+          npm_version="$(npm --version)"
+          npm_major="${npm_version%%.*}"
+          if [ "$node_major" != "24" ] || [ "$npm_major" != "11" ]; then
+            echo "Expected Node.js 24 and npm 11, got Node.js $node_major and npm $npm_major" >&2
+            exit 1
+          fi
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      # The full development-tree audit is reviewed, while the pruned runtime audit is the gate.
+      - name: Reviewed development dependency audit
+        continue-on-error: true
+        run: npm audit --audit-level=low
+
+      - name: Run backend tests
+        env:
+          NODE_ENV: test
+        run: npm test
+
+      - name: Typecheck backend
+        run: npm run ts.check
+
+      - name: Compile backend
+        run: npm run build
+
+      - name: Verify compiled backend entry point
+        run: |
+          test -f dist/index.js
+          node --check dist/index.js
+
+      - name: Assert clean repository
+        if: ${{ !cancelled() }}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git diff --exit-code
+          git diff --cached --exit-code
+          status="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$status" ]; then
+            printf '%s\n' "$status"
+            exit 1
+          fi
+
+  backend-production-runtime:
+    name: backend-production-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Verify Node.js and npm versions
+        run: |
+          node --version
+          npm --version
+          node_major="$(node -p "process.versions.node.split('.')[0]")"
+          npm_version="$(npm --version)"
+          npm_major="${npm_version%%.*}"
+          if [ "$node_major" != "24" ] || [ "$npm_major" != "11" ]; then
+            echo "Expected Node.js 24 and npm 11, got Node.js $node_major and npm $npm_major" >&2
+            exit 1
+          fi
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      # Prisma generation requires the full install before dev and optional packages are pruned.
+      - name: Build and prune production dependencies
+        run: npm run build:production
+
+      - name: Verify compiled backend entry point
+        run: |
+          test -f dist/index.js
+          node --check dist/index.js
+
+      - name: Verify required runtime dependencies
+        run: |
+          test -f node_modules/.prisma/client/default.js
+          node --input-type=module <<'NODE'
+          const required = [
+            '@prisma/client',
+            'firebase-admin/app',
+            'firebase-admin/messaging',
+          ];
+
+          for (const specifier of required) {
+            try {
+              await import(specifier);
+              console.log(`Resolved required runtime dependency: ${specifier}`);
+            } catch (error) {
+              console.error(`Unable to import required runtime dependency: ${specifier}`);
+              console.error(error);
+              process.exitCode = 1;
+            }
+          }
+          NODE
+
+      - name: Verify forbidden dependencies are unavailable
+        run: |
+          node --input-type=module <<'NODE'
+          const forbidden = [
+            'typescript',
+            'vitest',
+            'supertest',
+            'prisma',
+            '@google-cloud/firestore',
+            '@google-cloud/storage',
+          ];
+
+          for (const specifier of forbidden) {
+            try {
+              const resolved = import.meta.resolve(specifier);
+              console.error(`Forbidden dependency resolved: ${specifier} -> ${resolved}`);
+              process.exitCode = 1;
+            } catch (error) {
+              if (error?.code !== 'ERR_MODULE_NOT_FOUND') {
+                console.error(`Unexpected resolution error for ${specifier}`);
+                console.error(error);
+                process.exitCode = 1;
+              } else {
+                console.log(`Forbidden dependency is unavailable: ${specifier}`);
+              }
+            }
+          }
+          NODE
+
+      - name: Show production dependency tree
+        run: npm ls --omit=dev --omit=optional --depth=0
+
+      - name: Audit pruned production dependencies
+        run: npm audit --omit=dev --omit=optional --audit-level=low
+
+      - name: Assert clean repository
+        if: ${{ !cancelled() }}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git diff --exit-code
+          git diff --cached --exit-code
+          status="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$status" ]; then
+            printf '%s\n' "$status"
+            exit 1
+          fi
