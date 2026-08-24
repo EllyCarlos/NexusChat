@@ -13,5 +13,5 @@ export default function useNavigateToRecoverySuccessfulPageOnPrivateKeyRestorati
         if(isPrivateKeyRestoredInIndexedDB){
             router.push("/auth/private-key-restoration-success")
         }
-    },[isPrivateKeyRestoredInIndexedDB])
+    },[isPrivateKeyRestoredInIndexedDB, router])
 }

@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
-import { SubmitHandler, useForm } from "react-hook-form";
+import { SubmitHandler, useForm, useWatch } from "react-hook-form";
 import toast from "react-hot-toast";
 import { CircleLoading } from "../shared/CircleLoading";
 import { AuthRedirectLink } from "./AuthRedirectLink";
@@ -24,11 +24,11 @@ export const SignupForm = () => {
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     formState: { errors },
   } = useForm<signupSchemaType>({ resolver: zodResolver(signupSchema) });
 
-  const password = watch("password");
+  const password = useWatch({ control, name: "password" });
 
   useEffect(()=>{
     if(state?.errors?.message){
@@ -44,14 +44,12 @@ export const SignupForm = () => {
   useUpdateLoggedInUserPublicKeyInState({publicKey: publicKeyReturnedFromServerAfterBeingStored});
 
   const onSubmit: SubmitHandler<signupSchemaType> = (data) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { confirmPassword, ...credentials } = data;
     const formData = new FormData();
 
-    formData.append("name", credentials.name);
-    formData.append("username", credentials.username);
-    formData.append("email", credentials.email);
-    formData.append("password", credentials.password);
+    formData.append("name", data.name);
+    formData.append("username", data.username);
+    formData.append("email", data.email);
+    formData.append("password", data.password);
 
     startTransition(() => {
       signupAction(formData);

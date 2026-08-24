@@ -16,18 +16,17 @@ import {
   Suspense,
   useActionState,
   useEffect,
-  useRef,
-  useState
+  useRef
 } from 'react';
 import toast from 'react-hot-toast';
 
 function OAuthRedirectPageContent() {
-  const [state, verifyOAuthTokenAction] = useActionState(verifyOAuthToken, undefined);
+  const [state, verifyOAuthTokenAction, isVerificationPending] = useActionState(
+    verifyOAuthToken,
+    undefined
+  );
   const searchParams = useSearchParams();
   const errorParam = searchParams.get('error');
-  const [exchangeToken, setExchangeToken] = useState<string | null>(null);
-  const [isOAuthNewUser, setOAuthNewUser] = useState<boolean>(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const oauthVerificationStartedRef = useRef(false);
   const migrationResultHandledRef = useRef(false);
   const router = useRouter();
@@ -49,28 +48,15 @@ function OAuthRedirectPageContent() {
       return;
     }
 
-    setExchangeToken(token);
-  }, [errorParam, router]);
-
-  // Step 2: Trigger token verification after the browser URL is clean.
-  useEffect(() => {
-    if (exchangeToken && !oauthVerificationStartedRef.current) {
+    if (!oauthVerificationStartedRef.current) {
       oauthVerificationStartedRef.current = true;
-      setIsProcessing(true); // Set processing to true immediately
-
-      startTransition(() => {
-        verifyOAuthTokenAction(exchangeToken);
-      });
-      setExchangeToken(null);
+      startTransition(() => verifyOAuthTokenAction(token));
     }
-  }, [exchangeToken, verifyOAuthTokenAction]);
+  }, [errorParam, router, verifyOAuthTokenAction]);
 
   // Step 3: Handle response and store token
   useEffect(() => {
     if (state) {
-      // Reset processing flag when state is received, regardless of success or error
-      setIsProcessing(false);
-
       // Handle errors
       if (state.errors?.message) {
         toast.error(`Authentication failed: ${state.errors.message}`);
@@ -87,9 +73,6 @@ function OAuthRedirectPageContent() {
 
         if (state.data.oauthSetup) {
           toast.success('Welcome! Setting up your account...');
-          setOAuthNewUser(true);
-        } else if (state.data.oauthMigration) {
-          setIsProcessing(true);
         } else if (state.data.oauthMigrationError) {
           toast.error('Private-key backup migration was not completed.');
           router.push('/');
@@ -108,12 +91,17 @@ function OAuthRedirectPageContent() {
   const oauthSetup = state?.data?.oauthSetup;
   const oauthMigration = state?.data?.oauthMigration;
   const userId = state?.data?.user?.id;
+  const isOAuthNewUser = Boolean(oauthSetup);
 
   const { status: oauthMigrationStatus } =
     useMigrateOAuthPrivateKeyBackupToV2({
       userId,
       migration: oauthMigration,
     });
+  const isProcessing =
+    isVerificationPending ||
+    oauthMigrationStatus === "checking" ||
+    oauthMigrationStatus === "migrating";
 
   useEffect(() => {
     if (
@@ -124,7 +112,6 @@ function OAuthRedirectPageContent() {
     }
 
     migrationResultHandledRef.current = true;
-    setIsProcessing(false);
     if (oauthMigrationStatus === "failed") {
       toast.error('Private-key backup migration was not completed.');
     } else {

@@ -1,6 +1,6 @@
 import { useUpdateProfileMutation } from "@/lib/client/rtk-query/user.api";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ACCEPTED_IMAGE_TYPES, DEFAULT_AVATAR } from "../../constants";
 import { useToast } from "../../hooks/useUI/useToast";
 import { selectLoggedInUser } from "../../lib/client/slices/authSlice";
@@ -17,13 +17,7 @@ export const ProfileForm = () => {
 
   const [preview, setPreview] = useState<string>(loggedInUser?.avatar || DEFAULT_AVATAR);
   const [image, setImage] = useState<Blob>();
-  const [editActive, setEditActive] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (preview !== loggedInUser?.avatar) {
-      setEditActive(true);
-    }
-  }, [preview]);
+  const editActive = image !== undefined;
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.length && e.target.files[0]) {
@@ -36,7 +30,7 @@ export const ProfileForm = () => {
   const handleUpdateProfile = () => {
     if (image) {
       updateProfileTrigger({ avatar: image });
-      setEditActive(false);
+      setImage(undefined);
     }
   };
 

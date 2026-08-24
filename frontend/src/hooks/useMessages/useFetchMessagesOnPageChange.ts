@@ -1,6 +1,6 @@
 import { selectSelectedChatDetails } from "@/lib/client/slices/chatSlice";
 import { useAppSelector } from "@/lib/client/store/hooks";
-import { Dispatch, SetStateAction, useEffect } from "react";
+import { Dispatch, SetStateAction, useEffect, useRef } from "react";
 
 type PropTypes = {
   page: number;
@@ -26,16 +26,34 @@ export const useFetchMessagesOnPageChange = ({
   isFetching,
 }: PropTypes) => {
   const selectedChatId = useAppSelector(selectSelectedChatDetails)?.id;
+  const lastRequestKeyRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
+    const requestKey = `${selectedChatId ?? ""}:${page}`;
+
     // Only fetch messages if the page is greater than 1 (indicating the user wants older messages)
     // and if a selectedChatId exists
-    if (page > 1 && hasMoreMessages && selectedChatId && !isFetching) {
+    if (
+      page > 1 &&
+      hasMoreMessages &&
+      selectedChatId &&
+      !isFetching &&
+      requestKey !== lastRequestKeyRef.current
+    ) {
+      lastRequestKeyRef.current = requestKey;
       getPreviousMessages({ page, chatId: selectedChatId });
     }
     // If the current page equals totalPages, then there are no more messages to load
     if (page === totalPages) {
       setHasMoreMessages(false);
     }
-  }, [page]);
+  }, [
+    getPreviousMessages,
+    hasMoreMessages,
+    isFetching,
+    page,
+    selectedChatId,
+    setHasMoreMessages,
+    totalPages,
+  ]);
 };

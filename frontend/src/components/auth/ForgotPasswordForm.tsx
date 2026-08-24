@@ -5,31 +5,19 @@ import {
   forgotPasswordSchemaType,
 } from "@/lib/shared/zod/schemas/auth.schema";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { startTransition, useActionState, useEffect } from "react";
+import { startTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { SubmitHandler, useForm } from "react-hook-form";
-import toast from "react-hot-toast";
 import { CircleLoading } from "../shared/CircleLoading";
 
 export const ForgotPasswordForm = () => {
 
   const {register,handleSubmit,formState: { errors },setValue,} = useForm<forgotPasswordSchemaType>({resolver: zodResolver(forgotPasswordSchema)});
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [state, resetPasswordAction] = useActionState(forgotPassword, undefined);
 
   const onSubmit: SubmitHandler<forgotPasswordSchemaType> = ({ email }) => {
-  startTransition(() => { forgotPassword(null, email) }); // Use forgotPassword instead of resetPasswordAction
+  startTransition(() => { forgotPassword(null, email) });
   setValue("email", "");
   };
-
-  useEffect(()=>{
-    if(state?.errors.message?.length){
-      toast.error(state.errors.message);
-    }
-    else if(state?.success.message?.length){
-      toast.success(state.success.message);
-    }
-  },[state])
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-y-4">

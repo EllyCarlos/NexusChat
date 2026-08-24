@@ -42,5 +42,5 @@ export const useToast = ({
         toast.success(successMessage);
       }
     }
-  }, [error, errorToast, isError, isLoading, isSuccess, isUninitialized, loaderToast, successMessage, successToast]);
+  }, [error, errorToast, isError, isLoading, isSuccess, isUninitialized, loaderToast, loadingMessage, successMessage, successToast]);
 };

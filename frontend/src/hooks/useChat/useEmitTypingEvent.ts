@@ -20,5 +20,5 @@ export const useEmitTypingEvent = (isTyping: string) => {
       };
       socket?.emit(Event.USER_TYPING, data);
     }
-  }, [isTyping]);
+  }, [isTyping, selectedChatDetails, socket]);
 };

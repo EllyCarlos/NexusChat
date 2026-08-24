@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { useToggleGroupChatForm } from "../useUI/useToggleGroupChatForm";
+import { setNavMenu, setNewgroupChatForm } from "@/lib/client/slices/uiSlice";
+import { useAppDispatch } from "@/lib/client/store/hooks";
 
 type PropTypes = {
   isSuccess: boolean;
@@ -8,9 +9,12 @@ type PropTypes = {
 export const useCloseGroupChatFormOnSuccessfulChatCreation = ({
   isSuccess,
 }: PropTypes) => {
-  const { toggleGroupChatForm } = useToggleGroupChatForm();
+  const dispatch = useAppDispatch();
 
   useEffect(() => {
-    if (isSuccess) toggleGroupChatForm();
-  }, [isSuccess]);
+    if (isSuccess) {
+      dispatch(setNavMenu(false));
+      dispatch(setNewgroupChatForm(false));
+    }
+  }, [dispatch, isSuccess]);
 };

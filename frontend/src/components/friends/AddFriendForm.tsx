@@ -10,9 +10,7 @@ import { UserList } from "./UserList";
 
 const AddFriendForm = () => {
 
-  const [state,searchUserAction] = useActionState(searchUser,undefined);
-
-  const [loading,setLoading] = useState<boolean>(false);
+  const [state,searchUserAction,loading] = useActionState(searchUser,undefined);
 
   const [inputVal, setInputVal] = useState<string>("");
   const loggedInUserId = useAppSelector(selectLoggedInUser)?.id;
@@ -25,13 +23,11 @@ const AddFriendForm = () => {
 
   useEffect(() => {
     if (debouncedInputVal) {
-      setLoading(true);
       startTransition(()=>{
         searchUserAction({username:debouncedInputVal})
-        setLoading(false);
       })
     }
-  }, [debouncedInputVal]);
+  }, [debouncedInputVal, searchUserAction]);
 
   const hanldeSendFriendRequest = (receiverId: string) => {
     sendFriendRequest({ receiverId });

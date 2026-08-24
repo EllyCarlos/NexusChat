@@ -10,19 +10,22 @@ export const useGenerateKeyPair = ({ user }: PropTypes) => {
   const [privateKey, setPrivateKey] = useState<CryptoKey | null>(null);
   const [publicKey, setPublicKey] = useState<CryptoKey | null>(null);
 
-  const generateKeyPairAndConvertItInJwkFormat = async () => {
-    const keys = await generateKeyPair();
-    if (keys) {
-      const { privateKey, publicKey } = keys;
-      setPrivateKey(privateKey);
-      setPublicKey(publicKey);
-    }
-  };
-
   useEffect(() => {
-    if (user) {
-      generateKeyPairAndConvertItInJwkFormat();
+    if (!user) {
+      return;
     }
+
+    let cancelled = false;
+    void generateKeyPair().then((keys) => {
+      if (!cancelled && keys) {
+        setPrivateKey(keys.privateKey);
+        setPublicKey(keys.publicKey);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   return { privateKey, publicKey };

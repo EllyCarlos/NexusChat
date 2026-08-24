@@ -26,7 +26,6 @@ export const useVerifyPrivateKeyRecoveryToken = ({
   enabled,
 }: PropTypes) => {
   const [isPrivateKeyRestoredInIndexedDB, setIsPrivateKeyRestoredInIndexedDB] = useState(false);
-  const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [recoveredOAuthV1PrivateKey, setRecoveredOAuthV1PrivateKey] =
     useState<JsonWebKey | null>(null);
   const verificationStartedRef = useRef(false);
@@ -85,9 +84,6 @@ export const useVerifyPrivateKeyRecoveryToken = ({
       return; // Exit to prevent further processing
     }
 
-    if (state?.data) {
-      setIsSuccess(true);
-    }
   }, [state, router]);
 
   // Effect 3: Decrypt and store the private key once data is successfully fetched
@@ -151,41 +147,37 @@ export const useVerifyPrivateKeyRecoveryToken = ({
       toast.error("Error recovering private key. Please try again.");
       router.push("/auth/login");
     }
-  }, [state?.data, passwordInput, prepareMigrationAction, router]);
+  }, [state, passwordInput, prepareMigrationAction, router]);
 
 
   // Effect 4: Trigger the decryption and storage process
   useEffect(() => {
     if (
-      isSuccess &&
       state?.data &&
       !recoveryProcessingStartedRef.current
     ) {
       recoveryProcessingStartedRef.current = true;
       void handleDecryptAndStorePrivateKey();
     }
-  }, [isSuccess, state?.data, handleDecryptAndStorePrivateKey]); // Depend on the callback itself
+  }, [state?.data, handleDecryptAndStorePrivateKey]); // Depend on the callback itself
 
   // Effect 5: Finish a successful oauth-v1 recovery regardless of migration outcome.
+  const preparationFailed = !!migrationPreparationState?.errors?.message;
+  const preparationSkipped =
+    migrationPreparationState !== undefined &&
+    !migrationPreparationState.errors?.message &&
+    !migrationPreparationState.data;
+  const migrationFinished =
+    migrationStatus === "succeeded" ||
+    migrationStatus === "failed" ||
+    migrationStatus === "skipped";
+  const oauthV1RecoveryFinished = Boolean(
+    recoveredOAuthV1PrivateKey &&
+    (preparationFailed || preparationSkipped || migrationFinished)
+  );
+
   useEffect(() => {
-    if (
-      !recoveredOAuthV1PrivateKey ||
-      migrationResultHandledRef.current
-    ) {
-      return;
-    }
-
-    const preparationFailed = !!migrationPreparationState?.errors?.message;
-    const preparationSkipped =
-      migrationPreparationState !== undefined &&
-      !migrationPreparationState.errors?.message &&
-      !migrationPreparationState.data;
-    const migrationFinished =
-      migrationStatus === "succeeded" ||
-      migrationStatus === "failed" ||
-      migrationStatus === "skipped";
-
-    if (!preparationFailed && !preparationSkipped && !migrationFinished) {
+    if (!oauthV1RecoveryFinished || migrationResultHandledRef.current) {
       return;
     }
 
@@ -193,11 +185,11 @@ export const useVerifyPrivateKeyRecoveryToken = ({
     if (preparationFailed || migrationStatus === "failed") {
       toast.error("Private-key backup migration was not completed.");
     }
-    setIsPrivateKeyRestoredInIndexedDB(true);
-  }, [migrationPreparationState, migrationStatus, recoveredOAuthV1PrivateKey]);
+  }, [migrationStatus, oauthV1RecoveryFinished, preparationFailed]);
 
   return {
-    isPrivateKeyRestoredInIndexedDB: isPrivateKeyRestoredInIndexedDB, // isSuccess check done inside the hook now
+    isPrivateKeyRestoredInIndexedDB:
+      isPrivateKeyRestoredInIndexedDB || oauthV1RecoveryFinished,
     isPending, // Expose isPending for UI feedback
     error: state?.errors?.message, // Expose error message
   };

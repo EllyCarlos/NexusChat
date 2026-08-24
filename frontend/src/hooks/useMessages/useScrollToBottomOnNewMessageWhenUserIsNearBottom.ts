@@ -1,7 +1,7 @@
 import { Message } from "@/interfaces/message.interface";
 import { selectNewMessageFormed } from "@/lib/client/slices/uiSlice";
 import { useAppSelector } from "@/lib/client/store/hooks";
-import { RefObject, useEffect, useState } from "react";
+import { RefObject, useEffect } from "react";
 
 type PropTypes = {
   container: RefObject<HTMLDivElement | null> // The container element that holds the chat messages
@@ -22,36 +22,30 @@ export const useScrollToBottomOnNewMessageWhenUserIsNearBottom = ({
 
   const newMessageFormed = useAppSelector(selectNewMessageFormed);
   
-  const [isChanged,setIsChanged] = useState<boolean>(false);
-
   useEffect(()=>{
     prevHeightRef.current = 0;
     prevScrollTopRef.current = 0;
-        setTimeout(() => {
-          console.log('ran man');
-          if(container.current && isNearBottom){
-            container.current.scrollTop = container.current.scrollHeight;
-            setIsChanged(!isChanged);
+    let fallbackTimeout: ReturnType<typeof setTimeout> | undefined;
+    const initialTimeout = setTimeout(() => {
+      const currentContainer = container.current;
+      if (currentContainer && isNearBottom) {
+        console.log('ran man');
+        currentContainer.scrollTop = currentContainer.scrollHeight;
+        fallbackTimeout = setTimeout(() => {
+          const fallbackContainer = container.current;
+          if (fallbackContainer) {
+            console.log('TRIGGERED FALLBACK');
+            fallbackContainer.scrollTop = fallbackContainer.scrollHeight;
           }
-        }, 50);
-      
-  },[container,isNearBottom, messages.length, prevHeightRef, prevScrollTopRef,newMessageFormed])
-
-
-  useEffect(()=>{
-    if(newMessageFormed && isNearBottom){
-      setIsChanged(!isChanged);
-    }
-  },[newMessageFormed,isNearBottom]);
-  
-  useEffect(()=>{
-    setTimeout(() => {
-      if(container.current){
-        console.log('TRIGGERED FALLBACK');
-        container.current.scrollTop = container.current.scrollHeight;
+        }, 300);
       }
-    }, 300);
-  },[isChanged]);
+    }, 50);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+    };
+  }, [container, isNearBottom, messages.length, newMessageFormed, prevHeightRef, prevScrollTopRef]);
 
 };
 

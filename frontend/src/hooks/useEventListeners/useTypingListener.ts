@@ -13,7 +13,7 @@ import { useSocketEvent } from "../useSocket/useSocketEvent";
 
 // Re-using BasicUserInfo from where it's defined (e.g., useChatListItemClick.ts)
 // Make sure this import path is correct based on your project structure.
-import { BasicUserInfo, Chat } from "../useChat/useChatListItemClick"; 
+import { BasicUserInfo } from "../useChat/useChatListItemClick";
 
 
 type UserTypingEventReceivePayload = {
@@ -56,7 +56,6 @@ export const useTypingListener = () => {
       } else {
         let isNewUserPushedInTypingArray: boolean = false;
         
-        // Explicitly type 'draft' as Chat
         const chat = chatsRef.current.find((draft) => draft.id === chatId);
         if (chat) {
           // Explicitly type typingUser as BasicUserInfo

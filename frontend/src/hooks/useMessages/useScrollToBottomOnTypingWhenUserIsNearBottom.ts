@@ -7,6 +7,10 @@ type PropTypes = {
   isNearBottom: boolean;
 };
 
+const scrollToBottom = (container: HTMLDivElement) => {
+  container.scrollTop = container.scrollHeight;
+};
+
 export const useScrollToBottomOnTypingWhenUserIsNearBottom = ({
   container,
   isNearBottom,
@@ -18,8 +22,9 @@ export const useScrollToBottomOnTypingWhenUserIsNearBottom = ({
   const isAnyUserTyping = selectedChatDetails && selectedChatDetails.typingUsers.length > 0;
 
   useEffect(() => {
-    if (container.current && isAnyUserTyping && isNearBottom) {
-      container.current.scrollTop = container.current.scrollHeight;
+    const currentContainer = container.current;
+    if (currentContainer && isAnyUserTyping && isNearBottom) {
+      scrollToBottom(currentContainer);
     }
-  }, [isAnyUserTyping, isNearBottom]);
+  }, [container, isAnyUserTyping, isNearBottom]);
 };

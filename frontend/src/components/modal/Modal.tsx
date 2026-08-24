@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"; // For animations
-import { useEffect, useState } from "react"; // React hooks for managing state and side effects
+import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom"; // Function for creating portals
 import { selectisDarkMode } from "../../lib/client/slices/uiSlice"; // Selector to determine if dark mode is enabled
 import { useAppSelector } from "../../lib/client/store/hooks"; // Custom hook to access the Redux state
@@ -14,6 +14,10 @@ type PropTypes = {
   isCallModal?:boolean
 };
 
+const subscribeToClient = () => () => undefined;
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export const Modal = ({
   isOpen = false,
   onClose,
@@ -24,14 +28,11 @@ export const Modal = ({
   // Access the current dark mode state from the Redux store
   const isDarkMode = useAppSelector(selectisDarkMode);
 
-  // Local state to track whether the modal is mounted (client-side only)
-  const [mounted, setMounted] = useState(false);
-
-  // Effect hook to ensure the modal logic runs only on the client side
-  useEffect(() => {
-    setMounted(true); // Set the mounted state to true when the component is rendered on the client
-    return () => setMounted(false); // Cleanup to set the mounted state to false when the component unmounts
-  }, []);
+  const mounted = useSyncExternalStore(
+    subscribeToClient,
+    getClientSnapshot,
+    getServerSnapshot
+  );
 
   // If the modal is not open or the component is not yet mounted on the client, render nothing
   if (!isOpen || !mounted) return null;

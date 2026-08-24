@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 type PropTypes = {
   selectedAttachments: Blob[];
@@ -6,21 +6,16 @@ type PropTypes = {
 export const useGenerateAttachmentsPreview = ({
   selectedAttachments,
 }: PropTypes) => {
-  const [attachmentsPreview, setAttachmentsPreview] = useState<string[]>([]);
+  const attachmentsPreview = useMemo(
+    () => selectedAttachments.map((attachment) => URL.createObjectURL(attachment)),
+    [selectedAttachments]
+  );
 
   useEffect(() => {
-    if (selectedAttachments.length>0){
-      setAttachmentsPreview(
-        selectedAttachments.map((attachment) => URL.createObjectURL(attachment))
-      );
-    }
-    else{
-      setAttachmentsPreview([]);
-    }
     return () => {
       attachmentsPreview.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [selectedAttachments]);
+  }, [attachmentsPreview]);
 
   return { attachmentsPreview};
 };

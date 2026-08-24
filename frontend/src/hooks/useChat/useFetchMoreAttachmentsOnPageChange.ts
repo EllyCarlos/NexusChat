@@ -1,5 +1,5 @@
 import { useLazyFetchAttachmentsQuery } from "@/lib/client/rtk-query/attachment.api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type PropTypes = {
     chatId:string
@@ -8,26 +8,25 @@ type PropTypes = {
 export const useFetchMoreAttachmentsOnPageChange = ({chatId}:PropTypes) => {
     
     const [fetchAttachments,{isFetching,data}] = useLazyFetchAttachmentsQuery();
-    
+
     const [page,setPage] = useState(1);
-    const [hasMore,setHasMore] = useState<boolean>(true);
-    const [totalPage,setTotalPage] = useState<number>(1);
+    const lastRequestKeyRef = useRef<string | null>(null);
+    const totalPage = data?.totalPages ?? 1;
+    const hasMore = data === undefined || page < totalPage;
 
     useEffect(()=>{
-        if(data?.totalPages){
-            setHasMore(data.totalPages>1)
-            setTotalPage(data.totalPages)
+        const requestKey = `${chatId}:${page}`;
+        if (
+            isFetching ||
+            lastRequestKeyRef.current === requestKey ||
+            (data !== undefined && page > totalPage)
+        ) {
+            return;
         }
-    },[data?.totalPages])
-    
-    useEffect(()=>{
-        if(hasMore && !isFetching){
-            fetchAttachments({chatId,page},true);
-        }
-        if(page==totalPage){
-            setHasMore(false)
-        }
-    },[page,hasMore,totalPage])
+
+        lastRequestKeyRef.current = requestKey;
+        void fetchAttachments({chatId,page},true);
+    },[chatId, data, fetchAttachments, isFetching, page, totalPage])
 
     return {hasMore,setPage,isFetching,data};
 }

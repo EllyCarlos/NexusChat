@@ -1,33 +1,7 @@
 "use client";
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
-import { Metadata } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const metadata: Metadata = {
-  title: "Reset Password - NexusChat",
-  description: "Securely reset your password on NexusChat and regain access to your account.",
-  keywords: [
-    "NexusChat password reset", 
-    "reset password", 
-    "forgot password", 
-    "secure account recovery", 
-    "change password"
-  ],
-  openGraph: {
-    title: "Reset Password - NexusChat",
-    description: "Securely reset your password on NexusChat and regain access to your account.",
-    url: "https://nexuswebapp.vercel.app/auth/reset-password",
-    siteName: "NexusChat",
-    type: "website",
-  },
-  twitter: {
-    card: "summary",
-    title: "Reset Password - NexusChat",
-    description: "Securely reset your password on NexusChat and regain access to your account.",
-  },
-};
 
 function ResetPasswordPageContent (){
 

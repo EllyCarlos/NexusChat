@@ -308,6 +308,8 @@ export async function logout() {
 
 // --- SEND PRIVATE KEY RECOVERY EMAIL ---
 export async function sendPrivateKeyRecoveryEmail(_prevState: unknown) {
+  void _prevState;
+
   try {
     const session = await getAuthenticatedSession();
     if (!session) {
@@ -734,7 +736,6 @@ export async function forgotPassword(prevState: any, email: string) {
 }
 
 // --- VERIFY OAUTH TOKEN ---
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function verifyOAuthToken(_prevState: unknown, token: string) {
   try {
     if (!token) {
@@ -896,7 +897,21 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
     // Create and persist the real session that REST and Socket.IO will use.
     const sessionToken = await createSession(user.id);
 
-    const { privateKey: _storedPrivateKey, ...clientUser } = user;
+    const clientUser = {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      avatar: user.avatar,
+      email: user.email,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      emailVerified: user.emailVerified,
+      publicKey: user.publicKey,
+      notificationsEnabled: user.notificationsEnabled,
+      verificationBadge: user.verificationBadge,
+      fcmToken: user.fcmToken,
+      oAuthSignup: user.oAuthSignup,
+    };
     const responseData: {
       user: typeof clientUser;
       sessionToken: string;
@@ -954,7 +969,6 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
 }
 
 // --- RESET PASSWORD ---
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function resetPassword(prevState: any, data: { token: string, newPassword: string }) {
   try {
     const { newPassword, token } = data;
@@ -1189,6 +1203,8 @@ export async function storeNewOAuthV2UserKeys(
 export async function prepareOAuthPrivateKeyBackupV2Migration(
   _prevState: unknown
 ) {
+  void _prevState;
+
   try {
     const session = await getAuthenticatedSession();
     if (!session) {
@@ -1423,6 +1439,8 @@ export async function storeUserKeysInDatabase(
 
 // --- SEND OTP ---
 export async function sendOtp(_prevState: unknown) {
+  void _prevState;
+
   try {
     const session = await getAuthenticatedSession();
     if (!session) {

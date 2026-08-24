@@ -10,10 +10,11 @@ import {
   getUserPrivateKeyFromIndexedDB,
   storeSharedKeyInIndexedDB,
 } from "../../lib/client/indexedDB";
+import { useCallback } from "react";
 
 export const useGetSharedKey = () => {
 
-  const getSharedKey = async ({loggedInUserId,otherMember}: {loggedInUserId: string,otherMember: ChatMember}) => {
+  const getSharedKey = useCallback(async ({loggedInUserId,otherMember}: {loggedInUserId: string,otherMember: ChatMember}) => {
 
     // first we check the indexedDB for the shared key
     const existingSharedKeyInJwkFormat = await getStoredSharedKeyFromIndexedDB({
@@ -56,7 +57,7 @@ export const useGetSharedKey = () => {
         }
       }
     }
-  };
+  }, []);
 
   return { getSharedKey };
 };

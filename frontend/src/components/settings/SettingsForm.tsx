@@ -9,18 +9,21 @@ import toast from "react-hot-toast";
 
 const SettingsForm = () => {
 
-  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
-  const debouncedValue =  useDebounce(notificationsEnabled,500);
-
   const [state,updateUserNotificationStatusAction] =  useActionState(updateUserNotificationStatus,undefined);
-  
+
   const loggedInUser = useAppSelector(selectLoggedInUser);
+  const [notificationSelection, setNotificationSelection] = useState<{
+    userId: string;
+    value: boolean;
+  } | null>(null);
+  const notificationsEnabled = loggedInUser
+    ? notificationSelection?.userId === loggedInUser.id
+      ? notificationSelection.value
+      : loggedInUser.notificationsEnabled
+    : null;
+  const debouncedValue = useDebounce(notificationsEnabled, 500);
 
   const dispatch = useAppDispatch();
-  
-  useEffect(() => {
-    if (loggedInUser) setNotificationsEnabled(loggedInUser.notificationsEnabled);
-  }, [loggedInUser]);
 
 
   useEffect(()=>{
@@ -50,7 +53,14 @@ const SettingsForm = () => {
           {
             notificationsEnabled!==null && (
               <input
-                onChange={()=>setNotificationsEnabled(!notificationsEnabled)}
+                onChange={() => {
+                  if (loggedInUser) {
+                    setNotificationSelection({
+                      userId: loggedInUser.id,
+                      value: !notificationsEnabled,
+                    });
+                  }
+                }}
                 type="checkbox"
                 checked={notificationsEnabled}
                 className="sr-only peer"

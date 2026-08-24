@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
-  const sendMail = vi.fn(async (_message: Record<string, unknown>) => undefined);
+  const sendMail = vi.fn(async (message: Record<string, unknown>) => {
+    void message;
+  });
   return {
     sendMail,
     getTransporter: vi.fn(() => ({ sendMail })),

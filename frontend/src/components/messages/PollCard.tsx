@@ -2,7 +2,7 @@ import { useToggleViewVotes } from "@/hooks/useUI/useToggleViewVotes";
 import { Message } from "@/interfaces/message.interface";
 import { setVotesData } from "@/lib/client/slices/uiSlice";
 import { useAppDispatch } from "@/lib/client/store/hooks";
-import { MouseEvent, useCallback } from "react";
+import { MouseEvent } from "react";
 import { PollOptionList } from "./PollOptionList";
 
 type PropTypes = {
@@ -30,12 +30,12 @@ export const PollCard = ({ pollData, messageId, votingAllowed=true}: PropTypes) 
   const { toggleViewVotes } = useToggleViewVotes();
   const dispatch = useAppDispatch();
 
-  const handleViewVotesClick = useCallback((e: MouseEvent<HTMLButtonElement, globalThis.MouseEvent>) => {
+  const handleViewVotesClick = (e: MouseEvent<HTMLButtonElement, globalThis.MouseEvent>) => {
     e.stopPropagation();
     e.preventDefault();
     dispatch(setVotesData({options:pollData.options,optionIndexToVotesMap,question:pollData.question}));
     toggleViewVotes();
-  },[]);
+  };
 
 
   return (

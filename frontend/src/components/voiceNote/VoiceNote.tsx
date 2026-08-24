@@ -4,7 +4,7 @@ import { setNewMessageFormed } from "@/lib/client/slices/uiSlice";
 import { useAppDispatch } from "@/lib/client/store/hooks";
 import { fetchUserChatsResponse } from "@/lib/server/services/userService";
 import { getOtherMemberOfPrivateChat } from "@/lib/shared/helpers";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 type PropTypes = {
     audioUrl:string;
@@ -14,60 +14,55 @@ type PropTypes = {
 
 export const VoiceNote = ({audioUrl,loggedInUserId,selectedChatDetails}:PropTypes) => {
 
-    const [base64Audio, setBase64Audio] = useState<Uint8Array<ArrayBuffer> | null>(null);
     const {getSharedKey} = useGetSharedKey();
-
-    const [sharedKey, setSharedKey] = useState<CryptoKey>();
     const [url,setUrl] = useState<string | null>(null);
 
     const dispatch = useAppDispatch();
 
-    const fetchAudioAsBuffer = useCallback(async (audioUrl: string) => {
+    const otherMember = getOtherMemberOfPrivateChat(
+      selectedChatDetails,
+      loggedInUserId
+    ).user;
+
+    useEffect(() => {
+      let cancelled = false;
+      let objectUrl: string | null = null;
+
+      void (async () => {
         try {
           const response = await fetch(audioUrl);
-          const arrayBuffer = await response.arrayBuffer(); // Fetch as binary
-          setBase64Audio(new Uint8Array(arrayBuffer));
+          const encryptedAudio = new Uint8Array(await response.arrayBuffer());
+          let blob: Blob | null;
+
+          if (selectedChatDetails.isGroupChat) {
+            blob = new Blob([encryptedAudio], { type: "audio/webm" });
+          } else {
+            const sharedKey = await getSharedKey({ loggedInUserId, otherMember });
+            blob = sharedKey
+              ? await decryptAudioBlob({ sharedKey, encryptedAudio })
+              : null;
+          }
+
+          if (!cancelled && blob) {
+            objectUrl = URL.createObjectURL(blob);
+            setUrl(objectUrl);
+          }
         } catch (error) {
           console.error("Error fetching encrypted audio:", error);
-          return null;
         }
-    },[]);
+      })();
 
-    const otherMember =  getOtherMemberOfPrivateChat(selectedChatDetails,loggedInUserId).user;
-    
-    const setSharedKeyInState = useCallback(async()=>{
-        const sharedKey = await getSharedKey({loggedInUserId,otherMember});
-        setSharedKey(sharedKey);
-    },[getSharedKey, loggedInUserId, otherMember]);
-    
-    const handleSetDecryptAudio = useCallback(async({encryptedAudio,sharedKey}:{sharedKey:CryptoKey,encryptedAudio:Uint8Array<ArrayBuffer>})=>{
-        const blob =  await decryptAudioBlob({sharedKey,encryptedAudio});
-        if(blob) setUrl(URL.createObjectURL(blob));
-    },[])
-
-    useEffect(()=>{
-        fetchAudioAsBuffer(audioUrl);
-        if(!selectedChatDetails.isGroupChat){
-            // as because group chats audio are not encrypted
-            setSharedKeyInState();
-        }
-    },[])
-
-    useEffect(()=>{
-        if(base64Audio && sharedKey){
-            handleSetDecryptAudio({encryptedAudio:base64Audio,sharedKey})
-        }
-        else if(base64Audio && selectedChatDetails.isGroupChat){
-            const blob = new Blob([base64Audio], { type: "audio/webm" });
-            setUrl(URL.createObjectURL(blob));
-        }
-    },[base64Audio,sharedKey])
+      return () => {
+        cancelled = true;
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+    }, [audioUrl, getSharedKey, loggedInUserId, otherMember, selectedChatDetails.isGroupChat]);
 
     useEffect(()=>{
         if(url){
             dispatch(setNewMessageFormed(true));
         }
-    },[url])
+    },[dispatch, url])
       
 
   return (

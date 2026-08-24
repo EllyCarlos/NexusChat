@@ -11,5 +11,5 @@ export const useSetPageToOneOnChatChange = ({ setPage }: PropTypes) => {
 
   useLayoutEffect(() => {
     setPage(1);
-  }, [selectedChatId]);
+  }, [selectedChatId, setPage]);
 };

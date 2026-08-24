@@ -3,7 +3,7 @@ import { Event } from "@/interfaces/events.interface";
 import { selectLoggedInUser } from "@/lib/client/slices/authSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
 import { fetchUserChatsResponse } from "@/lib/server/services/userService";
-import { MouseEvent, useCallback, useEffect, useState } from "react";
+import { MouseEvent, useCallback, useState } from "react";
 import { ChevronDownIcon } from "../ui/icons/ChevronDownIcon";
 import { PinIcon } from "../ui/icons/PinIcon";
 import { UnpinIcon } from "../ui/icons/UnpinIcon";
@@ -19,22 +19,36 @@ type UnpinMessageEventSendPayload = {
 
 export const PinMessageArea = ({selectedChatDetails}:PropTypes) => {
 
-    const [activePinIndex,setActivePinIndex] = useState<number>(selectedChatDetails.PinnedMessages.length-1);
+    const pinnedMessageCount = selectedChatDetails.PinnedMessages.length;
+    const [pinSelection, setPinSelection] = useState({
+        messageCount: pinnedMessageCount,
+        activeIndex: pinnedMessageCount - 1,
+    });
+
+    if (pinSelection.messageCount !== pinnedMessageCount) {
+        setPinSelection({
+            messageCount: pinnedMessageCount,
+            activeIndex: pinnedMessageCount - 1,
+        });
+    }
+
+    const activePinIndex = pinSelection.messageCount === pinnedMessageCount
+        ? pinSelection.activeIndex
+        : pinnedMessageCount - 1;
 
     const dispatch = useAppDispatch();
-
-    useEffect(()=>{
-        setActivePinIndex(selectedChatDetails.PinnedMessages.length-1)
-    },[selectedChatDetails.PinnedMessages.length])
 
     const socket = useSocket();
 
     const handlePinAreaClick = useCallback(()=>{
         if(activePinIndex === selectedChatDetails.PinnedMessages.length-1){
-            setActivePinIndex(0);
+            setPinSelection((current) => ({ ...current, activeIndex: 0 }));
             return;
         }
-        setActivePinIndex(prev=>prev+1);
+        setPinSelection((current) => ({
+            ...current,
+            activeIndex: current.activeIndex + 1,
+        }));
     },[activePinIndex, selectedChatDetails.PinnedMessages.length]);
 
     const handleUnpinClick = useCallback((e:MouseEvent<HTMLButtonElement, globalThis.MouseEvent>)=>{

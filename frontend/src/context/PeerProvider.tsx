@@ -3,7 +3,7 @@
 "use client";
 
 import { PeerService } from "@/lib/client/webrtc/services/peer";
-import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 // 1. Define the shape of our context data
 interface IPeerContext {
@@ -28,27 +28,20 @@ export const usePeer = () => {
 // 4. Create the Provider Component
 // This component will wrap our chat feature
 export const PeerServiceProvider = ({ children }: { children: React.ReactNode }) => {
-  // Use a ref to hold the service instance, preventing re-creation on re-renders
-  const peerServiceRef = useRef<PeerService | null>(null);
-
-  // Initialize the service only once when the provider mounts on the client
-  if (peerServiceRef.current === null && typeof window !== 'undefined') {
-      peerServiceRef.current = new PeerService();
-  }
+  const [peerService] = useState<PeerService | null>(() =>
+    typeof window !== "undefined" ? new PeerService() : null
+  );
   
   // The context value that will be passed down
-  const value = {
-    peerService: peerServiceRef.current,
-  };
+  const value = useMemo(() => ({ peerService }), [peerService]);
 
   // Ensure we clean up the connection when the provider unmounts
   useEffect(() => {
-    const service = peerServiceRef.current;
     return () => {
       console.log("PeerServiceProvider unmounting. Closing connection.");
-      service?.closeConnection();
+      peerService?.closeConnection();
     };
-  }, []);
+  }, [peerService]);
 
   return <PeerContext.Provider value={value}>{children}</PeerContext.Provider>;
 };

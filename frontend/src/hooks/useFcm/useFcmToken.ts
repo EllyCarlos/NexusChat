@@ -45,22 +45,24 @@ const useFcmToken = () => {
     if (isLoading.current) return;
 
     isLoading.current = true; // Mark loading as in progress.
-    const token = await getNotificationPermissionAndToken(); // Fetch the token.
+    while (retryLoadToken.current <= 3) {
+      const token = await getNotificationPermissionAndToken();
 
-    // Step 5: Handle the case where permission is denied.
-    if (Notification.permission === "denied") {
-      setNotificationPermissionStatus("denied");
-      console.info(
-        "%cPush Notifications issue - permission denied",
-        "color: green; background: #c7c7c7; padding: 8px; font-size: 20px"
-      );
-      isLoading.current = false;
-      return;
-    }
+      // Step 5: Handle the case where permission is denied.
+      if (Notification.permission === "denied") {
+        console.info(
+          "%cPush Notifications issue - permission denied",
+          "color: green; background: #c7c7c7; padding: 8px; font-size: 20px"
+        );
+        isLoading.current = false;
+        return { token: null, permission: "denied" as const };
+      }
 
-    // Step 6: Retry fetching the token if necessary. (up to 3 times)
-    // This step is typical initially as the service worker may not be ready/installed yet.
-    if (!token) {
+      if (token) {
+        isLoading.current = false;
+        return { token, permission: Notification.permission };
+      }
+
       if (retryLoadToken.current >= 3) {
         alert("Unable to load token, refresh the browser");
         console.info(
@@ -68,26 +70,25 @@ const useFcmToken = () => {
           "color: green; background: #c7c7c7; padding: 8px; font-size: 20px"
         );
         isLoading.current = false;
-        return;
+        return null;
       }
 
       retryLoadToken.current += 1;
       console.error("An error occurred while retrieving token. Retrying...");
-      isLoading.current = false;
-      await loadToken();
-      return;
     }
 
-    // Step 7: Set the fetched token and mark as fetched.
-    setNotificationPermissionStatus(Notification.permission);
-    setToken(token);
     isLoading.current = false;
+    return null;
   },[]);
 
   useEffect(() => {
     // Step 8: Initialize token loading when the component mounts.
     if ("Notification" in window) {
-      loadToken();
+      void loadToken().then((result) => {
+        if (!result) return;
+        setNotificationPermissionStatus(result.permission);
+        if (result.token) setToken(result.token);
+      });
     }
   }, [loadToken]);
 

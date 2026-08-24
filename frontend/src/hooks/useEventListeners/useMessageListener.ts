@@ -1,7 +1,7 @@
 import { Event } from "@/interfaces/events.interface";
 import { Message } from "@/interfaces/message.interface"; 
-// Import Chat and BasicUserInfo from where they are now exported
-import { Chat, BasicUserInfo } from "../useChat/useChatListItemClick"; 
+// Import BasicUserInfo from where it is now exported
+import { BasicUserInfo } from "../useChat/useChatListItemClick";
 
 import { messageApi } from "@/lib/client/rtk-query/message.api";
 import {
