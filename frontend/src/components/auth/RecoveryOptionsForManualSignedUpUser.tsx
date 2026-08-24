@@ -1,7 +1,4 @@
 import { verifyPassword } from "@/actions/auth.actions";
-import { useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered } from "@/hooks/useAuth/useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered";
-import { useStorePasswordInLocalStorageIfCorrectPasswordIsEntered } from "@/hooks/useAuth/useStorePasswordInLocalStorageIfCorrectPasswordIsEntered";
-import { FetchUserInfoResponse } from "@/lib/server/services/userService";
 import {
   keyRecoverySchema,
   keyRecoverySchemaType,
@@ -13,11 +10,7 @@ import { SubmitHandler, useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { CircleLoading } from "../shared/CircleLoading";
 
-type PropTypes = {
-  loggedInUser: FetchUserInfoResponse | null;
-};
-
-export const RecoveryOptionsForManualSignedUpUser = ({loggedInUser}: PropTypes) => {
+export const RecoveryOptionsForManualSignedUpUser = () => {
 
   const [state,verifyPasswordAction] =  useActionState(verifyPassword,undefined);
 
@@ -30,24 +23,13 @@ export const RecoveryOptionsForManualSignedUpUser = ({loggedInUser}: PropTypes) 
     }
   },[state])
 
-  const {register,handleSubmit,watch,formState: { errors },} = useForm<keyRecoverySchemaType>({resolver: zodResolver(keyRecoverySchema)});
+  const {register,handleSubmit,formState: { errors },} = useForm<keyRecoverySchemaType>({resolver: zodResolver(keyRecoverySchema)});
 
   const onSubmit: SubmitHandler<keyRecoverySchemaType> = ({ password }) => {
-    if(loggedInUser){
-      startTransition(()=>{
-        verifyPasswordAction({userId:loggedInUser?.id,password})
-      })
-    }
+    startTransition(()=>{
+      verifyPasswordAction({password})
+    })
   }
-
-  useStorePasswordInLocalStorageIfCorrectPasswordIsEntered({
-    isSuccess:state?.success?.message?.length ? true : false,
-    passwordRef: watch("password"),
-  });
-  useStoreLoggedInUserInfoInLocalStorageIfCorrectPasswordIsEntered({
-    isSuccess:state?.success?.message?.length ? true : false,
-    loggedInUser,
-  });
 
   return state?.success?.message ? (
     <h2 className="text font-bold bg-background p-4 rounded-md">

@@ -18,10 +18,11 @@ declare namespace NodeJS {
     NEXT_PUBLIC_CLIENT_URL: string;
     EMAIL: string;
     PASSWORD: string;
+    // Server-only compatibility reader for pre-V2 OAuth backups.
+    // Remove only after no OAuth legacy-v1 records remain.
     PRIVATE_KEY_RECOVERY_SECRET: string;
+    // Canonical Base64 encoding of exactly 32 random bytes. Server-only.
+    PRIVATE_KEY_RECOVERY_KEK_V1?: string;
 
-    RAZORPAY_KEY_ID: string;
-    RAZORPAY_KEY_SECRET: string;
-    NEXT_PUBLIC_RAZORPAY_KEY_ID: string;
   }
 }

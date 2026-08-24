@@ -1,21 +1,20 @@
 import type { NextConfig } from "next";
+import { createSecurityHeaderRules } from "./security-headers";
 
 const nextConfig: NextConfig = {
   /* Basic config */
+  async headers() {
+    return createSecurityHeaderRules(process.env.NODE_ENV, process.env);
+  },
   images: {
-    domains: [
-      "images.pexels.com",
-      "res.cloudinary.com",
-      "lh3.googleusercontent.com",
-      "media.tenor.com"
+    remotePatterns: [
+      { protocol: "https", hostname: "images.pexels.com" },
+      { protocol: "https", hostname: "res.cloudinary.com" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+      { protocol: "https", hostname: "media.tenor.com" },
     ],
   },
   reactStrictMode: false,
- 
-  /* ESLint configuration - ignore during builds */
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
  
   /* Production optimizations */
   compress: true,

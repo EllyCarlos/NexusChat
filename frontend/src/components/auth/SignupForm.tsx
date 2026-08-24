@@ -39,7 +39,7 @@ export const SignupForm = () => {
   const { privateKey, publicKey } = useGenerateKeyPair({ user: state?.data });
   const { privateKeyJWK, publicKeyJWK } = useConvertPrivateAndPublicKeyInJwkFormat({ privateKey, publicKey });
   const { encryptedPrivateKey } = useEncryptPrivateKeyWithUserPassword({password,privateKeyJWK});
-  const {publicKeyReturnedFromServerAfterBeingStored} = useStoreUserKeysInDatabase({ encryptedPrivateKey, publicKeyJWK, loggedInUserId:state?.data?.id});
+  const {publicKeyReturnedFromServerAfterBeingStored} = useStoreUserKeysInDatabase({ encryptedPrivateKey, publicKeyJWK, shouldStoreKeys:Boolean(state?.data?.id)});
   useStoreUserPrivateKeyInIndexedDB({privateKey: privateKeyJWK,userId: state?.data?.id});
   useUpdateLoggedInUserPublicKeyInState({publicKey: publicKeyReturnedFromServerAfterBeingStored});
 

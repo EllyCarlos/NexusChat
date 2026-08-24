@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import { env } from '../schemas/env.schema.js'
+import { logServerError } from '../utils/safe-logger.utils.js'
 
 let transporter : nodemailer.Transporter
 
@@ -12,7 +13,7 @@ try {
         }
     })
 } catch (error) {
-    console.log(error);
+    logServerError('Email transporter initialization failed.', error);
 }
 
 export {

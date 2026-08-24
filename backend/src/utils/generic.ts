@@ -1,6 +1,7 @@
 import { Message } from "firebase-admin/messaging";
 import { messaging } from "../config/firebase.config.js";
 import { notificationTitles } from "../constants/notification-title.contant.js";
+import { logServerError } from "./safe-logger.utils.js";
 
 
 export const calculateSkip  = (page:number,limit:number)=>{
@@ -13,7 +14,7 @@ export const getRandomIndex=(length: number): number =>{
 
 export const sendPushNotification = ({fcmToken,body,title}:{fcmToken:string,body:string,title?:string})=>{
     try {
-        console.log('push notification called for fcmToken',fcmToken);
+        console.log('Push notification requested.');
         const link = '/';
         const payload: Message = {
             token:fcmToken,
@@ -28,10 +29,12 @@ export const sendPushNotification = ({fcmToken,body,title}:{fcmToken:string,body
               },
             },
           };
-        messaging.send(payload)
-    } 
+        void messaging.send(payload).catch((error) => {
+          logServerError("FCM send failed.", error);
+        });
+    }
     catch (error) {
-        console.log('error while sending push notification',error);
+        logServerError("FCM send failed.", error);
     }
 }
 

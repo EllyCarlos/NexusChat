@@ -13,6 +13,7 @@ type MessageEventSendPayload = {
   isPollMessage:boolean
   encryptedAudio?:Uint8Array<ArrayBuffer>
   audio?:Uint8Array<ArrayBuffer>
+  audioMimeType?:"audio/webm"
   textMessageContent?:string | ArrayBuffer
   url?:string
   pollData?:{
@@ -49,6 +50,7 @@ export const useSendMessage = () => {
         },
         encryptedAudio: encryptedAudio ? encryptedAudio : undefined,
         audio:audio? audio : undefined,
+        audioMimeType:"audio/webm",
         replyToMessageId:replyToMessageId ? replyToMessageId : undefined
       };
       socket?.emit(Event.MESSAGE, newMessage);
@@ -67,6 +69,7 @@ export const useSendMessage = () => {
           pollQuestion
         },
         encryptedAudio: encryptedAudio ? encryptedAudio : undefined,
+        audioMimeType:"audio/webm",
         replyToMessageId:replyToMessageId ? replyToMessageId : undefined
       };
       socket?.emit(Event.MESSAGE, newMessage);

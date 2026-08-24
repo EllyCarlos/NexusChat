@@ -5,7 +5,7 @@
 ### Real-time Secure Messaging — Reimagined
 
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=nextdotjs)](https://nextjs.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-24.x-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-99.5%25-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Socket.IO](https://img.shields.io/badge/Socket.IO-realtime-010101?style=flat-square&logo=socketdotio)](https://socket.io/)
 [![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
@@ -35,7 +35,7 @@ Built with a **Next.js 15 + React 19** frontend and a **Node.js + Express + Sock
 | 🔔 **Notifications** | Push notifications via Firebase Cloud Messaging |
 | 🔐 **Authentication** | Email/password sign-up, JWT sessions, Google OAuth, MFA, password recovery |
 | 📊 **Interactivity** | In-chat polls, animated UI, responsive design |
-| 🛡️ **Security** | Helmet headers, bcrypt password hashing, secure token handling with `jose` |
+| 🛡️ **Security** | bcrypt password hashing, JWT sessions, secure token handling with `jose` |
 | ☁️ **Storage** | Cloud media management via Cloudinary |
 
 ---
@@ -66,7 +66,7 @@ Built with a **Next.js 15 + React 19** frontend and a **Node.js + Express + Sock
 | **Cloudinary** | Cloud image/file storage |
 | **Nodemailer** | Email delivery (password reset, MFA) |
 | **Firebase Admin SDK** | Server-side push notifications |
-| **Helmet + CORS** | Security headers & cross-origin config |
+| **CORS** | Cross-origin configuration |
 | **Multer** | File upload handling |
 | **Morgan** | HTTP request logging |
 
@@ -76,20 +76,27 @@ Built with a **Next.js 15 + React 19** frontend and a **Node.js + Express + Sock
 
 ```
 NexusChat/
-├── frontend/          # Next.js 15 application
-│   ├── app/           # App Router pages & layouts
-│   ├── components/    # Reusable UI components
-│   ├── store/         # Redux Toolkit slices
-│   └── ...
-├── backend/           # Node.js + Express API
-│   ├── prisma/        # Prisma schema & migrations
-│   ├── routes/        # Express route handlers
-│   ├── controllers/   # Business logic
-│   ├── middleware/    # Auth, upload, logging
-│   └── ...
+├── frontend/                       # Next.js 15 application
+│   ├── src/app/                    # App Router pages, layouts, and API routes
+│   ├── src/components/             # Reusable UI components
+│   ├── src/lib/                    # Client and server utilities
+│   ├── prisma/                     # Prisma schema and checked-in migrations
+│   ├── .env.example                # Sanitized frontend environment template
+│   ├── package.json
+│   └── package-lock.json
+├── backend/                        # Node.js + Express + Socket.IO API
+│   ├── src/routes/                 # Express routers
+│   ├── src/controllers/            # Request handlers and business logic
+│   ├── src/middlewares/            # Authentication, upload, and error middleware
+│   ├── prisma/                     # Prisma schema and seed script (no migrations)
+│   ├── .env.development.example    # Development environment template
+│   ├── .env.production.example     # Production environment template
+│   ├── package.json
+│   └── package-lock.json
 ├── .gitignore
+├── .nvmrc
 ├── LICENSE
-└── README.md
+└── readme.md
 ```
 
 ---
@@ -98,13 +105,22 @@ NexusChat/
 
 ### Prerequisites
 
-- **Node.js** v18 or later
-- **npm** or **Yarn**
+- **Node.js** 24.x (the root `.nvmrc` contains `24`)
+- **npm** 11.x
 - **Git**
-- **PostgreSQL** database (local or hosted — [Neon](https://neon.tech), [Supabase](https://supabase.com), or [Render](https://render.com) all work well)
+- **PostgreSQL** database
 - [**Firebase Project**](https://console.firebase.google.com/) (for push notifications)
 - [**Cloudinary Account**](https://cloudinary.com/) (for file/image storage)
 - [**Google OAuth Credentials**](https://console.cloud.google.com/) (for social login)
+- A Gmail account/app password for the current Nodemailer configuration
+
+If you use a compatible Node version manager, select the repository toolchain with:
+
+```bash
+nvm use
+```
+
+The frontend and backend are separate npm packages; there is no root `package.json`.
 
 ---
 
@@ -121,50 +137,20 @@ cd NexusChat
 
 ```bash
 cd backend
-npm install
+npm ci
 ```
 
-Create a `.env` file in the `backend/` directory:
-
-```env
-# ─── Database ────────────────────────────────────────────────────────────────
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DB_NAME?schema=public"
-
-# ─── JWT ─────────────────────────────────────────────────────────────────────
-JWT_SECRET="your-strong-secret-key"
-
-# ─── Cloudinary ──────────────────────────────────────────────────────────────
-CLOUDINARY_CLOUD_NAME="your-cloud-name"
-CLOUDINARY_API_KEY="your-api-key"
-CLOUDINARY_API_SECRET="your-api-secret"
-
-# ─── Nodemailer ──────────────────────────────────────────────────────────────
-NODEMAILER_USER="your-email@example.com"
-NODEMAILER_PASS="your-email-password-or-app-password"
-
-# ─── Google OAuth ────────────────────────────────────────────────────────────
-GOOGLE_CLIENT_ID="your-google-client-id"
-GOOGLE_CLIENT_SECRET="your-google-client-secret"
-GOOGLE_AUTH_REDIRECT_URI="http://localhost:3000/auth/oauth-redirect"
-
-# ─── Firebase Admin ──────────────────────────────────────────────────────────
-FIREBASE_ADMIN_SDK_PATH="./path/to/firebase-admin-sdk.json"
-
-# ─── App ─────────────────────────────────────────────────────────────────────
-VERCEL_FRONTEND_URL="http://localhost:3000"
-NODE_ENV="DEVELOPMENT"
-```
-
-> ⚠️ **Never commit your `.env` file.** It's already in `.gitignore`.
-
-Run database migrations and start the server:
+The backend loader uses environment-specific files and does not read a generic `.env` file. For local development, copy the sanitized development template and replace every placeholder:
 
 ```bash
-npx prisma migrate dev --name init
-npm run dev
+cp .env.development.example .env.development
 ```
 
-The backend will be available at `http://localhost:5000`.
+Development Firebase Admin initialization currently loads `backend/firebase-admin-cred.json` directly. Download a Firebase service-account JSON file to that exact path and never commit it. The Google OAuth development redirect URI is `http://localhost:<PORT>/api/v1/auth/google/callback`.
+
+An external lowercase `NODE_ENV` selects the matching file. If it is absent, the backend safely defaults to `development` and loads `.env.development`. Supported values are `development`, `production`, and `test`; invalid values fail validation before any env file is loaded. The `test` value selects `.env.test`, but the repository does not currently provide that file, an example for it, or a test harness.
+
+The backend listens on the required `PORT` value. The example uses `5000`, so its local URL is `http://localhost:5000`.
 
 ---
 
@@ -172,63 +158,98 @@ The backend will be available at `http://localhost:5000`.
 
 ```bash
 cd ../frontend
-npm install
+npm ci
 ```
 
-Create a `.env.local` file in the `frontend/` directory:
-
-```env
-# ─── Backend ─────────────────────────────────────────────────────────────────
-NEXT_PUBLIC_BACKEND_URL="http://localhost:5000"
-NEXT_PUBLIC_SOCKET_SERVER_URL="http://localhost:5000"
-
-# ─── Firebase ────────────────────────────────────────────────────────────────
-NEXT_PUBLIC_FIREBASE_API_KEY="your-firebase-api-key"
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="your-project.firebaseapp.com"
-NEXT_PUBLIC_FIREBASE_PROJECT_ID="your-project-id"
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="your-project.appspot.com"
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="your-sender-id"
-NEXT_PUBLIC_FIREBASE_APP_ID="your-app-id"
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID="G-XXXXXXXXXX"
-
-# ─── Cloudinary ──────────────────────────────────────────────────────────────
-NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME="your-cloud-name"
-```
-
-Start the development server:
+Copy the sanitized frontend template to the development filename and replace every placeholder:
 
 ```bash
+cp .env.example .env.development
+```
+
+The frontend template contains both browser-exposed `NEXT_PUBLIC_` configuration and server-only values used by Next.js server code. `JWT_SECRET` is validated when session signing or verification executes at runtime; importing route modules during a production build does not require it.
+
+### 4. Database Setup
+
+Both packages contain PostgreSQL Prisma schemas and generate their own Prisma clients. Configure their database URLs for the PostgreSQL database used by the application. Only `frontend/prisma/migrations` contains checked-in migration history; the backend has no migration directory.
+
+Apply the checked-in development migration from the frontend package:
+
+```bash
+npm run migrate:dev
+```
+
+Despite its name, this script runs `prisma migrate deploy` with `.env.development`. Do not run `prisma migrate dev --name init` in the backend: there is no checked-in backend migration history to extend.
+
+### 5. Start the Development Servers
+
+From the repository root, start the backend in one terminal.
+
+macOS, Linux, or Git Bash:
+
+```bash
+cd backend
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:3000`.
+PowerShell:
+
+```powershell
+cd backend
+npm run dev
+```
+
+Start the frontend in a second terminal from the repository root:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Next.js serves the frontend on `http://localhost:3000` by default.
+
+### Available Scripts
+
+Run each command from the relevant package directory.
+
+| Package | Command | Behavior |
+|---|---|---|
+| Frontend | `npm run dev` | Start the Next.js development server |
+| Frontend | `npm run build` | Generate the Prisma client and create a production build |
+| Frontend | `npm run start` | Start a previously built Next.js application |
+| Frontend | `npm run migrate:dev` | Deploy checked-in migrations using `.env.development` |
+| Frontend | `npm run migrate:prod` | Deploy checked-in migrations using `.env.production` |
+| Backend | `npm run dev` | Start the TypeScript development server |
+| Backend | `npm run ts.check` | Type-check without emitting JavaScript |
+| Backend | `npm run build` | Clean `backend/dist` and compile TypeScript |
+| Backend | `npm run build:production` | Build, then prune development and unused optional dependencies for the production runtime |
+| Backend | `npm run start` | Run `backend/dist/index.js` after a build |
+
+The repository currently has no root npm scripts and no automated test script.
 
 ---
 
 ## 🚀 Deployment
 
-NexusChat is designed to deploy on **Vercel** (frontend) and **Render** (backend + database).
+The current source configuration targets **Vercel** for the frontend and **Render** for the backend. Production hostnames are still partly hardcoded in the backend, so deploying under different domains requires aligning that existing configuration in a later environment-loading cleanup.
 
 ### Backend → Render
 
-1. Create a **PostgreSQL** service on Render and copy the **Internal Database URL**.
-2. Create a **Web Service**, connect your GitHub repo, and set:
+1. Provision a PostgreSQL database and apply the checked-in frontend migration from a controlled environment using `npm run migrate:prod` and an untracked `frontend/.env.production` created from `frontend/.env.example`.
+2. Create a Web Service and set:
    - **Root Directory:** `backend`
-   - **Build Command:** `npm install && npm run build`
+   - **Build Command:** `npm ci && npm run build:production`
    - **Start Command:** `npm start`
-   - **Pre-deploy Command:** `npx prisma migrate deploy`
-3. Add all backend environment variables. Set `DATABASE_URL` to the internal DB URL and update `VERCEL_FRONTEND_URL` to your Vercel domain. Set `NODE_ENV=PRODUCTION`.
+3. Configure platform environment variables from `backend/.env.production.example`, including `NODE_ENV=production`, database credentials, and the production Firebase Admin values. Do not copy placeholder values unchanged.
+
+The Render build uses a full `npm ci` first so the backend postinstall can generate Prisma Client and the TypeScript build has its development tooling. `npm run build:production` then compiles the backend and prunes development dependencies plus optional dependencies without re-running lifecycle scripts. The final runtime keeps generated `@prisma/client` and Firebase Admin App/Messaging, while omitting the unused Firebase Admin Storage and Firestore dependency graphs. Continue using plain `npm ci` for local development and validation; optional-dependency omission is intentionally limited to the final production runtime tree.
 
 ### Frontend → Vercel
 
 1. Import the repo on Vercel and set **Root Directory** to `frontend`.
-2. Add all `NEXT_PUBLIC_` environment variables.
-   - Set `NEXT_PUBLIC_BACKEND_URL` and `NEXT_PUBLIC_SOCKET_SERVER_URL` to your Render backend's public URL.
-3. Set **Build Command** to:
-   ```bash
-   npx prisma generate && npm run build
-   ```
-4. Deploy. Once live, go back to your Render service and confirm `VERCEL_FRONTEND_URL` matches your Vercel URL, then redeploy if needed.
+2. Configure all required values from `frontend/.env.example`, including its server-only database, email, recovery, and `JWT_SECRET` values—not only the `NEXT_PUBLIC_` variables.
+3. Point the public API and Socket.IO URL values at the deployed backend and set the public client URL to the deployed frontend.
+4. Use `npm ci` for installation and `npm run build` for the build. The build script already runs `prisma generate`.
 
 ---
 

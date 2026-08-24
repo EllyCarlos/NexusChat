@@ -1,19 +1,12 @@
 import { sendPrivateKeyRecoveryEmail } from "@/actions/auth.actions";
-import { useStoreLoggedInUserInfoInLocalStorageIfRecoveryEmailSentSuccessful } from "@/hooks/useAuth/useStoreLoggedInUserInfoInLocalStorageIfRecoveryEmailSentSuccessful";
-import { User } from "@/interfaces/auth.interface";
 import { startTransition, useActionState, useCallback, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 import toast from "react-hot-toast";
 import { CircleLoading } from "../shared/CircleLoading";
 
-type PropTypes = {
-  loggedInUser: User;
-};
-
-export const RecoveryOptionsForOAuthSignedUpUser = ({loggedInUser}:PropTypes) => {
+export const RecoveryOptionsForOAuthSignedUpUser = () => {
 
   const [state,sendPrivateKeyRecoveryEmailAction] = useActionState(sendPrivateKeyRecoveryEmail,undefined);
-  useStoreLoggedInUserInfoInLocalStorageIfRecoveryEmailSentSuccessful({isPrivateKeyRecoveryEmailSentSuccessful:state?.success.message?.length ? true : false,loggedInUser});
 
   useEffect(()=>{
     if(state && state.errors.message){
@@ -23,13 +16,9 @@ export const RecoveryOptionsForOAuthSignedUpUser = ({loggedInUser}:PropTypes) =>
 
   const handleSubmit = useCallback(() => {
     startTransition(()=>{
-      sendPrivateKeyRecoveryEmailAction({ 
-        email: loggedInUser.email, 
-        id: loggedInUser.id, 
-        username: loggedInUser.username 
-      });
+      sendPrivateKeyRecoveryEmailAction();
     })
-  }, [loggedInUser]); 
+  }, [sendPrivateKeyRecoveryEmailAction]);
   
 
   return (

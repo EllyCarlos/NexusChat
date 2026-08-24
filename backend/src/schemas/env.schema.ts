@@ -1,12 +1,22 @@
 import { config } from "dotenv";
 import { z } from "zod";
 
-// Load the correct .env file based on NODE_ENV
-const envFile = `.env.${process.env.NODE_ENV === "DEVELOPMENT" ? "development" : "production"}`;
+const nodeEnvSchema = z.enum(['development', 'production', 'test']);
+const parsedNodeEnv = nodeEnvSchema.safeParse(process.env.NODE_ENV ?? 'development');
+
+if (!parsedNodeEnv.success) {
+    console.error("❌ Invalid NODE_ENV. Expected one of: development, production, test.");
+    process.exit(1);
+}
+
+export const nodeEnv = parsedNodeEnv.data;
+export const envFile = `.env.${nodeEnv}`;
+
 config({ path: envFile });
+process.env.NODE_ENV = nodeEnv;
 
 const envSchema = z.object({
-    NODE_ENV: z.enum(['DEVELOPMENT', 'PRODUCTION']).default("DEVELOPMENT"),
+    NODE_ENV: nodeEnvSchema,
     PORT: z.string({ required_error: "PORT is required" })
         .max(4, 'Port cannot be more than 4 digits')
         .min(4, 'Port number cannot be lesser than 4 digits'),
@@ -23,7 +33,6 @@ const envSchema = z.object({
     GOOGLE_CLIENT_ID: z.string({ required_error: "GOOGLE_CLIENT_ID is required" }),
     GOOGLE_CLIENT_SECRET: z.string({ required_error: "GOOGLE_CLIENT_SECRET is required" }),
     GOOGLE_APPLICATION_CREDENTIALS: z.string({ required_error: "GOOGLE_APPLICATION_CREDENTIALS is required" }),
-    PRIVATE_KEY_RECOVERY_SECRET: z.string({ required_error: "PRIVATE_KEY_RECOVERY_SECRET is required" }),
     DATABASE_URL: z.string({ required_error: "DATABASE_URL is required" }),
     DIRECT_URL: z.string({ required_error: "DIRECT_URL is required" })
 });

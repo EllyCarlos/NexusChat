@@ -5,10 +5,9 @@ import toast from "react-hot-toast";
 type PropTypes = {
     generatedFcmToken:string | null | undefined,
     userFcmToken:string | null | undefined,
-    loggedInUserId:string,
 }
 
-export const useStoreFcmTokenInDb = ({generatedFcmToken,userFcmToken,loggedInUserId}:PropTypes) => {
+export const useStoreFcmTokenInDb = ({generatedFcmToken,userFcmToken}:PropTypes) => {
 
     const [state,storeFcmTokenAction] = useActionState(storeFcmToken,undefined);
     const [notificationStateRes,updateUserNotificationStatusAction] = useActionState(updateUserNotificationStatus,undefined);
@@ -16,11 +15,11 @@ export const useStoreFcmTokenInDb = ({generatedFcmToken,userFcmToken,loggedInUse
     useEffect(()=>{
         if(generatedFcmToken && userFcmToken !== generatedFcmToken){
             startTransition(()=>{
-                storeFcmTokenAction({fcmToken:generatedFcmToken,loggedInUserId});
-                updateUserNotificationStatusAction({loggedInUserId,notificationStatus:true});
+                storeFcmTokenAction({fcmToken:generatedFcmToken});
+                updateUserNotificationStatusAction({notificationStatus:true});
             })
         }
-    },[generatedFcmToken, loggedInUserId, userFcmToken])
+    },[generatedFcmToken, userFcmToken])
 
     useEffect(()=>{
         if(state?.errors.message?.length){

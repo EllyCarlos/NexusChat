@@ -53,9 +53,9 @@ const RecoverPrivateKeyForm = () => {
         )}
       </div>
       {hasUserSignedUpViaOAuth ? (
-        <RecoveryOptionsForOAuthSignedUpUser loggedInUser={loggedInUser} />
+        <RecoveryOptionsForOAuthSignedUpUser />
       ) : (
-        <RecoveryOptionsForManualSignedUpUser loggedInUser={loggedInUser} />
+        <RecoveryOptionsForManualSignedUpUser />
       )}
     </div>
   );

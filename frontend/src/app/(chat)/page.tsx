@@ -12,7 +12,7 @@ import { fetchUserCallHistory } from "@/lib/server/services/callService";
 import { fetchUserChats, fetchUserFriendRequest, fetchUserFriends, fetchUserInfo } from "@/lib/server/services/userService";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { decrypt, SessionPayload } from "@/lib/server/session";
+import { verifySessionToken } from "@/lib/server/session";
 
 export default async function ChatPage() {
   const cookieStore = await cookies();
@@ -24,7 +24,7 @@ export default async function ChatPage() {
 
   let loggedInUserId: string | null = null;
   try {
-    const payload: SessionPayload | null = await decrypt(sessionCookie.value);
+    const payload = await verifySessionToken(sessionCookie.value);
     if (payload && payload.userId && new Date(payload.expiresAt) > new Date()) {
       loggedInUserId = payload.userId;
     } else {

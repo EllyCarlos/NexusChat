@@ -4,12 +4,19 @@ let transporter: nodemailer.Transporter | null = null;
 
 export const getTransporter = () => {
   if (!transporter) {
+    const email = process.env.EMAIL;
+    const password = process.env.PASSWORD;
+
+    if (!email || !password) {
+      throw new Error("EMAIL and PASSWORD are required to send email");
+    }
+
     try {
       transporter = nodemailer.createTransport({
         service: "gmail",
         auth: {
-          user: process.env.EMAIL,
-          pass: process.env.PASSWORD,
+          user: email,
+          pass: password,
         },
       });
     } catch (error) {

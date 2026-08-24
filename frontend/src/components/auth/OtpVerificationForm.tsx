@@ -12,11 +12,7 @@ import { SubmitHandler, useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { CircleLoading } from "../shared/CircleLoading";
 
-type PropTypes = {
-  loggedInUserId:string
-}
-
-export const OtpVerificationForm = ({loggedInUserId}:PropTypes) => {
+export const OtpVerificationForm = () => {
 
   const [state,verifyOtpAction] = useActionState(verifyOtp,undefined);
   const router = useRouter();
@@ -33,7 +29,7 @@ export const OtpVerificationForm = ({loggedInUserId}:PropTypes) => {
 
   const onSubmit: SubmitHandler<otpVerificationSchemaType> = ({ otp }) => {
     startTransition(()=>{
-      verifyOtpAction({otp,loggedInUserId});
+      verifyOtpAction({otp});
     })
   };
 

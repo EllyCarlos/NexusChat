@@ -1,5 +1,5 @@
 import { Server } from "socket.io";
-import { userSocketIds } from "../index.js";
+import { socketConnectionRegistry } from "../socket/connection-registry.js";
 
 
 // export const deleteChat = async(isExistingChat: Document<unknown, {}, IChat> & IChat & Required<{_id: Types.ObjectId}>)=>{
@@ -34,8 +34,7 @@ import { userSocketIds } from "../index.js";
 export const joinMembersInChatRoom = ({memberIds,roomToJoin,io}:{memberIds:string[],roomToJoin:string,io:Server})=>{
 
     for(const memberId of memberIds){
-      const memberSocketId = userSocketIds.get(memberId);
-      if(memberSocketId){
+      for (const memberSocketId of socketConnectionRegistry.getSockets(memberId)) {
         const memberSocket = io.sockets.sockets.get(memberSocketId);
         if(memberSocket){
           memberSocket.join(roomToJoin);
@@ -47,8 +46,7 @@ export const joinMembersInChatRoom = ({memberIds,roomToJoin,io}:{memberIds:strin
 export const disconnectMembersFromChatRoom = ({memberIds,roomToLeave,io}:{memberIds:string[],roomToLeave:string,io:Server})=>{
 
     for(const memberId of memberIds){
-      const memberSocketId = userSocketIds.get(memberId);
-      if(memberSocketId){
+      for (const memberSocketId of socketConnectionRegistry.getSockets(memberId)) {
         const memberSocket = io.sockets.sockets.get(memberSocketId);
         if(memberSocket){
           memberSocket.leave(roomToLeave);

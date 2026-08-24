@@ -44,7 +44,7 @@ export const ChatWrapper = ({children,chats,friendRequest,friends,user,callHisto
 
   const {token} = useFcmToken();
   
-  useStoreFcmTokenInDb({generatedFcmToken:token,userFcmToken:user.fcmToken,loggedInUserId:user.id})
+  useStoreFcmTokenInDb({generatedFcmToken:token,userFcmToken:user.fcmToken})
 
   return children;
 };

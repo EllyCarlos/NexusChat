@@ -1,7 +1,9 @@
 // Add this import at the top of auth.util.ts
 import { Prisma } from '@prisma/client';
+import type { UploadApiResponse } from 'cloudinary';
 import { v2 as cloudinary } from 'cloudinary';
 import { convertBufferToBase64 } from './generic.js';
+import { logServerError } from './safe-logger.utils.js';
 
 
 const thirtyDaysInMilliseconds = 30 * 24 * 60 * 60 * 1000;
@@ -12,31 +14,43 @@ const thirtyDaysInMilliseconds = 30 * 24 * 60 * 60 * 1000;
 //     path:"/",
 //     priority:"high",
 //     secure:true,
-//     sameSite:env.NODE_ENV==='DEVELOPMENT'?"lax":"none",
-//     domain: env.NODE_ENV === 'DEVELOPMENT' ? 'localhost',
+//     sameSite:env.NODE_ENV==='development'?"lax":"none",
+//     domain: env.NODE_ENV === 'development' ? 'localhost',
 //     partitioned:true,
 // }
 
-export const uploadFilesToCloudinary = async({files}:{files:Express.Multer.File[]})=>{
-    try {
-        const uploadPromises = files.map(file=>cloudinary.uploader.upload(file.path))
-        const result = await Promise.all(uploadPromises)
-        return result
-    } catch (error) {
-        console.log('Error uploading files to cloudinary');
-        console.log(error);
+export const deleteFilesFromCloudinary = async ({
+    publicIds,
+    resourceType = 'image',
+}: {
+    publicIds: string[];
+    resourceType?: 'image' | 'raw' | 'video';
+}): Promise<void> => {
+    const uniquePublicIds = [...new Set(publicIds.filter(Boolean))]
+    const results = await Promise.allSettled(
+      uniquePublicIds.map(publicId => cloudinary.uploader.destroy(publicId, { resource_type: resourceType }))
+    )
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        logServerError('Cloudinary file deletion failed.', result.reason)
+      }
     }
 }
 
-export const deleteFilesFromCloudinary = async({publicIds}:{publicIds:string[]}):Promise<any[] | undefined>=>{
+export const uploadFilesToCloudinary = async ({ files }: { files: Express.Multer.File[] }): Promise<UploadApiResponse[]> => {
+    const uploadedFiles: UploadApiResponse[] = []
     try {
-        await cloudinary.uploader.destroy(publicIds[0])
-        const deletePromises = publicIds.map(publicId=>cloudinary.uploader.destroy(publicId))
-        const uploadResult = await Promise.all(deletePromises)
-        return uploadResult
+      for (const file of files) {
+        uploadedFiles.push(await cloudinary.uploader.upload(file.path))
+      }
+      return uploadedFiles
     } catch (error) {
-        console.log('Error deleting files from cloudinary');
-        console.log(error);
+      await deleteFilesFromCloudinary({
+        publicIds: uploadedFiles.map(file => file.public_id)
+      })
+      logServerError('Cloudinary file upload failed.', error)
+      throw error
     }
 }
 
@@ -49,7 +63,7 @@ export const uploadEncryptedAudioToCloudinary = async ({buffer}: {buffer: Uint8A
       });
       return uploadResult;
     } catch (error) {
-      console.error("Error uploading encrypted audio to Cloudinary:", error);
+      logServerError("Cloudinary encrypted-audio upload failed.", error);
     }
 };
 
@@ -62,7 +76,7 @@ export const uploadAudioToCloudinary = async ({buffer}: {buffer: Uint8Array<Arra
       });
       return uploadResult;
     } catch (error) {
-      console.error("Error uploading audio to Cloudinary:", error);
+      logServerError("Cloudinary audio upload failed.", error);
     }
 };
 

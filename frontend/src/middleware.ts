@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { decrypt, SessionPayload } from "./lib/server/session"; // Ensure correct path
+import { verifySessionToken, type SessionPayload } from "./lib/server/session";
 import { FetchUserInfoResponse } from "./lib/server/services/userService"; // Ensure correct path
 
 // Define public routes (accessible without login)
@@ -83,7 +83,7 @@ export async function middleware(req: NextRequest) {
   // Decrypt session from token
   if (sessionToken) { // Use sessionToken variable
     try {
-      session = await decrypt(sessionToken) as SessionPayload;
+      session = await verifySessionToken(sessionToken);
       // Also check if the session payload itself is expired based on its internal expiry
       if (session && new Date(session.expiresAt) <= new Date()) {
         console.warn("Middleware: Session token expired based on payload expiry.");

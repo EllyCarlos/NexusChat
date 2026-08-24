@@ -8,13 +8,7 @@ import { CircleLoading } from "../shared/CircleLoading";
 import { OtpVerificationForm } from "./OtpVerificationForm";
 import { useRouter } from "next/navigation";
 
-type PropTypes = {
-  email: string;
-  loggedInUserId: string;
-  username: string;
-}
-
-export const OtpVerification = ({email,loggedInUserId,username}:PropTypes) => {
+export const OtpVerification = () => {
 
   const [state,sendOtpAction] = useActionState(sendOtp,undefined);
 
@@ -26,7 +20,7 @@ export const OtpVerification = ({email,loggedInUserId,username}:PropTypes) => {
   const handleSubmit = (e: FormEvent<HTMLFormElement>)=>{
     e.preventDefault();
     startTransition(()=>{
-      sendOtpAction({email,loggedInUserId,username});
+      sendOtpAction();
     })
   }
 
@@ -39,7 +33,7 @@ export const OtpVerification = ({email,loggedInUserId,username}:PropTypes) => {
 
   return (
     state?.success.message?.length ? (
-      <OtpVerificationForm loggedInUserId={loggedInUserId}/>
+      <OtpVerificationForm />
     )
     :
     (

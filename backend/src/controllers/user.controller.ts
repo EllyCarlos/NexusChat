@@ -3,7 +3,9 @@ import { prisma } from "../lib/prisma.lib.js";
 import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/auth.util.js";
 import { sendMail } from "../utils/email.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-import jwt from 'jsonwebtoken';
+import { signPasswordResetToken } from "../utils/jwt.utils.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
+import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 
 // Get base URL from environment variables
 const getBaseUrl = () => {
@@ -12,16 +14,10 @@ const getBaseUrl = () => {
 
 // Generate password reset token
 const generateResetToken = (userId: string) => {
-    return jwt.sign(
-        { 
-            userId,
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
-        },
-        process.env.JWT_SECRET || 'your-secret-key',
-        { 
-            expiresIn: '24h' 
-        }
-    );
+    return signPasswordResetToken({
+        userId,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000)
+    });
 };
 
 export const updateUser = asyncErrorHandler(async (req, res, next) => {
@@ -29,39 +25,35 @@ export const updateUser = asyncErrorHandler(async (req, res, next) => {
         return next(new CustomError("Please provide an image", 400));
     }
 
-    let uploadResults;
     const existingAvatarPublicId = req.user.avatarCloudinaryPublicId;
+    let uploadedPublicId: string | null = null;
+    let avatarCommitted = false;
 
     try {
-        if (!existingAvatarPublicId) {
-            uploadResults = await uploadFilesToCloudinary({ files: [req.file] });
-            if (!uploadResults || uploadResults.length === 0) {
-                return next(new CustomError("Failed to upload image", 500));
-            }
-        } else {
-            const cloudinaryFilePromises = [
-                deleteFilesFromCloudinary({ publicIds: [existingAvatarPublicId] }),
-                uploadFilesToCloudinary({ files: [req.file] })
-            ];
-            
-            const [_, result] = await Promise.all(cloudinaryFilePromises);
-            
-            if (!result || result.length === 0) {
-                return next(new CustomError("Failed to update image", 500));
-            }
-            
-            uploadResults = result;
+        const [uploadedAvatar] = await uploadFilesToCloudinary({ files: [req.file] });
+        if (!uploadedAvatar) {
+            throw new Error("Avatar upload returned no result");
         }
+        uploadedPublicId = uploadedAvatar.public_id;
 
         const user = await prisma.user.update({
             where: {
                 id: req.user.id
             },
             data: {
-                avatar: uploadResults[0].secure_url,
-                avatarCloudinaryPublicId: uploadResults[0].public_id
+                avatar: uploadedAvatar.secure_url,
+                avatarCloudinaryPublicId: uploadedAvatar.public_id
             }
         });
+        avatarCommitted = true;
+
+        if (existingAvatarPublicId && existingAvatarPublicId !== uploadedAvatar.public_id) {
+            try {
+                await deleteFilesFromCloudinary({ publicIds: [existingAvatarPublicId] });
+            } catch (cleanupError) {
+                logServerError('Previous avatar cleanup failed.', cleanupError);
+            }
+        }
 
         const secureUserInfo = {
             id: user.id,
@@ -82,18 +74,18 @@ export const updateUser = asyncErrorHandler(async (req, res, next) => {
         return res.status(200).json(secureUserInfo);
 
     } catch (error) {
-        if (uploadResults && uploadResults[0]) {
+        if (!avatarCommitted && uploadedPublicId) {
             try {
-                await deleteFilesFromCloudinary({ publicIds: [uploadResults[0].public_id] });
+                await deleteFilesFromCloudinary({ publicIds: [uploadedPublicId] });
             } catch (cleanupError) {
-                console.error('Failed to cleanup uploaded file:', cleanupError);
+                logServerError('Uploaded-file cleanup failed.', cleanupError);
             }
         }
-        
         return next(new CustomError("Failed to update user profile", 500));
+    } finally {
+        await cleanupTemporaryFiles([req.file]);
     }
 });
-
 export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {
     const { emailType } = req.query;
     const baseUrl = getBaseUrl();
@@ -160,59 +152,7 @@ export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {
         });
 
     } catch (error) {
-        console.error(`Email sending error:`, error);
+        logServerError('Email sending failed.', error);
         return next(new CustomError(`Failed to send ${emailType} email`, 500));
-    }
-});
-
-// Function to handle actual password reset requests
-export const requestPasswordReset = asyncErrorHandler(async (req, res, next) => {
-    const { email } = req.body;
-    
-    if (!email) {
-        return next(new CustomError("Email is required", 400));
-    }
-
-    try {
-        const user = await prisma.user.findUnique({
-            where: { email }
-        });
-
-        // Always return success to prevent email enumeration attacks
-        const baseUrl = getBaseUrl();
-        
-        if (user) {
-            const resetToken = generateResetToken(user.id);
-            const resetUrl = `${baseUrl}/auth/reset-password?token=${resetToken}`;
-            
-            // Store reset token in database (optional but recommended)
-           // Delete any existing reset tokens for this user
-await prisma.resetPasswordToken.deleteMany({
-    where: { userId: user.id }
-});
-
-// Create a new reset token
-await prisma.resetPasswordToken.create({
-    data: {
-        userId: user.id,
-        hashedToken: resetToken, // Consider hashing this for security
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
-    }
-});            
-            await sendMail(
-                email, 
-                user.username, 
-                'resetPassword',
-                resetUrl
-            );
-        }
-
-        return res.status(200).json({ 
-            message: "If your email is registered with us, you'll receive a password reset link shortly." 
-        });
-
-    } catch (error) {
-        console.error('Password reset request error:', error);
-        return next(new CustomError("Failed to process password reset request", 500));
     }
 });

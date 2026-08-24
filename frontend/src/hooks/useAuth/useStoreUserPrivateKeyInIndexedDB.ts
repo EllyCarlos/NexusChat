@@ -14,7 +14,9 @@ export const useStoreUserPrivateKeyInIndexedDB = ({
   useEffect(() => {
     if (privateKey && userId) {
       console.log("storing private key in indexedDB");
-      storeUserPrivateKeyInIndexedDB({ privateKey, userId });
+      void storeUserPrivateKeyInIndexedDB({ privateKey, userId }).catch(() => {
+        console.error("Unable to store private key in IndexedDB.");
+      });
     }
   }, [privateKey, userId]);
 };

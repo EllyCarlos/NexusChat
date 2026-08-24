@@ -1,116 +1,319 @@
-import 'server-only'; // Ensures this module only runs on the server
-import { SignJWT, jwtVerify } from "jose"; // Using jose for JWT operations
-import { cookies } from "next/headers"; // Next.js utility for accessing cookies
+import "server-only";
 
-export type SessionPayload = {
+import { SignJWT, jwtVerify, type JWTPayload } from "jose";
+import { cookies } from "next/headers";
+import {
+  SESSION_TOKEN_AUDIENCES,
+  TOKEN_AUDIENCES,
+  TOKEN_ISSUERS,
+  type TokenAudience,
+  type TokenIssuer,
+} from "./token.constants";
+
+export const TOKEN_TYPES = {
+  SESSION: "session",
+  PASSWORD_RESET: "password_reset",
+  PRIVATE_KEY_RECOVERY: "private_key_recovery",
+  OAUTH_EXCHANGE: "oauth_exchange",
+} as const;
+
+type TokenType = (typeof TOKEN_TYPES)[keyof typeof TOKEN_TYPES];
+
+type BaseTokenPayload<T extends TokenType> = {
+  tokenType: T;
   userId: string;
-  expiresAt: Date; // This will be the expiration date of the session
+  iss: TokenIssuer;
+  aud: string | string[];
+  exp: number;
+  iat?: number;
 };
 
-// --- IMPORTANT: Ensure JWT_SECRET is consistently set in your environment variables ---
-const secretKey = process.env.JWT_SECRET;
-if (!secretKey) {
-  // Throw an error if the secret is not defined. This is a critical configuration.
-  throw new Error("JWT_SECRET environment variable is not defined! Please set it securely.");
-}
-const encodedKey = new TextEncoder().encode(secretKey); // Encode the secret key for jose
+type ExpiringLinkTokenPayload<T extends TokenType> = BaseTokenPayload<T> & {
+  expiresAt: string;
+};
 
-/**
- * Creates a new user session and sets it as an HTTP-only cookie.
- * @param userId The ID of the user to create a session for.
- */
-export async function createSession(userId: string) {
-  // Calculate expiry for the JWT payload and the cookie
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+export type SessionPayload = ExpiringLinkTokenPayload<typeof TOKEN_TYPES.SESSION>;
+export type PasswordResetTokenPayload = ExpiringLinkTokenPayload<typeof TOKEN_TYPES.PASSWORD_RESET>;
+export type PrivateKeyRecoveryTokenPayload = ExpiringLinkTokenPayload<typeof TOKEN_TYPES.PRIVATE_KEY_RECOVERY>;
+export type OAuthExchangeTokenPayload = BaseTokenPayload<typeof TOKEN_TYPES.OAUTH_EXCHANGE> & {
+  isNewUser: boolean;
+  email?: string;
+};
 
-  // Encrypt the session payload into a JWT
-  const sessionToken = await encrypt({ userId, expiresAt });
+type TokenInput = {
+  userId: string;
+  expiresAt: Date;
+};
 
-  // Set the JWT as an HTTP-only, secure cookie
-  (await cookies()).set("session", sessionToken, { // Set the cookie name
-    httpOnly: true, // Prevents client-side JavaScript from accessing the cookie
-    secure: process.env.NODE_ENV === 'production', // Only send cookie over HTTPS in production
-    expires: expiresAt, // Set the cookie's expiration date
-    sameSite: 'none', // Protects against CSRF attacks (consider 'strict' for higher security)
-    path: '/', // The cookie is accessible from all paths
-    // domain: '.yourdomain.com', // Uncomment and replace if your frontend and backend are on different subdomains of the same root domain
-  });
+type VerifiedPurposeTokenPayload = JWTPayload & {
+  tokenType: TokenType;
+  userId: string;
+  iss: TokenIssuer;
+  aud: string | string[];
+  exp: number;
+};
 
-  // You might also want to set a simple loggedInUserId cookie (not httpOnly) for client-side use if needed
-  (await cookies()).set("loggedInUserId", userId, {
-    expires: expiresAt,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'none',
-    path: '/',
-  });
-}
-
-/**
- * Deletes the user session cookies.
- */
-export async function deleteSession() {
-  (await cookies()).delete("session"); // Delete the main session cookie
-  (await cookies()).delete("loggedInUserId"); // Delete the client-side user ID cookie
-}
-
-/**
- * Encrypts a session payload into a JSON Web Token (JWT).
- * @param payload The session data to encrypt.
- * @returns The signed JWT string.
- */
-export async function encrypt(payload: SessionPayload): Promise<string> {
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: "HS256" }) // Algorithm used for signing
-    .setIssuedAt() // Set the issuance time
-    .setExpirationTime("30d") // Set JWT expiration time (matches cookie expiry)
-    .sign(encodedKey); // Sign the JWT with the secret key
-}
-
-/**
- * Decrypts a JWT session token and returns its payload.
- * @param session The JWT string to decrypt.
- * @returns The decrypted session payload or a default/error payload if verification fails.
- */
-export async function decrypt(session: string | undefined = ""): Promise<SessionPayload> {
-  if (!session) {
-    // If no session token is provided, return an invalid/expired payload
-    return { userId: "", expiresAt: new Date(0) };
+const getEncodedJwtSecret = () => {
+  const secretKey = process.env.JWT_SECRET;
+  if (!secretKey) {
+    throw new Error("JWT_SECRET environment variable is not defined! Please set it securely.");
   }
+  return new TextEncoder().encode(secretKey);
+};
+
+const validateTokenInput = ({ userId, expiresAt }: TokenInput) => {
+  if (!userId) {
+    throw new Error("Token userId is required.");
+  }
+
+  if (Number.isNaN(expiresAt.getTime())) {
+    throw new Error("Token expiry is invalid.");
+  }
+};
+
+const signPurposeToken = async ({
+  tokenType,
+  userId,
+  expiresAt,
+  issuer,
+  audience,
+  additionalClaims = {},
+}: TokenInput & {
+  tokenType: TokenType;
+  issuer: TokenIssuer;
+  audience: TokenAudience | readonly TokenAudience[];
+  additionalClaims?: Record<string, unknown>;
+}): Promise<string> => {
+  validateTokenInput({ userId, expiresAt });
+
+  return new SignJWT({
+    ...additionalClaims,
+    userId,
+    expiresAt: expiresAt.toISOString(),
+    tokenType,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setIssuer(issuer)
+    .setAudience(typeof audience === "string" ? audience : [...audience])
+    .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
+    .sign(getEncodedJwtSecret());
+};
+
+const hasExactAudienceClaim = (
+  actualAudience: JWTPayload["aud"],
+  expectedAudience: TokenAudience | readonly TokenAudience[],
+): actualAudience is string | string[] => {
+  if (typeof expectedAudience === "string") {
+    return actualAudience === expectedAudience;
+  }
+
+  if (!Array.isArray(actualAudience) || actualAudience.length !== expectedAudience.length) {
+    return false;
+  }
+
+  const actualAudienceSet = new Set(actualAudience);
+  return (
+    actualAudienceSet.size === expectedAudience.length &&
+    expectedAudience.every((audience) => actualAudienceSet.has(audience))
+  );
+};
+
+const verifyPurposeToken = async (
+  token: string | undefined,
+  expectedTokenType: TokenType,
+  expectedIssuer: TokenIssuer,
+  expectedConsumerAudience: TokenAudience,
+  expectedAudienceClaim: TokenAudience | readonly TokenAudience[],
+): Promise<VerifiedPurposeTokenPayload | null> => {
+  if (!token) {
+    return null;
+  }
+
   try {
-    const { payload } = await jwtVerify(session, encodedKey, {
-      algorithms: ["HS256"], // Specify expected algorithms
+    const { payload } = await jwtVerify(token, getEncodedJwtSecret(), {
+      algorithms: ["HS256"],
+      issuer: expectedIssuer,
+      audience: expectedConsumerAudience,
     });
-    // Ensure payload matches SessionPayload structure (type assertion)
-    return payload as SessionPayload;
-  } catch (error) {
-    console.error("Failed to verify session during decryption:", error);
-    // Return a payload that indicates an invalid/expired session
-    // This allows calling code to check `expiresAt` or `userId` to determine validity
-    return { userId: "", expiresAt: new Date(0) }; // Return an expired date for invalid sessions
+
+    if (
+      payload.tokenType !== expectedTokenType ||
+      payload.iss !== expectedIssuer ||
+      !hasExactAudienceClaim(payload.aud, expectedAudienceClaim) ||
+      typeof payload.userId !== "string" ||
+      payload.userId.length === 0 ||
+      typeof payload.exp !== "number" ||
+      !Number.isFinite(payload.exp) ||
+      payload.exp * 1000 <= Date.now()
+    ) {
+      return null;
+    }
+
+    return {
+      ...payload,
+      tokenType: expectedTokenType,
+      userId: payload.userId,
+      iss: expectedIssuer,
+      aud: payload.aud,
+      exp: payload.exp,
+    };
+  } catch {
+    return null;
   }
-}
+};
+
+const getLinkTokenPayload = <T extends TokenType>(
+  payload: VerifiedPurposeTokenPayload | null,
+  tokenType: T,
+): ExpiringLinkTokenPayload<T> | null => {
+  if (!payload || typeof payload.expiresAt !== "string") {
+    return null;
+  }
+
+  const expiresAt = new Date(payload.expiresAt);
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+    return null;
+  }
+
+  return {
+    tokenType,
+    userId: payload.userId,
+    iss: payload.iss,
+    aud: payload.aud,
+    expiresAt: payload.expiresAt,
+    exp: payload.exp,
+    ...(typeof payload.iat === "number" ? { iat: payload.iat } : {}),
+  };
+};
+
+export const signSessionToken = (input: TokenInput) =>
+  signPurposeToken({
+    ...input,
+    tokenType: TOKEN_TYPES.SESSION,
+    issuer: TOKEN_ISSUERS.WEB,
+    audience: SESSION_TOKEN_AUDIENCES,
+  });
+
+export const signPasswordResetToken = (input: TokenInput) =>
+  signPurposeToken({
+    ...input,
+    tokenType: TOKEN_TYPES.PASSWORD_RESET,
+    issuer: TOKEN_ISSUERS.WEB,
+    audience: TOKEN_AUDIENCES.WEB,
+  });
+
+export const signPrivateKeyRecoveryToken = (input: TokenInput) =>
+  signPurposeToken({
+    ...input,
+    tokenType: TOKEN_TYPES.PRIVATE_KEY_RECOVERY,
+    issuer: TOKEN_ISSUERS.WEB,
+    audience: TOKEN_AUDIENCES.WEB,
+  });
+
+export const verifySessionToken = async (token: string | undefined): Promise<SessionPayload | null> =>
+  getLinkTokenPayload(
+    await verifyPurposeToken(
+      token,
+      TOKEN_TYPES.SESSION,
+      TOKEN_ISSUERS.WEB,
+      TOKEN_AUDIENCES.WEB,
+      SESSION_TOKEN_AUDIENCES,
+    ),
+    TOKEN_TYPES.SESSION,
+  );
+
+export const verifyPasswordResetToken = async (
+  token: string | undefined,
+): Promise<PasswordResetTokenPayload | null> =>
+  getLinkTokenPayload(
+    await verifyPurposeToken(
+      token,
+      TOKEN_TYPES.PASSWORD_RESET,
+      TOKEN_ISSUERS.WEB,
+      TOKEN_AUDIENCES.WEB,
+      TOKEN_AUDIENCES.WEB,
+    ),
+    TOKEN_TYPES.PASSWORD_RESET,
+  );
+
+export const verifyPrivateKeyRecoveryToken = async (
+  token: string | undefined,
+): Promise<PrivateKeyRecoveryTokenPayload | null> =>
+  getLinkTokenPayload(
+    await verifyPurposeToken(
+      token,
+      TOKEN_TYPES.PRIVATE_KEY_RECOVERY,
+      TOKEN_ISSUERS.WEB,
+      TOKEN_AUDIENCES.WEB,
+      TOKEN_AUDIENCES.WEB,
+    ),
+    TOKEN_TYPES.PRIVATE_KEY_RECOVERY,
+  );
+
+export const verifyOAuthExchangeToken = async (
+  token: string | undefined,
+): Promise<OAuthExchangeTokenPayload | null> => {
+  const payload = await verifyPurposeToken(
+    token,
+    TOKEN_TYPES.OAUTH_EXCHANGE,
+    TOKEN_ISSUERS.API,
+    TOKEN_AUDIENCES.WEB,
+    TOKEN_AUDIENCES.WEB,
+  );
+  if (!payload || typeof payload.isNewUser !== "boolean") {
+    return null;
+  }
+
+  if (payload.email !== undefined && typeof payload.email !== "string") {
+    return null;
+  }
+
+  return {
+    tokenType: TOKEN_TYPES.OAUTH_EXCHANGE,
+    userId: payload.userId,
+    iss: payload.iss,
+    aud: payload.aud,
+    isNewUser: payload.isNewUser,
+    exp: payload.exp,
+    ...(typeof payload.iat === "number" ? { iat: payload.iat } : {}),
+    ...(typeof payload.email === "string" ? { email: payload.email } : {}),
+  };
+};
 
 /**
- * Verifies a session token and returns the userId if valid and not expired.
- * This is a new utility function specifically for API routes or server components
- * that need to check authentication.
- * @param sessionToken The session token string from cookies.
- * @returns The userId if the session is valid, otherwise null.
+ * Creates a 30-day session, persists it in the existing cookies, and returns
+ * the same JWT for callers that must populate the current bearer-token state.
  */
+export async function createSession(userId: string): Promise<string> {
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const sessionToken = await signSessionToken({ userId, expiresAt });
+  const cookieStore = await cookies();
+
+  cookieStore.set("loggedInUserId", userId, {
+    expires: expiresAt,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
+    path: "/",
+  });
+
+  cookieStore.set("session", sessionToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    expires: expiresAt,
+    sameSite: "none",
+    path: "/",
+  });
+
+  return sessionToken;
+}
+
+export async function deleteSession() {
+  (await cookies()).delete("session");
+  (await cookies()).delete("loggedInUserId");
+}
+
 export async function verifySession(sessionToken: string | undefined): Promise<string | null> {
-  if (!sessionToken) {
-    return null;
-  }
-  try {
-    const payload = await decrypt(sessionToken);
-    // Check if the session is still valid based on its expiry date
-    if (payload.expiresAt && new Date(payload.expiresAt) > new Date()) {
-      return payload.userId;
-    }
-    console.warn("Session expired or invalid expiry date in payload.");
-    return null;
-  } catch (error) {
-    console.error("Error verifying session:", error);
-    return null;
-  }
+  const payload = await verifySessionToken(sessionToken);
+  return payload?.userId ?? null;
 }
