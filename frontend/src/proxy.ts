@@ -59,7 +59,9 @@ function setSecureCookie(response: NextResponse, name: string, value: string, op
   });
 }
 
-export async function proxy(req: NextRequest) {
+export async function proxy(
+  req: NextRequest,
+) {
   const path = req.nextUrl.pathname;
 
   // Ignore Next.js assets, API routes, and build-time paths
