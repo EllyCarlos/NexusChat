@@ -30,8 +30,8 @@ export async function POST() {
 
     return NextResponse.json({ success: true }, { status: 200 });
 
-  } catch (error) {
-    console.error('Failed to complete private key recovery on backend:', error);
+  } catch {
+    console.error('Failed to complete private-key recovery.');
     return NextResponse.json({ error: 'Failed to complete recovery' }, { status: 500 });
   }
 }

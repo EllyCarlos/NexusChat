@@ -83,8 +83,8 @@ export const ContextMenuOptions = ({
     try {
       await navigator.clipboard.writeText(message?.decryptedMessage as string);
       setOpenContextMenuMessageId(undefined);
-    } catch (err) {
-      console.error("Failed to copy:", err);
+    } catch {
+      console.error("Failed to copy content to the clipboard.");
     }
   }
 

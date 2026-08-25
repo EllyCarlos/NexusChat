@@ -18,7 +18,6 @@ export const usePinLimitReachedListener = () => {
 
     const handlePinLimitReachedEvent = useCallback(({oldestPinId,messageId,chatId}:PinLimitReachedEventReceivePayload)=>{
 
-        console.log("pin limit reached event received",{oldestPinId,messageId,chatId});
         toast("Pin limit reached, removing the oldest pin",{icon:"📌"});
         dispatch(removePinnedMessage({pinId:oldestPinId}));
 
@@ -26,7 +25,6 @@ export const usePinLimitReachedListener = () => {
             messageApi.util.updateQueryData("getMessagesByChatId",{chatId,page:1},(draft)=>{
                 const message =  draft.messages.find(msg=>msg.id === messageId);
                 if(message){
-                    console.log('message found',message);
                     message.isPinned = false;
                 }
             })

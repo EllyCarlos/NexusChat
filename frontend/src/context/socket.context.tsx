@@ -56,7 +56,7 @@ export const SocketProvider = ({ children }: PropTypes) => {
         query: { token },
       });
 
-      const handleConnectError = (error: Error) => console.error("Socket error:", error);
+      const handleConnectError = () => console.error("Socket connection failed.");
 
       nextSocket.on("connect_error", handleConnectError);
       socketStore.setSocket(nextSocket);
@@ -68,8 +68,8 @@ export const SocketProvider = ({ children }: PropTypes) => {
         nextSocket.disconnect();
         nextSocket.off("connect_error", handleConnectError);
       };
-    } catch (error) {
-      console.error("Socket error:", error);
+    } catch {
+      console.error("Socket initialization failed.");
     }
   }, [loggedInUserId, socketStore, token]);
 

@@ -47,8 +47,8 @@ export const VoiceNote = ({audioUrl,loggedInUserId,selectedChatDetails}:PropType
             objectUrl = URL.createObjectURL(blob);
             setUrl(objectUrl);
           }
-        } catch (error) {
-          console.error("Error fetching encrypted audio:", error);
+        } catch {
+          console.error("Failed to load encrypted audio.");
         }
       })();
 

@@ -27,8 +27,8 @@ export const fetchToken = async () => {
       return token;
     }
     return null;
-  } catch (err) {
-    console.error("An error occurred while fetching the token:", err);
+  } catch {
+    console.error("Failed to retrieve a notification token.");
     return null;
   }
 };

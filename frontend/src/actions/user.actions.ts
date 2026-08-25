@@ -70,8 +70,8 @@ export async function searchUser(prevState: any, data: { username: string }) {
       data: users,
     };
 
-  } catch (error) {
-    console.error("Error fetching search user results:", error); // Use console.error
+  } catch {
+    console.error("Failed to fetch user search results.");
     return {
       errors: {
         message: "An unexpected error occurred during user search.", // More specific message
@@ -132,8 +132,8 @@ export async function storeFcmToken(_prevState: unknown, data: { fcmToken: strin
       data: null, // No specific data needed on success for this action
     };
 
-  } catch (error) {
-    console.error("Error storing FCM token:", error); // Use console.error
+  } catch {
+    console.error("Failed to store the notification token.");
     return {
       errors: {
         message: "An unexpected error occurred while storing FCM token.", // More specific message
@@ -200,8 +200,8 @@ export async function updateUserNotificationStatus(_prevState: unknown, data: { 
       }
     };
 
-  } catch (error) {
-    console.error("Error updating user notification status:", error); // Use console.error
+  } catch {
+    console.error("Failed to update notification status.");
     return {
       errors: {
         message: "An unexpected error occurred while updating notification status.", // More specific message

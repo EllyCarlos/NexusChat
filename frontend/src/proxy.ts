@@ -86,25 +86,22 @@ export async function proxy(req: NextRequest) {
       session = await verifySessionToken(sessionToken);
       // Also check if the session payload itself is expired based on its internal expiry
       if (session && new Date(session.expiresAt) <= new Date()) {
-        console.warn("Middleware: Session token expired based on payload expiry.");
         session = null; // Mark as expired
       }
-    } catch (error) {
-      console.error("Middleware: Error decrypting session token:", error);
+    } catch {
+      console.error("Middleware: Session verification failed.");
       session = null; // Mark as invalid
     }
   }
 
   // Handle protected routes without a valid session
   if (!session?.userId && isProtectedRoute) {
-    console.log(`Middleware: Redirecting unauthenticated user from protected route: ${path}`);
     return clearAuthAndRedirect(req);
   }
 
   // Redirect logged-in users away from public routes (unless it's the recovery page)
   // Allow access to recovery page even if logged in, as it's a specific flow
   if (session?.userId && isPublicRoute && path !== "/auth/private-key-recovery-token-verification") {
-    console.log(`Middleware: Redirecting authenticated user from public route: ${path} to /`);
     return NextResponse.redirect(new URL("/", req.nextUrl));
   }
 
@@ -143,7 +140,7 @@ export async function proxy(req: NextRequest) {
     clearTimeout(timeoutId); // Clear timeout if fetch completes in time
 
     if (!res.ok) {
-      console.error(`Middleware: Failed to fetch user info. Status: ${res.status}, Message: ${res.statusText}`);
+      console.error(`Middleware: Failed to fetch user info (HTTP ${res.status}).`);
       if (res.status === 401 || res.status === 403) {
         // If API returns unauthorized, clear session and redirect
         return clearAuthAndRedirect(req);
@@ -154,8 +151,6 @@ export async function proxy(req: NextRequest) {
     userInfo = await res.json() as FetchUserInfoResponse;
 
   } catch (error) {
-    console.error("Middleware: Error fetching user info:", error);
-
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
         console.warn("Middleware: User info fetch timed out.");
@@ -164,7 +159,11 @@ export async function proxy(req: NextRequest) {
         // During build or when API is unavailable, allow through.
         // This is crucial for local development where the API might not be running yet.
         return NextResponse.next();
+      } else {
+        console.error("Middleware: Failed to fetch user info.");
       }
+    } else {
+      console.error("Middleware: Failed to fetch user info.");
     }
 
     // For any other critical error during user info fetch, clear auth and redirect
@@ -189,7 +188,6 @@ export async function proxy(req: NextRequest) {
   // --- Handle Private Key Recovery (NEW LOGIC) ---
   // If user needs key recovery AND is not on the recovery verification page, redirect them
   if (userInfo && userInfo.needsKeyRecovery && path !== "/auth/private-key-recovery-token-verification") {
-    console.log(`Middleware: User ${userInfo.id} needs key recovery. Redirecting to recovery page.`);
     // Redirect to the private key recovery page
     return NextResponse.redirect(new URL("/auth/private-key-recovery-token-verification", req.url));
   }

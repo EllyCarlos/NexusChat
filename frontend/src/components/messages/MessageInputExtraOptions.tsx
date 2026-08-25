@@ -79,8 +79,8 @@ export const MessageInputExtraOptions = ({
       };
 
       recorder.start();
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
+    } catch {
+      console.error("Failed to access the microphone.");
     }
   };
 

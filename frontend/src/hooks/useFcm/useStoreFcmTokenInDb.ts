@@ -24,7 +24,6 @@ export const useStoreFcmTokenInDb = ({generatedFcmToken,userFcmToken}:PropTypes)
     useEffect(()=>{
         if(state?.errors.message?.length){
             toast.error("some error occured while storing fcm token");
-            console.log("error storing fcm token",state.errors);
         }
     },[state])
 

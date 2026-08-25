@@ -38,7 +38,6 @@ export const PeerServiceProvider = ({ children }: { children: React.ReactNode })
   // Ensure we clean up the connection when the provider unmounts
   useEffect(() => {
     return () => {
-      console.log("PeerServiceProvider unmounting. Closing connection.");
       peerService?.closeConnection();
     };
   }, [peerService]);

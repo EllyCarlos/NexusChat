@@ -33,9 +33,7 @@ export const useHandleVoteClick = ({
   const chatId =  useAppSelector(selectSelectedChatDetails)?.id as string;
 
   const handleVoteClick = () => {
-    console.log('user clicked vote button','option',optionIndex);
     if (haveUserVotedInThisOption) {
-      console.log('voting out');
       // if already voted then clicking it again means voting out
       handleVoteOut({chatId,messageId,optionIndex:optionIndex});
     } 
@@ -64,13 +62,11 @@ export const useHandleVoteClick = ({
             }
           }
         }
-        console.log('voting out from previous option and then');
       }
       // and vote in remains the same for both cases
       setTimeout(() => {
         handleVoteIn({ chatId, messageId, optionIndex });
       }, 0); // Small delay (300ms) to let vote out process complete
-      console.log('voting in to new option');
     }
   };
 

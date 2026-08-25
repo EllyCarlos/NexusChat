@@ -202,8 +202,8 @@ export async function login(prevState: any, formData: FormData) {
         redirect: false,
       };
     }
-  } catch (error) {
-    console.error("Login error:", error); // Use console.error for actual errors
+  } catch {
+    console.error("Login failed unexpectedly.");
     return {
       errors: {
         message: "An unexpected error occurred during login.",
@@ -291,8 +291,8 @@ export async function signup(prevState: any, formData: FormData) {
       errors: null,
       data: newUser
     };
-  } catch (error) {
-    console.error("Signup error:", error);
+  } catch {
+    console.error("Signup failed unexpectedly.");
     return {
       errors: {
         message: "An unexpected error occurred during signup.",
@@ -356,8 +356,8 @@ export async function sendPrivateKeyRecoveryEmail(_prevState: unknown) {
         message: "Private key recovery email sent successfully. Please check your inbox (and spam folder)."
       }
     };
-  } catch (error) {
-    console.error('Error sending private key recovery email:', error);
+  } catch {
+    console.error('Failed to send a private-key recovery email.');
     return {
       errors: {
         message: "Error sending private key recovery email. Please try again later."
@@ -628,8 +628,8 @@ export async function verifyPassword(_prevState: unknown, data: { password: stri
       }
     };
 
-  } catch (error) {
-    console.error('Error verifying password for private key recovery:', error);
+  } catch {
+    console.error('Private-key recovery password verification failed.');
     return {
       errors: {
         message: 'An error occurred during password verification. Please try again.'
@@ -722,8 +722,8 @@ export async function forgotPassword(prevState: any, email: string) {
       }
     };
 
-  } catch (error) {
-    console.error('Error sending password reset email:', error);
+  } catch {
+    console.error('Failed to send a password-reset email.');
     return {
       errors: {
         message: "Error sending password reset email."
@@ -747,10 +747,8 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       };
     }
 
-    console.log('🔍 Verifying OAuth token...');
-
     if (!process.env.JWT_SECRET) {
-      console.error('❌ JWT_SECRET is not configured');
+      console.error('OAuth verification is unavailable because JWT_SECRET is not configured.');
       return {
         errors: {
           message: "Server configuration error"
@@ -770,15 +768,7 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       };
     }
 
-    console.log('🔍 Decoded token structure:', {
-      keys: Object.keys(decoded),
-      userId: decoded.userId,
-      isNewUser: decoded.isNewUser,
-      tokenType: decoded.tokenType
-    });
-
     if (!decoded.userId) {
-      console.error('❌ Missing userId in token. Available fields:', Object.keys(decoded));
       return {
         errors: {
           message: "Invalid user identifier in token"
@@ -789,7 +779,6 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
 
     // Ensure isNewUser is a boolean, as expected by client-side logic
     if (typeof decoded.isNewUser !== 'boolean') {
-      console.error('❌ Invalid isNewUser type:', typeof decoded.isNewUser, 'Value:', decoded.isNewUser);
       return {
         errors: {
           message: "Invalid token structure"
@@ -797,11 +786,6 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
         data: null
       };
     }
-
-    console.log('✅ Token validation passed:', {
-      userId: decoded.userId,
-      isNewUser: decoded.isNewUser
-    });
 
     if (!consumeServerActionRateLimit(RATE_LIMITS.oauthExchange, decoded.userId).allowed) {
       return {
@@ -831,7 +815,6 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
     });
 
     if (!user) {
-      console.error('❌ User not found in database for ID:', decoded.userId);
       return {
         errors: {
           message: "User not found"
@@ -839,8 +822,6 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
         data: null
       };
     }
-
-    console.log('✅ User found in database:', user.id);
 
     if (decoded.isNewUser && !user.oAuthSignup) {
       return {
@@ -926,7 +907,6 @@ export async function verifyOAuthToken(_prevState: unknown, token: string) {
       oauthMigrationError
     };
 
-    console.log('✅ OAuth verification successful for user:', user.id);
     return {
       errors: {
         message: null
@@ -1073,8 +1053,8 @@ export async function resetPassword(prevState: any, data: { token: string, newPa
       }
     };
 
-  } catch (error) {
-    console.error('Error resetting password:', error);
+  } catch {
+    console.error('Password reset failed unexpectedly.');
     return {
       errors: {
         message: 'An error occurred during password reset. Please try again.'
@@ -1497,8 +1477,8 @@ export async function sendOtp(_prevState: unknown) {
         message: `We have sent an OTP to ${user.email}. Please check your inbox (and spam folder).`
       }
     };
-  } catch (error) {
-    console.error('Error sending OTP:', error);
+  } catch {
+    console.error('Failed to send an OTP.');
     return {
       errors: {
         message: 'Error sending OTP.'
@@ -1592,8 +1572,8 @@ export async function verifyOtp(_prevState: unknown, data: { otp: string }) {
         message: 'Email verified successfully 🎉'
       },
     };
-  } catch (error) {
-    console.error('Error verifying OTP:', error);
+  } catch {
+    console.error('OTP verification failed unexpectedly.');
     return {
       errors: {
         message: 'Error verifying OTP.'

@@ -29,12 +29,10 @@ export const useScrollToBottomOnNewMessageWhenUserIsNearBottom = ({
     const initialTimeout = setTimeout(() => {
       const currentContainer = container.current;
       if (currentContainer && isNearBottom) {
-        console.log('ran man');
         currentContainer.scrollTop = currentContainer.scrollHeight;
         fallbackTimeout = setTimeout(() => {
           const fallbackContainer = container.current;
           if (fallbackContainer) {
-            console.log('TRIGGERED FALLBACK');
             fallbackContainer.scrollTop = fallbackContainer.scrollHeight;
           }
         }, 300);

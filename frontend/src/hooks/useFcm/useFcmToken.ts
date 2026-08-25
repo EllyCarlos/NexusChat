@@ -9,7 +9,6 @@ import { toast } from "sonner";
 async function getNotificationPermissionAndToken(){
   // Step 1: Check if Notifications are supported in the browser.
   if (!("Notification" in window)) {
-    console.info("This browser does not support desktop notification");
     return null;
   }
 
@@ -28,7 +27,6 @@ async function getNotificationPermissionAndToken(){
     }
   }
 
-  console.log("Notification permission not granted.");
   return null;
 }
 
@@ -50,10 +48,6 @@ const useFcmToken = () => {
 
       // Step 5: Handle the case where permission is denied.
       if (Notification.permission === "denied") {
-        console.info(
-          "%cPush Notifications issue - permission denied",
-          "color: green; background: #c7c7c7; padding: 8px; font-size: 20px"
-        );
         isLoading.current = false;
         return { token: null, permission: "denied" as const };
       }
@@ -65,10 +59,6 @@ const useFcmToken = () => {
 
       if (retryLoadToken.current >= 3) {
         alert("Unable to load token, refresh the browser");
-        console.info(
-          "%cPush Notifications issue - unable to load token after 3 retries",
-          "color: green; background: #c7c7c7; padding: 8px; font-size: 20px"
-        );
         isLoading.current = false;
         return null;
       }
@@ -96,7 +86,6 @@ const useFcmToken = () => {
     const setupListener = async () => {
       if (!token) return; // Exit if no token is available.
 
-      console.log(`onMessage registered with token ${token}`);
       const m = await messaging();
       if (!m) return;
 
@@ -104,7 +93,6 @@ const useFcmToken = () => {
       const unsubscribe = onMessage(m, (payload) => {
         if (Notification.permission !== "granted") return;
 
-        console.log("Foreground push notification received:", payload);
         const link = payload.fcmOptions?.link || payload.data?.link;
 
         if (link) {
@@ -144,8 +132,6 @@ const useFcmToken = () => {
         //   const link = (event.target as any)?.data?.url;
         //   if (link) {
         //     router.push(link);
-        //   } else {
-        //     console.log("No link found in the notification payload");
         //   }
         // };
         // --------------------------------------------

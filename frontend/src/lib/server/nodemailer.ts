@@ -19,8 +19,8 @@ export const getTransporter = () => {
           pass: password,
         },
       });
-    } catch (error) {
-      console.error("Error initializing Nodemailer transporter:", error);
+    } catch {
+      console.error("Failed to initialize the email transporter.");
       throw new Error("Failed to initialize email transporter");
     }
   }

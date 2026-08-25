@@ -34,15 +34,13 @@ const loadChatPageData = async (loggedInUserId: string) => {
     const callHistory = extract(callHistoryRes);
 
     if (!user || !friends || !friendRequest || !chats || !callHistory) {
-      console.warn("Missing critical data:", {
-        user, friends, friendRequest, chats, callHistory,
-      });
+      console.warn("Required chat data is unavailable.");
       return null;
     }
 
     return { user, friends, friendRequest, chats, callHistory };
-  } catch (err) {
-    console.error("Unexpected critical error:", err);
+  } catch {
+    console.error("Failed to load required chat data.");
     return null;
   }
 };
@@ -63,8 +61,8 @@ export default async function ChatPage() {
     } else {
       redirect("/login");
     }
-  } catch (err) {
-    console.error("Session decryption failed:", err);
+  } catch {
+    console.error("Session verification failed while loading chat.");
     redirect("/login");
   }
 

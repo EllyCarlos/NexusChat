@@ -19,11 +19,6 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log(
-    "[firebase-messaging-sw.js] Received background message ",
-    payload
-  );
-
   // payload.fcmOptions?.link comes from our backend API route handle
   // payload.data.link comes from the Firebase Console where link is the 'key'
   const link = payload.fcmOptions?.link || payload.data?.link;
@@ -38,8 +33,6 @@ messaging.onBackgroundMessage((payload) => {
 });
 
 self.addEventListener("notificationclick", function (event) {
-  console.log("[firebase-messaging-sw.js] Notification click received.");
-
   event.notification.close();
 
   // This checks if the client is already open and if it is, it focuses on the tab. If it is not open, it opens a new tab with the URL passed in the notification payload
@@ -60,7 +53,6 @@ self.addEventListener("notificationclick", function (event) {
         }
 
         if (clients.openWindow) {
-          console.log("OPENWINDOW ON CLIENT");
           return clients.openWindow(url);
         }
       })

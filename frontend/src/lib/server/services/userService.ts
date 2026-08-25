@@ -42,8 +42,8 @@ const fetchUserFriends = async ({loggedInUserId}:{loggedInUserId:string}) => {
     })
     const userFriends = friends.map(friend=>friend.user1.id===loggedInUserId?{...friend.user2,...{createdAt:friend.createdAt}}:{...friend.user1,...{createdAt:friend.createdAt}})
     return userFriends;
-  } catch (error) {
-    console.error("Error fetching user friends:", error); // Added console.error
+  } catch {
+    console.error("Failed to fetch user friends.");
     return []; // Return empty array on error
   }
 };
@@ -70,8 +70,8 @@ const fetchUserInfo = async ({loggedInUserId}:{loggedInUserId:string}) => {
         lastSeen:true,
     }})
     return user;
-  } catch (error) {
-    console.error("Error fetching user info:", error); // Added console.error
+  } catch {
+    console.error("Failed to fetch user information.");
     return null; // Return null on error
   }
 };
@@ -268,8 +268,8 @@ const fetchUserChats = async ({loggedInUserId}:{loggedInUserId:string}) => {
       typingUsers: [] as BasicUserInfo[]
     }));
 
-  } catch (error) {
-    console.error("Error fetching user chats:", error); // Added console.error
+  } catch {
+    console.error("Failed to fetch user chats.");
     return []; // Return empty array on error
   }
 };
@@ -298,8 +298,8 @@ const fetchUserFriendRequest = async ({loggedInUserId}:{loggedInUserId:string}) 
         }
       })
     return friendRequests;
-  } catch (error) {
-    console.error("Error fetching user friend requests:", error); // Added console.error
+  } catch {
+    console.error("Failed to fetch user friend requests.");
     return []; // Return empty array on error
   }
 };

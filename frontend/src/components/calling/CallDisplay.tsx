@@ -134,13 +134,12 @@ const CallDisplay = () => {
 
     const sendStreams = useCallback(() => {
         if (myStream && isAccepted && peerService?.peer) {
-            console.log('inside send streams');
             try {
                 myStream.getTracks().forEach(track => {
                     peerService.peer?.addTrack(track, myStream);
                 });
-            } catch (error) {
-                console.log('error in sending streams', error);
+            } catch {
+                console.error('Failed to attach local media streams.');
             }
         }
     }, [myStream, isAccepted, peerService]);
@@ -158,7 +157,6 @@ const CallDisplay = () => {
                 return;
             }
             
-            console.log('offer created');
             const calleeId = selectedChatDetails?.ChatMembers?.filter(member => member?.user?.id !== loggedInUserId)[0]?.user?.id || calleeIdPopulatedFromRecentCalls;
             
             if (offer && calleeId) {
@@ -172,8 +170,8 @@ const CallDisplay = () => {
                 toast.error("Failed to initiate call");
                 dispatch(setCallDisplay(false));
             }
-        } catch (error) {
-            console.error('Error in callUser:', error);
+        } catch {
+            console.error('Failed to start the call.');
             toast.error('Failed to create call offer');
         }
     }, [dispatch, selectedChatDetails, socket, calleeIdPopulatedFromRecentCalls, peerService, loggedInUserId]);
@@ -208,15 +206,14 @@ const CallDisplay = () => {
             setRemoteUserId(incomingCallInfo.caller.id);
             setIsAccepted(true);
             socket?.emit(Event.CALL_ACCEPTED, callAcceptPayload);
-        } catch (error) {
-            console.error('Error accepting call:', error);
+        } catch {
+            console.error('Failed to accept the call.');
             toast.error("Failed to accept call");
         }
     }, [incomingCallInfo, socket, peerService]);
 
     const handleCallAcceptedEvent = useCallback(async ({ answer, callHistoryId, calleeId }: CallAcceptedEventReceivePayload) => {
         if (!peerService) {
-            console.error('Peer service not available');
             return;
         }
         
@@ -225,14 +222,13 @@ const CallDisplay = () => {
             setCallHistoryId(callHistoryId);
             setRemoteUserId(calleeId);
             setIsAccepted(true);
-        } catch (error) {
-            console.error('Error handling call accepted:', error);
+        } catch {
+            console.error('Failed to apply the accepted call state.');
         }
     }, [peerService]);
 
     const handleNegoNeededEvent = useCallback(async ({ callerId, offer, callHistoryId }: NegoNeededEventReceivePayload) => {
         if (!peerService) {
-            console.error('Peer service not available');
             return;
         }
 
@@ -251,14 +247,13 @@ const CallDisplay = () => {
             } else {
                 toast.error("Error in negotiation");
             }
-        } catch (error) {
-            console.error('Error in nego needed event:', error);
+        } catch {
+            console.error('Failed to handle call negotiation.');
         }
     }, [socket, peerService]);
 
     const handleNegoNeeded = useCallback(async () => {
         if (!peerService) {
-            console.error('Peer service not available');
             return;
         }
 
@@ -275,45 +270,40 @@ const CallDisplay = () => {
             } else {
                 toast.error("Error occurred in negotiation");
             }
-        } catch (error) {
-            console.error('Error in nego needed:', error);
+        } catch {
+            console.error('Failed to initiate call negotiation.');
         }
     }, [activeCallHistoryId, remoteUserId, socket, peerService]);
 
-    const handleNegoFinalEvent = useCallback(async ({ answer, calleeId }: NegoFinalEventReceivePayload) => {
+    const handleNegoFinalEvent = useCallback(async ({ answer }: NegoFinalEventReceivePayload) => {
         if (!peerService) {
-            console.error('Peer service not available');
             return;
         }
 
         try {
             await peerService.setRemoteDescription(answer);
-            console.log('Negotiation accepted from', calleeId);
-        } catch (error) {
-            console.error('Error in setting remote description:', error);
+        } catch {
+            console.error('Failed to finalize call negotiation.');
         }
     }, [peerService]);
 
-    const handleRemoteIceCandidate = useCallback(async ({ callerId, candidate }: IceCandiateEventReceivePayload) => {
-        console.log('remote ice candidate received from', callerId, 'candidate is', candidate);
+    const handleRemoteIceCandidate = useCallback(async ({ candidate }: IceCandiateEventReceivePayload) => {
         if (peerService?.peer) {
             try {
                 await peerService.peer.addIceCandidate(candidate);
-            } catch (error) {
-                console.error('Error adding ICE candidate:', error);
+            } catch {
+                console.error('Failed to add a remote ICE candidate.');
             }
         }
     }, [peerService]);
 
     const handleICECandidate = useCallback(async (e: RTCPeerConnectionIceEvent) => {
         if (e.candidate && remoteUserId && activeCallHistoryId) {
-            console.log("receiving ice candidate locally");
             const payload: IceCandidateEventSendPayload = {
                 candidate: e.candidate,
                 calleeId: remoteUserId,
                 callHistoryId:activeCallHistoryId
             };
-            console.log('emitted ice candidate');
             socket?.emit(Event.ICE_CANDIDATE, payload);
         }
     }, [activeCallHistoryId, remoteUserId, socket]);
@@ -390,7 +380,6 @@ const CallDisplay = () => {
         if (peerService?.peer) {
             peerService.peer.addEventListener("icecandidate", handleICECandidate);
             peerService.peer.addEventListener("track", (event: RTCTrackEvent) => {
-                console.log("Remote track received:", event.streams);
                 // The event.streams array contains one or more MediaStream objects.
                 // You might need to handle multiple streams or filter based on track kind (audio/video).
                 if (event.streams && event.streams[0]) {

@@ -140,13 +140,11 @@ const decryptMessage = async (
       // Return the decrypted message as a string.
       return decryptedMessage;
     } catch {
-      // console.log(error);
       // If decryption fails (e.g., due to incorrect key or corrupted data), handle the error.
       // Here, instead of logging the error, the function returns `null` to indicate decryption failure.
       return null;
     }
   } catch {
-    // console.log('error at decryptMessage',error);
   }
 };
 
@@ -174,8 +172,8 @@ const decryptAudioBlob = async ({
 
     // Convert decrypted ArrayBuffer back to a Blob
     return new Blob([decryptedArrayBuffer], { type: "audio/webm" }); // Change type based on actual format
-  } catch (error) {
-    console.error("Decryption failed:", error);
+  } catch {
+    console.error("Audio decryption failed.");
     return null;
   }
 };
@@ -250,7 +248,7 @@ const deriveKeyFromPassword = async (password: string, salt: Uint8Array<ArrayBuf
   } catch (error) {
     // Step 5: Handle any errors that might occur during key derivation
     // If something goes wrong, log the error and rethrow it for further handling.
-    console.error("Error generating key:", error);
+    console.error("Encryption key generation failed.");
     throw error; // Rethrow the error to be handled by the caller
   }
 };
@@ -360,9 +358,9 @@ const decryptPrivateKey = async (
     // The decrypted message is a JSON string that represents the original private key.
     // `JSON.parse` converts it back into the original JsonWebKey object.
     return JSON.parse(decryptedPrivateKey);
-  } catch (error) {
+  } catch {
     // Handle any decryption errors (e.g., incorrect password, tampered data)
-    console.error("Decryption failed:", error);
+    console.error("Private-key decryption failed.");
     return null; // Return null to indicate failure
   }
 };
