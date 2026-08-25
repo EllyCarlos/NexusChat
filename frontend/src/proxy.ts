@@ -59,9 +59,7 @@ function setSecureCookie(response: NextResponse, name: string, value: string, op
   });
 }
 
-export async function proxy(
-  req: NextRequest,
-) {
+export async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname;
 
   // Ignore Next.js assets, API routes, and build-time paths
@@ -122,9 +120,9 @@ export async function proxy(
       console.warn("Middleware: NEXT_PUBLIC_API_URL is not defined in production. Skipping user info fetch.");
       return NextResponse.next(); // Allow through if API URL is not configured
     }
-    
+
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
 
