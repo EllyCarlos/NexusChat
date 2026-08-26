@@ -14,23 +14,21 @@ export const useEncryptPrivateKeyWithUserPassword = ({
     null
   );
 
-  const handleEncryptPrivateKey = async (
-    password: string,
-    privateKeyJWK: JsonWebKey
-  ) => {
-    const encryptedPrivateKey = await encryptPrivateKey(
-      password,
-      privateKeyJWK
-    );
-    if (encryptedPrivateKey) {
-      setEncryptedPrivateKey(encryptedPrivateKey);
-    }
-  };
-
   useEffect(() => {
-    if (password && privateKeyJWK) {
-      handleEncryptPrivateKey(password, privateKeyJWK);
+    if (!password || !privateKeyJWK) {
+      return;
     }
+
+    let cancelled = false;
+    void encryptPrivateKey(password, privateKeyJWK).then((encryptedKey) => {
+      if (!cancelled && encryptedKey) {
+        setEncryptedPrivateKey(encryptedKey);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [password, privateKeyJWK]);
 
   return { encryptedPrivateKey };

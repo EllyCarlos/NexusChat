@@ -1,6 +1,6 @@
 import { selectSelectedChatDetails } from "@/lib/client/slices/chatSlice";
 import { useAppSelector } from "@/lib/client/store/hooks";
-import { Dispatch, SetStateAction, useEffect } from "react";
+import { Dispatch, SetStateAction, useEffect, useRef } from "react";
 
 type PropTypes = {
   page: number;
@@ -17,6 +17,48 @@ type PropTypes = {
   }) => void;
 };
 
+type PreviousMessageRequestTracking = {
+  previousSelectedChatIdRef: { current: string | undefined };
+  lastRequestKeyRef: { current: string | undefined };
+};
+
+export const getPreviousMessageRequest = ({
+  selectedChatId,
+  page,
+  hasMoreMessages,
+  isFetching,
+  previousSelectedChatIdRef,
+  lastRequestKeyRef,
+}: {
+  selectedChatId: string | undefined;
+  page: number;
+  hasMoreMessages: boolean;
+  isFetching: boolean;
+} & PreviousMessageRequestTracking) => {
+  if (previousSelectedChatIdRef.current !== selectedChatId) {
+    previousSelectedChatIdRef.current = selectedChatId;
+    lastRequestKeyRef.current = undefined;
+    return { chatChanged: true, request: null };
+  }
+
+  const requestKey = `${selectedChatId ?? ""}:${page}`;
+  if (
+    page <= 1 ||
+    !hasMoreMessages ||
+    !selectedChatId ||
+    isFetching ||
+    requestKey === lastRequestKeyRef.current
+  ) {
+    return { chatChanged: false, request: null };
+  }
+
+  lastRequestKeyRef.current = requestKey;
+  return {
+    chatChanged: false,
+    request: { page, chatId: selectedChatId },
+  };
+};
+
 export const useFetchMessagesOnPageChange = ({
   page,
   totalPages,
@@ -26,16 +68,36 @@ export const useFetchMessagesOnPageChange = ({
   isFetching,
 }: PropTypes) => {
   const selectedChatId = useAppSelector(selectSelectedChatDetails)?.id;
+  const previousSelectedChatIdRef = useRef<string | undefined>(selectedChatId);
+  const lastRequestKeyRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    // Only fetch messages if the page is greater than 1 (indicating the user wants older messages)
-    // and if a selectedChatId exists
-    if (page > 1 && hasMoreMessages && selectedChatId && !isFetching) {
-      getPreviousMessages({ page, chatId: selectedChatId });
+    const decision = getPreviousMessageRequest({
+      selectedChatId,
+      page,
+      hasMoreMessages,
+      isFetching,
+      previousSelectedChatIdRef,
+      lastRequestKeyRef,
+    });
+    if (decision.chatChanged) {
+      return;
     }
+    if (decision.request) {
+      getPreviousMessages(decision.request);
+    }
+
     // If the current page equals totalPages, then there are no more messages to load
     if (page === totalPages) {
       setHasMoreMessages(false);
     }
-  }, [page]);
+  }, [
+    getPreviousMessages,
+    hasMoreMessages,
+    isFetching,
+    page,
+    selectedChatId,
+    setHasMoreMessages,
+    totalPages,
+  ]);
 };

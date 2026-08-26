@@ -10,7 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import toast from "react-hot-toast";
 import { ACCEPTED_IMAGE_TYPES, DEFAULT_AVATAR } from "../../constants";
 import { useCreateGroupChat } from "../../hooks/useChat/useCreateGroupChat";
@@ -34,7 +34,7 @@ const GroupChatForm = () => {
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     formState: { errors },
   } = useForm<GroupChatSchemaType>({ resolver: zodResolver(groupChatSchema) });
 
@@ -43,7 +43,7 @@ const GroupChatForm = () => {
     selectedMembers,
   });
 
-  const nameValue = watch("name");
+  const nameValue = useWatch({ control, name: "name" });
 
   const handleAddOrRemoveMember = (newMember: string) => {
     if (selectedMembers.includes(newMember)) setSelectedMembers(prev =>prev.filter((member) => member !== newMember));

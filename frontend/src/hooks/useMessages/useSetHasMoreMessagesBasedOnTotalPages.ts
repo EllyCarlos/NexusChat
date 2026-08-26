@@ -8,5 +8,5 @@ type PropTypes = {
 export const useSetHasMoreMessagesBasedOnTotalPages = ({setHasMoreMessages,totalPages}:PropTypes) => {
     useEffect(() => {
         setHasMoreMessages(totalPages==1?false:true);
-      }, [totalPages]);
+      }, [setHasMoreMessages, totalPages]);
 };

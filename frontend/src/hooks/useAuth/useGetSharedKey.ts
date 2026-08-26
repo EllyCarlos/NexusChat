@@ -4,16 +4,23 @@ import {
   convertJwkToCryptoKey,
   deriveSharedSecretKey,
 } from "@/lib/client/encryption";
-import { ChatMember } from "@/lib/server/services/userService";
+import type { ChatMember } from "@/lib/server/services/userService";
 import {
   getStoredSharedKeyFromIndexedDB,
   getUserPrivateKeyFromIndexedDB,
   storeSharedKeyInIndexedDB,
 } from "../../lib/client/indexedDB";
+import { useCallback } from "react";
 
 export const useGetSharedKey = () => {
 
-  const getSharedKey = async ({loggedInUserId,otherMember}: {loggedInUserId: string,otherMember: ChatMember}) => {
+  const getSharedKey = useCallback(async ({
+    loggedInUserId,
+    otherMember,
+  }: {
+    loggedInUserId: string;
+    otherMember: Pick<ChatMember, "id" | "publicKey">;
+  }) => {
 
     // first we check the indexedDB for the shared key
     const existingSharedKeyInJwkFormat = await getStoredSharedKeyFromIndexedDB({
@@ -56,7 +63,7 @@ export const useGetSharedKey = () => {
         }
       }
     }
-  };
+  }, []);
 
   return { getSharedKey };
 };

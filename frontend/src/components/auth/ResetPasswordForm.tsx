@@ -32,7 +32,7 @@ export const ResetPasswordForm = ({ token }: PropTypes) => {
       toast.success(state.success.message)
       router.push("/auth/login")
     }
-  },[state])
+  },[router,state])
 
   const onSubmit: SubmitHandler<resetPasswordSchemaType> = ({ newPassword }) => {
     startTransition(()=>{resetPasswordAction({newPassword,token})});

@@ -1,6 +1,6 @@
 import { fetchUserChatsResponse } from "@/lib/server/services/userService";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { useRemoveMember } from "../../hooks/useMember/useRemoveMember";
 import { useToggleRemoveMemberForm } from "../../hooks/useUI/useToggleRemoveMemberForm";
@@ -23,18 +23,15 @@ const RemoveMemberForm = () => {
   const isMemberLength3 = selectedChatDetails && selectedChatDetails.ChatMembers.length === 3;
 
   const [searchVal, setSearchVal] = useState<string>("");
-  const [filteredMembers, setFilteredMembers] = useState<fetchUserChatsResponse['ChatMembers']>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
-  useEffect(() => {
+  const filteredMembers = useMemo<fetchUserChatsResponse['ChatMembers']>(() => {
     if (!selectedChatDetails) {
-      setFilteredMembers([]); // Clear if no chat details
-      return;
+      return [];
     }
 
-    // Always start filtering from the original chat members
     let membersToFilter = selectedChatDetails.ChatMembers.filter(
-        (member: ChatMemberType) => member.user.id !== loggedInUserId
+      (member: ChatMemberType) => member.user.id !== loggedInUserId
     );
 
     if (searchVal.trim().length > 0) {
@@ -43,9 +40,8 @@ const RemoveMemberForm = () => {
           member.user.username.toLowerCase().includes(searchVal.toLowerCase())
       );
     }
-    setFilteredMembers(membersToFilter);
-
-  }, [searchVal, selectedChatDetails, loggedInUserId]); // Dependencies are crucial for useEffect
+    return membersToFilter;
+  }, [searchVal, selectedChatDetails, loggedInUserId]);
 
   const toggleSelection = (memberId: string) => {
     if (selectedChatDetails) {

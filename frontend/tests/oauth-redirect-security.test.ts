@@ -42,7 +42,11 @@ vi.mock("@/lib/server/privateKeyRecoveryKeyWrap", () => ({
 
 import { verifyOAuthToken } from "../src/actions/auth.actions";
 import { metadata } from "../src/app/auth/oauth-redirect/layout";
-import { readAndScrubOAuthExchangeToken } from "../src/lib/client/oauthRedirect";
+import {
+  getOAuthAuthenticationPlan,
+  getOAuthMigrationCompletionPlan,
+  readAndScrubOAuthExchangeToken,
+} from "../src/lib/client/oauthRedirect";
 
 const EXCHANGE_TOKEN = "purpose-bound-oauth-exchange-token";
 const SESSION_TOKEN = "normal-session-token";
@@ -157,5 +161,50 @@ describe("OAuth redirect exposure hardening", () => {
     expect(pageSource).toContain("useMigrateOAuthPrivateKeyBackupToV2");
     expect(pageSource).toContain("oauthSetup");
     expect(pageSource).toContain("oauthMigration");
+  });
+
+  it("plans a normal existing-user OAuth login success and delayed redirect", () => {
+    expect(getOAuthAuthenticationPlan({})).toEqual({
+      kind: "login",
+      message: "Successfully logged in!",
+      redirectTo: "/",
+      delayMs: 1_000,
+    });
+  });
+
+  it("keeps OAuth setup active without an ordinary login redirect", () => {
+    expect(getOAuthAuthenticationPlan({ oauthSetup: { recoverySecret: "setup" } })).toEqual({
+      kind: "setup",
+    });
+  });
+
+  it("plans an OAuth migration preparation error and immediate redirect", () => {
+    expect(getOAuthAuthenticationPlan({ oauthMigrationError: true })).toEqual({
+      kind: "migration-error",
+      message: "Private-key backup migration was not completed.",
+      redirectTo: "/",
+    });
+  });
+
+  it("does not plan an ordinary redirect while OAuth migration is active", () => {
+    expect(getOAuthAuthenticationPlan({ oauthMigration: { version: 2 } })).toEqual({
+      kind: "migration",
+    });
+  });
+
+  it("plans success and redirect only after OAuth migration succeeds", () => {
+    expect(getOAuthMigrationCompletionPlan("succeeded")).toEqual({
+      kind: "succeeded",
+      message: "Successfully logged in!",
+      redirectTo: "/",
+    });
+  });
+
+  it("plans an error and redirect only after OAuth migration fails", () => {
+    expect(getOAuthMigrationCompletionPlan("failed")).toEqual({
+      kind: "failed",
+      message: "Private-key backup migration was not completed.",
+      redirectTo: "/",
+    });
   });
 });

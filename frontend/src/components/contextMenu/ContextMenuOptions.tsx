@@ -60,14 +60,14 @@ export const ContextMenuOptions = ({
     })
   })
   
-  const handleReplyClick = useCallback(()=>{
+  const handleReplyClick = ()=>{
     if(ref && ref.current){
       ref.current.focus();
       dispatch(setReplyingToMessageData((message?.attachments && message.attachments.length > 0) ? "Replying to Attachment" : message?.isTextMessage ? `Replying to "${(message?.decryptedMessage as string).length > 100 ? (message?.decryptedMessage as string).substring(0,100)+"...":(message?.decryptedMessage as string).substring(0,100)}"` : message?.audioUrl ? " Replying to Voice Note" : message?.isPollMessage ? "Replying to Poll" : message?.url ? 'Replying to Gif' : "n/a"));
       dispatch(setReplyingToMessageId(messageId));
       setOpenContextMenuMessageId(undefined)
     }
-  },[dispatch, message?.audioUrl, message?.decryptedMessage, message?.isPollMessage, message?.isTextMessage, message?.url, messageId, ref, setOpenContextMenuMessageId])
+  }
 
 
   const deleteMessage = useCallback(()=>{
@@ -79,14 +79,14 @@ export const ContextMenuOptions = ({
     socket?.emit(Event.MESSAGE_DELETE,payload);
   },[messageId, selectedChatDetails.id, setOpenContextMenuMessageId, socket]);
 
-  const handleCopyClick = useCallback(async()=>{
+  const handleCopyClick = async()=>{
     try {
       await navigator.clipboard.writeText(message?.decryptedMessage as string);
       setOpenContextMenuMessageId(undefined);
-    } catch (err) {
-      console.error("Failed to copy:", err);
+    } catch {
+      console.error("Failed to copy content to the clipboard.");
     }
-  },[message?.decryptedMessage, setOpenContextMenuMessageId])
+  }
 
   const handlePinClick = useCallback((e:MouseEvent<HTMLDivElement, globalThis.MouseEvent>)=>{
     e.stopPropagation();

@@ -2,7 +2,7 @@
 import { useGetFriendsQuery } from "@/lib/client/rtk-query/friend.api";
 import { fetchUserFriendsResponse } from "@/lib/server/services/userService";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useAddMember } from "../../hooks/useMember/useAddMember";
 import { useToggleAddMemberForm } from "../../hooks/useUI/useToggleAddMemberForm";
 import { selectSelectedChatDetails } from "../../lib/client/slices/chatSlice";
@@ -17,7 +17,20 @@ const AddMemberForm = () => {
 
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [searchVal, setSearchVal] = useState<string>("");
-  const [filteredFriends, setFilteredFriends] = useState<fetchUserFriendsResponse[]>([]);
+  const filteredFriends = useMemo<fetchUserFriendsResponse[]>(() => {
+    if (!friends) {
+      return [];
+    }
+
+    const normalizedSearch = searchVal.trim().toLowerCase();
+    if (!normalizedSearch) {
+      return friends;
+    }
+
+    return friends.filter((friend) =>
+      friend.username.toLowerCase().includes(normalizedSearch)
+    );
+  }, [friends, searchVal]);
 
   const { addMember } = useAddMember();
 
@@ -27,13 +40,6 @@ const AddMemberForm = () => {
       addMember({chatId: selectedChatDetails.id, members: selectedMembers});
     }
   };
-
-  useEffect(() => {
-    if (friends && searchVal.trim().length) {
-      const filtered = friends.filter(friend =>friend.username.toLowerCase().includes(searchVal.toLowerCase()));
-      setFilteredFriends(filtered);
-    }
-  }, [searchVal, friends]);
 
   const toggleSelection = (memberId: string) => {
     if (selectedMembers.includes(memberId)) {

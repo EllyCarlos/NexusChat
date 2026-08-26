@@ -28,17 +28,9 @@ export class PeerService {
     // Check if running in a browser environment and if the peer doesn't exist yet
     if (typeof window !== 'undefined' && !this.peer) {
       try {
-        console.log("Client-side: Initializing RTCPeerConnection...");
         this.peer = new RTCPeerConnection(servers);
-
-        // Optional: Add event listeners for debugging
-        this.peer.oniceconnectionstatechange = () => {
-          if (this.peer) {
-            console.log("ICE Connection State:", this.peer.iceConnectionState);
-          }
-        };
-      } catch (error) {
-        console.error('Error creating RTCPeerConnection:', error);
+      } catch {
+        console.error('Failed to initialize the peer connection.');
       }
     }
     return this.peer;
@@ -66,8 +58,8 @@ export class PeerService {
       const offer = await peer.createOffer();
       await peer.setLocalDescription(new RTCSessionDescription(offer));
       return offer;
-    } catch (error) {
-      console.error('Error in getOffer:', error);
+    } catch {
+      console.error('Failed to create a call offer.');
     }
   }
 
@@ -78,8 +70,8 @@ export class PeerService {
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(new RTCSessionDescription(answer));
       return answer;
-    } catch (error) {
-      console.error('Error in getAnswer:', error);
+    } catch {
+      console.error('Failed to create a call answer.');
     }
   }
 
@@ -87,14 +79,13 @@ export class PeerService {
     try {
       const peer = this.getSafePeer();
       await peer.setRemoteDescription(new RTCSessionDescription(ans));
-    } catch (error) {
-      console.error('Error in setRemoteDescription:', error);
+    } catch {
+      console.error('Failed to apply the remote call description.');
     }
   }
 
   closeConnection(): void {
     if (this.peer) {
-      console.log("Closing peer connection.");
       this.peer.close();
       this.peer = null;
     }

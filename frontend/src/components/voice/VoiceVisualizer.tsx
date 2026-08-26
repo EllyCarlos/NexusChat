@@ -16,7 +16,7 @@ const AudioVisualizer = ({ audioStream }: AudioVisualizerProps) => {
     // Create and resume AudioContext
     const audioCtx = new AudioContext();
     if (audioCtx.state === "suspended") {
-      audioCtx.resume().catch((err) => console.error("Failed to resume AudioContext:", err));
+      audioCtx.resume().catch(() => console.error("Failed to resume the audio context."));
     }
 
     const analyser = audioCtx.createAnalyser();

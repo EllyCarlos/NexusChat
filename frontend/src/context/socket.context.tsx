@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import io, { Socket } from "socket.io-client";
 import { selectAuthToken, selectLoggedInUser } from "../lib/client/slices/authSlice";
 import { useAppSelector } from "../lib/client/store/hooks";
@@ -10,30 +10,71 @@ export const useSocket = () => useContext(socketContext);
 
 type PropTypes = { children: React.ReactNode };
 
+export const createSocketStore = () => {
+  let currentSocket: Socket | null = null;
+  const listeners = new Set<() => void>();
+
+  return {
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getSnapshot() {
+      return currentSocket;
+    },
+    setSocket(nextSocket: Socket | null) {
+      if (currentSocket === nextSocket) return;
+      currentSocket = nextSocket;
+      listeners.forEach((listener) => listener());
+    },
+  };
+};
+
+const getServerSocketSnapshot = () => null;
+
 export const SocketProvider = ({ children }: PropTypes) => {
   const token = useAppSelector(selectAuthToken);
   const loggedInUser = useAppSelector(selectLoggedInUser);
+  const loggedInUserId = loggedInUser?.id;
 
-  const socketRef = useRef<Socket | null>(null); // Persistent instance
-  const [, setIsConnected] = useState(false);
+  const [socketStore] = useState(() => createSocketStore());
+  const socket = useSyncExternalStore(
+    socketStore.subscribe,
+    socketStore.getSnapshot,
+    getServerSocketSnapshot
+  );
 
-  if (typeof window !== "undefined" && loggedInUser && token && !socketRef.current) {
+  useEffect(() => {
+    if (!loggedInUserId || !token) {
+      return;
+    }
+
+    let nextSocket: Socket;
     try {
-      socketRef.current = io(process.env.NEXT_PUBLIC_ABSOLUTE_BASE_URL, {
+      nextSocket = io(process.env.NEXT_PUBLIC_ABSOLUTE_BASE_URL, {
         withCredentials: true,
         query: { token },
       });
 
-      socketRef.current.on("connect", () => setIsConnected(true));
-      socketRef.current.on("disconnect", () => setIsConnected(false));
-      socketRef.current.on("connect_error", (error) => console.error("Socket error:", error));
-    } catch (error) {
-      console.error("Socket error:", error);
+      const handleConnectError = () => console.error("Socket connection failed.");
+
+      nextSocket.on("connect_error", handleConnectError);
+      socketStore.setSocket(nextSocket);
+
+      return () => {
+        if (socketStore.getSnapshot() === nextSocket) {
+          socketStore.setSocket(null);
+        }
+        nextSocket.disconnect();
+        nextSocket.off("connect_error", handleConnectError);
+      };
+    } catch {
+      console.error("Socket initialization failed.");
     }
-  }
+  }, [loggedInUserId, socketStore, token]);
 
   return (
-    <socketContext.Provider value={socketRef.current}>
+    <socketContext.Provider value={socket}>
       {children}
     </socketContext.Provider>
   );

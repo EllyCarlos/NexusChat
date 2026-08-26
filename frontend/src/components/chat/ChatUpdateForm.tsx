@@ -5,7 +5,7 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import { useState } from "react";
-import { SubmitHandler, useForm } from "react-hook-form";
+import { SubmitHandler, useForm, useWatch } from "react-hook-form";
 import { useUpdateChat } from "../../hooks/useChat/useUpdateChat";
 import { selectSelectedChatDetails } from "../../lib/client/slices/chatSlice";
 import { useAppSelector } from "../../lib/client/store/hooks";
@@ -28,11 +28,15 @@ const ChatUpdateForm = () => {
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     formState: { errors },
   } = useForm<GroupChatSchemaType>({ resolver: zodResolver(groupChatSchema) });
 
-  const nameVal = watch("name", selectedChatDetails?.name || "");
+  const nameVal = useWatch({
+    control,
+    name: "name",
+    defaultValue: selectedChatDetails?.name || "",
+  });
 
   const onSubmit: SubmitHandler<GroupChatSchemaType> = ({ name }) => {
     if (selectedChatDetails) {

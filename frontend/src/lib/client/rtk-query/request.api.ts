@@ -53,8 +53,8 @@ export const requestApi = createApi({
               }
             )
           );
-        } catch (error) {
-          console.log(error);
+        } catch {
+          console.error("Failed to update the friend-request cache.");
         }
       },
     }),

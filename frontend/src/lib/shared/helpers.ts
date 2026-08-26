@@ -88,7 +88,7 @@ const base64ToUint8Array = (base64: string) => {
     // The Uint8Array now contains the byte representation of the original data encoded in the Base64 string.
     return bytes;
   } catch {
-    // console.log('error in base64ToUint8Array helper function',error);
+    // Invalid input is represented as an undefined result.
   }
 };
 
@@ -125,8 +125,8 @@ const formatRelativeTime = (stringDate: string | Date) => {
       return `${years}y ago`;
     }
     
-  } catch (error) {
-    console.log(error);
+  } catch {
+    console.error("Failed to format a relative timestamp.");
   }
 };
 

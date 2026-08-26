@@ -3,7 +3,7 @@ import { useSocket } from "@/context/socket.context";
 import { useSocketEvent } from "@/hooks/useSocket/useSocketEvent";
 import { Event } from "@/interfaces/events.interface";
 import { selectLoggedInUser } from "@/lib/client/slices/authSlice";
-import { selectCalleeIdPopulatedFromRecentCalls, selectCallHistoryId, setIsInCall, setMyGlobalStream } from "@/lib/client/slices/callSlice";
+import { selectCalleeIdPopulatedFromRecentCalls, selectCallHistoryId, setIsInCall } from "@/lib/client/slices/callSlice";
 import { selectSelectedChatDetails } from "@/lib/client/slices/chatSlice";
 import { selectIncomingCallInfo, selectIsIncomingCall, setCallDisplay } from "@/lib/client/slices/uiSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
@@ -11,7 +11,7 @@ import { usePeer } from "@/context/PeerProvider";
 import { fetchUserChatsResponse } from "@/lib/server/services/userService";
 import { getOtherMemberOfPrivateChat } from "@/lib/shared/helpers";
 import Image from "next/image";
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { CallHangIcon } from "../ui/icons/CallHangIcon";
 import { CameraOff } from "../ui/icons/CameraOff";
@@ -104,8 +104,9 @@ const CallDisplay = () => {
 
     // my stream
     const [myStream, setMyStream] = useState<MediaStream | null>(null);
-    const [, setMyAudioStream] = useState<MediaStream | null>(null);
-    const [myVideoStream, setMyVideoStream] = useState<MediaStream | null>(null);
+    const myVideoStream = useMemo(() => myStream?.getVideoTracks()[0]
+        ? new MediaStream(myStream.getVideoTracks())
+        : null, [myStream]);
 
     // remote stream
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -131,50 +132,14 @@ const CallDisplay = () => {
     const toggleMic = useCallback(()=>setMicOn((prev)=>!prev),[]);
     const toggleCamera = useCallback(()=>setCameraOn((prev)=>!prev),[]);
 
-    const updateStreamAccordingToPreferences = useCallback(async () => {
-        try {
-            if(!isInComingCall || isAccepted){
-                
-                // Stop existing tracks before getting a new stream
-                myStream?.getTracks().forEach(track => track.stop());
-
-                if (!micOn && !cameraOn) {
-                    const emptyStream = new MediaStream(); // Empty stream
-                    // emptyStream.addTrack(new MediaStreamTrack());
-                    // emptyStream.addTrack(new MediaStreamTrack());
-                    setMyStream(emptyStream);
-                    return;
-                }
-        
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: micOn,
-                    video: cameraOn
-                });
-                setMyStream(stream);
-            }
-        } catch (err) {
-            console.error("Error accessing media devices: ", err);
-        }
-    }, [isInComingCall,isAccepted,micOn, cameraOn]); 
-    
     const sendStreams = useCallback(() => {
         if (myStream && isAccepted && peerService?.peer) {
-            console.log('inside send streams');
             try {
-                const audioStream = myStream.getAudioTracks()[0];
-                if (audioStream) {
-                    setMyAudioStream(new MediaStream([audioStream]));
-                }
-                const videoStream = myStream.getVideoTracks()[0];
-                if (videoStream) {
-                    setMyVideoStream(new MediaStream([videoStream]));
-                }
-
                 myStream.getTracks().forEach(track => {
                     peerService.peer?.addTrack(track, myStream);
                 });
-            } catch (error) {
-                console.log('error in sending streams', error);
+            } catch {
+                console.error('Failed to attach local media streams.');
             }
         }
     }, [myStream, isAccepted, peerService]);
@@ -192,7 +157,6 @@ const CallDisplay = () => {
                 return;
             }
             
-            console.log('offer created');
             const calleeId = selectedChatDetails?.ChatMembers?.filter(member => member?.user?.id !== loggedInUserId)[0]?.user?.id || calleeIdPopulatedFromRecentCalls;
             
             if (offer && calleeId) {
@@ -206,11 +170,11 @@ const CallDisplay = () => {
                 toast.error("Failed to initiate call");
                 dispatch(setCallDisplay(false));
             }
-        } catch (error) {
-            console.error('Error in callUser:', error);
+        } catch {
+            console.error('Failed to start the call.');
             toast.error('Failed to create call offer');
         }
-    }, [dispatch, selectedChatDetails, socket, calleeIdPopulatedFromRecentCalls, peerService]);
+    }, [dispatch, selectedChatDetails, socket, calleeIdPopulatedFromRecentCalls, peerService, loggedInUserId]);
 
     const handleAcceptCall = useCallback(async () => {
         if (!incomingCallInfo || !peerService) {
@@ -242,15 +206,14 @@ const CallDisplay = () => {
             setRemoteUserId(incomingCallInfo.caller.id);
             setIsAccepted(true);
             socket?.emit(Event.CALL_ACCEPTED, callAcceptPayload);
-        } catch (error) {
-            console.error('Error accepting call:', error);
+        } catch {
+            console.error('Failed to accept the call.');
             toast.error("Failed to accept call");
         }
-    }, [incomingCallInfo, socket, peerService, isAccepted]);
+    }, [incomingCallInfo, socket, peerService]);
 
     const handleCallAcceptedEvent = useCallback(async ({ answer, callHistoryId, calleeId }: CallAcceptedEventReceivePayload) => {
         if (!peerService) {
-            console.error('Peer service not available');
             return;
         }
         
@@ -259,14 +222,13 @@ const CallDisplay = () => {
             setCallHistoryId(callHistoryId);
             setRemoteUserId(calleeId);
             setIsAccepted(true);
-        } catch (error) {
-            console.error('Error handling call accepted:', error);
+        } catch {
+            console.error('Failed to apply the accepted call state.');
         }
     }, [peerService]);
 
     const handleNegoNeededEvent = useCallback(async ({ callerId, offer, callHistoryId }: NegoNeededEventReceivePayload) => {
         if (!peerService) {
-            console.error('Peer service not available');
             return;
         }
 
@@ -285,14 +247,13 @@ const CallDisplay = () => {
             } else {
                 toast.error("Error in negotiation");
             }
-        } catch (error) {
-            console.error('Error in nego needed event:', error);
+        } catch {
+            console.error('Failed to handle call negotiation.');
         }
     }, [socket, peerService]);
 
     const handleNegoNeeded = useCallback(async () => {
         if (!peerService) {
-            console.error('Peer service not available');
             return;
         }
 
@@ -309,45 +270,40 @@ const CallDisplay = () => {
             } else {
                 toast.error("Error occurred in negotiation");
             }
-        } catch (error) {
-            console.error('Error in nego needed:', error);
+        } catch {
+            console.error('Failed to initiate call negotiation.');
         }
     }, [activeCallHistoryId, remoteUserId, socket, peerService]);
 
-    const handleNegoFinalEvent = useCallback(async ({ answer, calleeId }: NegoFinalEventReceivePayload) => {
+    const handleNegoFinalEvent = useCallback(async ({ answer }: NegoFinalEventReceivePayload) => {
         if (!peerService) {
-            console.error('Peer service not available');
             return;
         }
 
         try {
             await peerService.setRemoteDescription(answer);
-            console.log('Negotiation accepted from', calleeId);
-        } catch (error) {
-            console.error('Error in setting remote description:', error);
+        } catch {
+            console.error('Failed to finalize call negotiation.');
         }
     }, [peerService]);
 
-    const handleRemoteIceCandidate = useCallback(async ({ callerId, candidate }: IceCandiateEventReceivePayload) => {
-        console.log('remote ice candidate received from', callerId, 'candidate is', candidate);
+    const handleRemoteIceCandidate = useCallback(async ({ candidate }: IceCandiateEventReceivePayload) => {
         if (peerService?.peer) {
             try {
                 await peerService.peer.addIceCandidate(candidate);
-            } catch (error) {
-                console.error('Error adding ICE candidate:', error);
+            } catch {
+                console.error('Failed to add a remote ICE candidate.');
             }
         }
     }, [peerService]);
 
     const handleICECandidate = useCallback(async (e: RTCPeerConnectionIceEvent) => {
         if (e.candidate && remoteUserId && activeCallHistoryId) {
-            console.log("receiving ice candidate locally");
             const payload: IceCandidateEventSendPayload = {
                 candidate: e.candidate,
                 calleeId: remoteUserId,
                 callHistoryId:activeCallHistoryId
             };
-            console.log('emitted ice candidate');
             socket?.emit(Event.ICE_CANDIDATE, payload);
         }
     }, [activeCallHistoryId, remoteUserId, socket]);
@@ -366,7 +322,6 @@ const CallDisplay = () => {
         remoteStream?.getTracks().forEach(track => track.stop());
         setMyStream(null);
         setRemoteStream(null);
-        setMyVideoStream(null);
         setRemoteVideoStream(null);
         setRemoteAudioStream(null);
         // Close the peer connection if it exists
@@ -396,7 +351,6 @@ const CallDisplay = () => {
         remoteStream?.getTracks().forEach(track => track.stop());
         setMyStream(null);
         setRemoteStream(null);
-        setMyVideoStream(null);
         setRemoteVideoStream(null);
         setRemoteAudioStream(null);
         // Close the peer connection if it exists
@@ -426,7 +380,6 @@ const CallDisplay = () => {
         if (peerService?.peer) {
             peerService.peer.addEventListener("icecandidate", handleICECandidate);
             peerService.peer.addEventListener("track", (event: RTCTrackEvent) => {
-                console.log("Remote track received:", event.streams);
                 // The event.streams array contains one or more MediaStream objects.
                 // You might need to handle multiple streams or filter based on track kind (audio/video).
                 if (event.streams && event.streams[0]) {

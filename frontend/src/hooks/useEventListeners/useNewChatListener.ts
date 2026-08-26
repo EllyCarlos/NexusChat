@@ -12,8 +12,6 @@ export const useNewChatListener = () => {
   const loggedInUserId = useAppSelector(selectLoggedInUser)?.id;
 
   useSocketEvent(Event.NEW_CHAT, (newChat: fetchUserChatsResponse) => {
-    console.log('new chat',newChat);
-
     if (loggedInUserId && !newChat.isGroupChat) {
       const member = getOtherMemberOfPrivateChat(newChat, loggedInUserId).user;
 

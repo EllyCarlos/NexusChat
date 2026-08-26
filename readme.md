@@ -88,7 +88,7 @@ NexusChat/
 │   ├── src/routes/                 # Express routers
 │   ├── src/controllers/            # Request handlers and business logic
 │   ├── src/middlewares/            # Authentication, upload, and error middleware
-│   ├── prisma/                     # Prisma schema and seed script (no migrations)
+│   ├── prisma/                     # Prisma schema (no migrations)
 │   ├── .env.development.example    # Development environment template
 │   ├── .env.production.example     # Production environment template
 │   ├── package.json

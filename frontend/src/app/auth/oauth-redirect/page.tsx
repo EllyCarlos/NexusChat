@@ -9,25 +9,28 @@ import { useMigrateOAuthPrivateKeyBackupToV2 } from '@/hooks/useAuth/useMigrateO
 import { useStoreNewOAuthV2UserKeys } from '@/hooks/useAuth/useStoreNewOAuthV2UserKeys';
 import { useStoreUserPrivateKeyInIndexedDB } from '@/hooks/useAuth/useStoreUserPrivateKeyInIndexedDB';
 import { useUpdateLoggedInUserPublicKeyInState } from '@/hooks/useAuth/useUpdateLoggedInUserPublicKeyInState';
-import { readAndScrubOAuthExchangeToken } from '@/lib/client/oauthRedirect';
+import {
+  getOAuthAuthenticationPlan,
+  getOAuthMigrationCompletionPlan,
+  readAndScrubOAuthExchangeToken,
+} from '@/lib/client/oauthRedirect';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   startTransition,
   Suspense,
   useActionState,
   useEffect,
-  useRef,
-  useState
+  useRef
 } from 'react';
 import toast from 'react-hot-toast';
 
 function OAuthRedirectPageContent() {
-  const [state, verifyOAuthTokenAction] = useActionState(verifyOAuthToken, undefined);
+  const [state, verifyOAuthTokenAction, isVerificationPending] = useActionState(
+    verifyOAuthToken,
+    undefined
+  );
   const searchParams = useSearchParams();
   const errorParam = searchParams.get('error');
-  const [exchangeToken, setExchangeToken] = useState<string | null>(null);
-  const [isOAuthNewUser, setOAuthNewUser] = useState<boolean>(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const oauthVerificationStartedRef = useRef(false);
   const migrationResultHandledRef = useRef(false);
   const router = useRouter();
@@ -49,88 +52,81 @@ function OAuthRedirectPageContent() {
       return;
     }
 
-    setExchangeToken(token);
-  }, [errorParam, router]);
-
-  // Step 2: Trigger token verification after the browser URL is clean.
-  useEffect(() => {
-    if (exchangeToken && !oauthVerificationStartedRef.current) {
+    if (!oauthVerificationStartedRef.current) {
       oauthVerificationStartedRef.current = true;
-      setIsProcessing(true); // Set processing to true immediately
-
-      startTransition(() => {
-        verifyOAuthTokenAction(exchangeToken);
-      });
-      setExchangeToken(null);
+      startTransition(() => verifyOAuthTokenAction(token));
     }
-  }, [exchangeToken, verifyOAuthTokenAction]);
+  }, [errorParam, router, verifyOAuthTokenAction]);
 
   // Step 3: Handle response and store token
   useEffect(() => {
-    if (state) {
-      // Reset processing flag when state is received, regardless of success or error
-      setIsProcessing(false);
-
-      // Handle errors
-      if (state.errors?.message) {
-        toast.error(`Authentication failed: ${state.errors.message}`);
-        router.push(`/auth/login?error=${encodeURIComponent(state.errors.message)}`);
-        return;
-      }
-
-      // Handle successful authentication
-      if (state?.data?.user && state?.data?.sessionToken) { // Ensure user and sessionToken exist
-        const sessionToken = state.data.sessionToken;
-        if (sessionToken) {
-          dispatch(setAuthToken(sessionToken));
-        }
-
-        if (state.data.oauthSetup) {
-          toast.success('Welcome! Setting up your account...');
-          setOAuthNewUser(true);
-        } else if (state.data.oauthMigration) {
-          setIsProcessing(true);
-        } else if (state.data.oauthMigrationError) {
-          toast.error('Private-key backup migration was not completed.');
-          router.push('/');
-        } else {
-          toast.success('Successfully logged in!'); // Changed message for existing users
-          // For existing users, redirect immediately
-          setTimeout(() => {
-            router.push('/');
-          }, 1000);
-        }
-      }
+    if (!state) {
+      return;
     }
+
+    if (state.errors?.message) {
+      toast.error(`Authentication failed: ${state.errors.message}`);
+      router.push(`/auth/login?error=${encodeURIComponent(state.errors.message)}`);
+      return;
+    }
+
+    if (!state.data?.user || !state.data.sessionToken) {
+      return;
+    }
+
+    dispatch(setAuthToken(state.data.sessionToken));
+    const plan = getOAuthAuthenticationPlan(state.data);
+
+    if (plan.kind === "setup") {
+      toast.success('Welcome! Setting up your account...');
+      return;
+    }
+    if (plan.kind === "migration") {
+      return;
+    }
+    if (plan.kind === "migration-error") {
+      toast.error(plan.message);
+      router.push(plan.redirectTo);
+      return;
+    }
+
+    toast.success(plan.message);
+    const redirectTimer = setTimeout(() => {
+      router.push(plan.redirectTo);
+    }, plan.delayMs);
+
+    return () => clearTimeout(redirectTimer);
   }, [state, router, dispatch]);
 
   // Step 4: Generate and provision keys only when the server issues V2 setup material.
   const oauthSetup = state?.data?.oauthSetup;
   const oauthMigration = state?.data?.oauthMigration;
   const userId = state?.data?.user?.id;
+  const isOAuthNewUser = Boolean(oauthSetup);
 
   const { status: oauthMigrationStatus } =
     useMigrateOAuthPrivateKeyBackupToV2({
       userId,
       migration: oauthMigration,
     });
+  const isProcessing =
+    isVerificationPending ||
+    oauthMigrationStatus === "checking" ||
+    oauthMigrationStatus === "migrating";
 
   useEffect(() => {
-    if (
-      migrationResultHandledRef.current ||
-      !["skipped", "succeeded", "failed"].includes(oauthMigrationStatus)
-    ) {
+    const plan = getOAuthMigrationCompletionPlan(oauthMigrationStatus);
+    if (migrationResultHandledRef.current || plan.kind === "pending") {
       return;
     }
 
     migrationResultHandledRef.current = true;
-    setIsProcessing(false);
-    if (oauthMigrationStatus === "failed") {
-      toast.error('Private-key backup migration was not completed.');
+    if (plan.kind === "failed") {
+      toast.error(plan.message);
     } else {
-      toast.success('Successfully logged in!');
+      toast.success(plan.message);
     }
-    router.push('/');
+    router.push(plan.redirectTo);
   }, [oauthMigrationStatus, router]);
 
   const { privateKey, publicKey } = useGenerateKeyPair({
@@ -178,21 +174,26 @@ function OAuthRedirectPageContent() {
   useEffect(() => {
     if (isOAuthNewUser && publicKeyReturnedFromServerAfterBeingStored) {
       toast.success('Account setup complete!');
-      setTimeout(() => {
+      const redirectTimer = setTimeout(() => {
         router.push('/');
       }, 1500);
+
+      return () => clearTimeout(redirectTimer);
     }
   }, [isOAuthNewUser, publicKeyReturnedFromServerAfterBeingStored, router]);
 
   // Handle URL parameters for error display
   useEffect(() => {
-    if (errorParam) {
-      toast.error(`Authentication error: ${decodeURIComponent(errorParam)}`);
-      // Redirect to login after showing error
-      setTimeout(() => {
-        router.push('/auth/login');
-      }, 3000);
+    if (!errorParam) {
+      return;
     }
+
+    toast.error(`Authentication error: ${decodeURIComponent(errorParam)}`);
+    const redirectTimer = setTimeout(() => {
+      router.push('/auth/login');
+    }, 3000);
+
+    return () => clearTimeout(redirectTimer);
   }, [errorParam, router]);
 
   return (

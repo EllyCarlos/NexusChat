@@ -47,8 +47,6 @@ export const useMigrateOAuthPrivateKeyBackupToV2 = ({
     }
 
     migrationStartedRef.current = true;
-    setStatus("checking");
-
     void (async () => {
       try {
         const storedPrivateKey =
@@ -90,13 +88,14 @@ export const useMigrateOAuthPrivateKeyBackupToV2 = ({
     })();
   }, [migration, migrateAction, suppliedPrivateKey, userId]);
 
-  useEffect(() => {
-    if (state?.errors?.message) {
-      setStatus("failed");
-    } else if (state?.data?.migrated) {
-      setStatus("succeeded");
-    }
-  }, [state]);
+  const actionStatus: OAuthPrivateKeyMigrationStatus | null = state?.errors?.message
+    ? "failed"
+    : state?.data?.migrated
+      ? "succeeded"
+      : null;
+  const effectiveStatus =
+    actionStatus ??
+    (status === "idle" && userId && migration ? "checking" : status);
 
-  return { status };
+  return { status: effectiveStatus };
 };

@@ -10,7 +10,7 @@ import { useSetHasMoreMessagesBasedOnTotalPages } from "@/hooks/useMessages/useS
 import { useSetPageToOneOnChatChange } from "@/hooks/useMessages/useSetPageToOneOnChatChange";
 import { Message } from "@/interfaces/message.interface";
 import { fetchUserChatsResponse } from "@/lib/server/services/userService";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { CircleLoading } from "../shared/CircleLoading";
 import { MessageListItem } from "./MessageListItem";
 import { TypingIndicator } from "./TypingIndicator";
@@ -38,9 +38,9 @@ export const MessageList = ({messages,selectedChatDetails,totalPages,loggedInUse
   const {isFetching: IsFetchingMessages,getMessages} = useGetMessages();
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
-  const getPreviousMessages = ({chatId,page}:{chatId:string,page:number}) => {
+  const getPreviousMessages = useCallback(({chatId,page}:{chatId:string,page:number}) => {
     getMessages({chatId,page})
-  }
+  }, [getMessages]);
 
   useSetPageToOneOnChatChange({setPage});
   useScrollToBottomOnChatSelect({messageContainerRef});

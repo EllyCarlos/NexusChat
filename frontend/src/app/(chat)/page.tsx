@@ -14,31 +14,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySessionToken } from "@/lib/server/session";
 
-export default async function ChatPage() {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("session");
-
-  if (!sessionCookie) {
-    redirect("/login");
-  }
-
-  let loggedInUserId: string | null = null;
-  try {
-    const payload = await verifySessionToken(sessionCookie.value);
-    if (payload && payload.userId && new Date(payload.expiresAt) > new Date()) {
-      loggedInUserId = payload.userId;
-    } else {
-      redirect("/login");
-    }
-  } catch (err) {
-    console.error("Session decryption failed:", err);
-    redirect("/login");
-  }
-
-  if (!loggedInUserId) {
-    redirect("/login");
-  }
-
+const loadChatPageData = async (loggedInUserId: string) => {
   try {
     const [userRes, friendsRes, friendRequestRes, chatsRes, callHistoryRes] = await Promise.allSettled([
       fetchUserInfo({ loggedInUserId }),
@@ -58,41 +34,74 @@ export default async function ChatPage() {
     const callHistory = extract(callHistoryRes);
 
     if (!user || !friends || !friendRequest || !chats || !callHistory) {
-      console.warn("Missing critical data:", {
-        user, friends, friendRequest, chats, callHistory,
-      });
-      return <ServerDownMessage />;
+      console.warn("Required chat data is unavailable.");
+      return null;
     }
 
-    return (
-      <ChatWrapper
-        chats={chats}
-        friendRequest={friendRequest}
-        friends={friends}
-        user={user}
-        callHistory={callHistory}
-      >
-        <div className="h-full w-full flex p-4 max-md:p-2 gap-x-6 bg-background select-none">
-          <ChatListClientWrapper>
-            <ChatListSkeletonWrapper />
-          </ChatListClientWrapper>
+    return { user, friends, friendRequest, chats, callHistory };
+  } catch {
+    console.error("Failed to load required chat data.");
+    return null;
+  }
+};
 
-          <ChatAreaWrapper>
-            <div className="flex flex-col gap-y-3 h-full justify-between relative">
-              <ChatHeaderWrapper />
-              <MessageListSkeletonWrapper loggedInUserId={user.id} />
-              <MessageInputAreaWrapper />
-            </div>
-          </ChatAreaWrapper>
+export default async function ChatPage() {
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get("session");
 
-          <ChatDetailsWrapper>
-            <ChatDetailsSkeletonWrapper loggedInUser={user} />
-          </ChatDetailsWrapper>
-        </div>
-      </ChatWrapper>
-    );
-  } catch (err) {
-    console.error("Unexpected critical error:", err);
+  if (!sessionCookie) {
+    redirect("/login");
+  }
+
+  let loggedInUserId: string | null = null;
+  try {
+    const payload = await verifySessionToken(sessionCookie.value);
+    if (payload && payload.userId && new Date(payload.expiresAt) > new Date()) {
+      loggedInUserId = payload.userId;
+    } else {
+      redirect("/login");
+    }
+  } catch {
+    console.error("Session verification failed while loading chat.");
+    redirect("/login");
+  }
+
+  if (!loggedInUserId) {
+    redirect("/login");
+  }
+
+  const data = await loadChatPageData(loggedInUserId);
+  if (!data) {
     return <ServerDownMessage />;
   }
+
+  const { user, friends, friendRequest, chats, callHistory } = data;
+
+  return (
+    <ChatWrapper
+      chats={chats}
+      friendRequest={friendRequest}
+      friends={friends}
+      user={user}
+      callHistory={callHistory}
+    >
+      <div className="h-full w-full flex p-4 max-md:p-2 gap-x-6 bg-background select-none">
+        <ChatListClientWrapper>
+          <ChatListSkeletonWrapper />
+        </ChatListClientWrapper>
+
+        <ChatAreaWrapper>
+          <div className="flex flex-col gap-y-3 h-full justify-between relative">
+            <ChatHeaderWrapper />
+            <MessageListSkeletonWrapper loggedInUserId={user.id} />
+            <MessageInputAreaWrapper />
+          </div>
+        </ChatAreaWrapper>
+
+        <ChatDetailsWrapper>
+          <ChatDetailsSkeletonWrapper loggedInUser={user} />
+        </ChatDetailsWrapper>
+      </div>
+    </ChatWrapper>
+  );
 }

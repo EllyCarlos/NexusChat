@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { prisma } from '@/lib/server/prisma'; // Adjust path to your Prisma client
 import { verifySession } from '@/lib/server/session'; // Assuming you have a session verification utility
 
-export async function POST(req: Request) {
+export async function POST() {
   try {
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get('session')?.value; // Get your session cookie
@@ -30,8 +30,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true }, { status: 200 });
 
-  } catch (error) {
-    console.error('Failed to complete private key recovery on backend:', error);
+  } catch {
+    console.error('Failed to complete private-key recovery.');
     return NextResponse.json({ error: 'Failed to complete recovery' }, { status: 500 });
   }
 }

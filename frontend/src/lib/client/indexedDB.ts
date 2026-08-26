@@ -15,7 +15,7 @@ const initializeIndexDb = () => {
   // Check if the IndexedDB API is supported by the browser
   const indexDb = window.indexedDB;
   if (!indexDb) {
-    console.log("IndexedDB could not be found in this browser.");
+    console.warn("IndexedDB is unavailable in this browser.");
     return; // Exit the function if IndexedDB is not supported
   }
 
@@ -40,13 +40,11 @@ const initializeIndexDb = () => {
   // Event triggered when the database connection is successfully established
   request.onsuccess = function () {
     // Currently no operation is performed here
-    console.log("IndexedDB initialized successfully.");
   };
 
   // Event triggered if there is an error opening or interacting with the database
-  request.onerror = function (event) {
-    console.error("An error occurred with IndexedDB"); // Log a general error message
-    console.error(event); // Log the specific error event for debugging
+  request.onerror = function () {
+    console.error("Failed to initialize IndexedDB.");
   };
 };
 
@@ -145,8 +143,8 @@ const getUserPrivateKeyFromIndexedDB = async ({userId}:{userId: string}): Promis
     };
 
     // Error callback if there is an issue opening the database
-    request.onerror = function (event) {
-      console.error("Error opening database:", event);
+    request.onerror = function () {
+      console.error("Failed to open private-key storage.");
       reject(null); // Reject the Promise with null if the database cannot be opened
     };
   });
@@ -176,11 +174,6 @@ const storeSharedKeyInIndexedDB = async ({userId1,userId2,sharedKeyJwk}:{userId1
       sharedKey: sharedKeyJwk, // Store the converted JWK shared key
     });
 
-    // Success callback when the shared key is successfully stored
-    putRequest.onsuccess = function () {
-      console.log('shared key stored successfully'); // Log success message when the shared key is stored successfully
-    };
-
     // Error callback if there is an error while storing the shared key
     putRequest.onerror = function () {
       console.error("Error adding shared key"); // Log error message if the shared key cannot be added
@@ -193,8 +186,8 @@ const storeSharedKeyInIndexedDB = async ({userId1,userId2,sharedKeyJwk}:{userId1
   };
 
   // Error callback if there is an issue opening the database
-  request.onerror = (event) => {
-    console.error("Database error:", event); // Log error message if the database cannot be opened
+  request.onerror = () => {
+    console.error("Failed to open shared-key storage.");
   };
 };
 
@@ -234,15 +227,15 @@ const getStoredSharedKeyFromIndexedDB = async ({userId1,userId2}:{userId1:string
       };
 
       // Error callback if there is an error during the get operation
-      getRequest.onerror = function (event) {
-        console.error("Error retrieving shared key:", event); // Log the error details to the console
+      getRequest.onerror = function () {
+        console.error("Failed to retrieve a shared key.");
         resolve(null); // Resolve with null if there's an error retrieving the shared key
       };
     };
 
     // Error callback if there is an issue opening the database
     request.onerror = function (event) {
-      console.error("Database error:", event); // Log the error details to the console
+      console.error("Failed to open shared-key storage.");
       reject(event); // Reject the promise with the error event if the database cannot be opened
     };
   });
