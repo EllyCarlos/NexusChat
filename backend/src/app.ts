@@ -21,7 +21,6 @@ export type CreateAppOptions = {
   environment: string;
   routes?: AppRoute[];
   requestLogger?: ReturnType<typeof createRequestLogger>;
-  getConnectedClientCount?: () => number;
   io?: unknown;
 };
 
@@ -63,7 +62,6 @@ export const createApp = ({
   }));
   app.use(createMutationOriginMiddleware(originPolicy));
   app.use(passport.initialize());
-  app.use(express.json());
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
   app.use(cookieParser());

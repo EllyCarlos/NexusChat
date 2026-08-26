@@ -33,6 +33,7 @@ const createTestApplication = (writeLog: (line: string) => void = () => undefine
   });
   router.get("/jwt", verifyToken, (_req, res) => res.status(204).send());
   router.post("/file", testUpload.single("file"), (_req, res) => res.status(204).send());
+  router.post("/json", (req, res) => res.status(200).json({ length: req.body.content.length }));
 
   return createApp({
     originPolicy: createOriginPolicy({
@@ -42,7 +43,6 @@ const createTestApplication = (writeLog: (line: string) => void = () => undefine
     environment: "test",
     routes: [{ path: "/test", router }],
     requestLogger: createRequestLogger({ stream: { write: writeLog } }),
-    getConnectedClientCount: () => 3,
   });
 };
 
@@ -62,6 +62,17 @@ describe("HTTP application boundary", () => {
 
     expect(app).toBeTypeOf("function");
     expect(listenSpy).not.toHaveBeenCalled();
+  });
+
+  it("retains the configured 10 MB JSON parser beyond the Express default limit", async () => {
+    const content = "x".repeat(150 * 1_024);
+
+    const response = await request(createTestApplication())
+      .post("/test/json")
+      .send({ content });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ length: content.length });
   });
 
   it.each(["/definitely-not-a-route", "/api/v1/unknown"]) (

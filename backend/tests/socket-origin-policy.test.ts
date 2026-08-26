@@ -87,7 +87,7 @@ describe("Socket.IO transport origin admission", () => {
   });
 
   it("configures Engine.IO admission before Socket authentication", () => {
-    const source = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../src/bootstrap/create-server.ts", import.meta.url), "utf8");
 
     expect(source.indexOf("allowRequest: createSocketAllowRequest(originPolicy)")).toBeGreaterThan(-1);
     expect(source.indexOf("allowRequest: createSocketAllowRequest(originPolicy)")).toBeLessThan(

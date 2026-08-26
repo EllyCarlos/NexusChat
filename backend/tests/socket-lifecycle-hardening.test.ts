@@ -268,7 +268,7 @@ describe("pre-auth cheap rejection", () => {
   });
 
   it("keeps the explicit Engine.IO byte cap and namespace timeout", () => {
-    const source = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../src/bootstrap/create-server.ts", import.meta.url), "utf8");
     expect(source).toContain("connectTimeout: 10_000");
     expect(source).toContain("maxHttpBufferSize: 1_000_000");
     expect(source).not.toContain("req.ip");

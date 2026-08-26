@@ -13,12 +13,3 @@ export const prisma: PrismaClient = globalForPrisma.prisma ?? new PrismaClient({
 if (env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma
 }
-
-// Graceful shutdown
-const cleanup = async () => {
-  await prisma.$disconnect()
-}
-
-process.on('beforeExit', cleanup)
-process.on('SIGINT', cleanup)
-process.on('SIGTERM', cleanup)
