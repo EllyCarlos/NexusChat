@@ -198,10 +198,12 @@ const createChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response
         })
         
         const io:Server = req.app.get("io");
+        const payload = {...populatedChat,typingUsers:[]}
         joinMembersInChatRoom({memberIds,roomToJoin:newChat.id,io})
-        emitEventToRoom({event:Events.NEW_CHAT,io,room:newChat.id,data:{...populatedChat,typingUsers:[]}});
-        return res.status(201);
+        emitEventToRoom({event:Events.NEW_CHAT,io,room:newChat.id,data:payload});
+        return res.status(201).json(payload);
     }
+    return next(new CustomError("Only group chats can be created through this endpoint",400))
     } catch (error) {
       if (!avatarCommitted && uploadedPublicId) {
         try {
@@ -475,7 +477,7 @@ const addMemberToChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Res
       members:newMemberDetails
     }
     emitEvent({data:payload,event:Events.NEW_MEMBER_ADDED,io,users:oldExistingMembersIds});
-    return res.status(200);
+    return res.status(200).json(payload);
 })
 
 const removeMemberFromChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
@@ -557,7 +559,7 @@ const removeMemberFromChat = asyncErrorHandler(async(req:AuthenticatedRequest,re
     }
     emitEvent({io,event:Events.MEMBER_REMOVED,data:payload,users:remainingMembers})
 
-    return res.status(200);
+    return res.status(200).json(payload);
 })
 
 const updateChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
@@ -615,7 +617,7 @@ const updateChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response
       const io:Server = req.app.get("io");
       emitEventToRoom({io,event:Events.GROUP_CHAT_UPDATE,room:id,data:payload})
 
-      return res.status(200)
+      return res.status(200).json(updatedChat)
     } catch (error) {
       if (!avatarCommitted && uploadedPublicId) {
         try {

@@ -95,12 +95,13 @@ const responseRecorder = () => {
   return { response, status, json, send, end };
 };
 
-const expectIncompleteResponse = (
+const expectJsonResponse = (
   recorder: ReturnType<typeof responseRecorder>,
   statusCode: number,
+  body: unknown,
 ) => {
   expect(recorder.status).toHaveBeenCalledWith(statusCode);
-  expect(recorder.json).not.toHaveBeenCalled();
+  expect(recorder.json).toHaveBeenCalledWith(body);
   expect(recorder.send).not.toHaveBeenCalled();
   expect(recorder.end).not.toHaveBeenCalled();
 };
@@ -115,7 +116,7 @@ describe("chat flow characterization", () => {
     vi.mocked(prisma.chat.findFirst).mockResolvedValue(authorizedChat() as never);
   });
 
-  it("creates a group chat transactionally, joins all members, emits NEW_CHAT, and only sets status", async () => {
+  it("creates a group chat transactionally, joins all members, emits NEW_CHAT, and returns the projected chat", async () => {
     const avatar = { path: "temporary-avatar" } as Express.Multer.File;
     const transactionChatCreate = vi.fn().mockResolvedValue({ id: CHAT_ID });
     const transactionMemberCreateMany = vi.fn().mockResolvedValue({ count: 3 });
@@ -181,17 +182,22 @@ describe("chat flow characterization", () => {
     });
     expectCalledBefore(transactionMemberCreateMany, vi.mocked(joinMembersInChatRoom));
     expectCalledBefore(vi.mocked(joinMembersInChatRoom), vi.mocked(emitEventToRoom));
-    expectIncompleteResponse(recorder, 201);
+    expectJsonResponse(recorder, 201, { ...populatedChat, typingUsers: [] });
     expect(cleanupTemporaryFiles).toHaveBeenCalledWith([avatar]);
   });
 
-  it("does no persistence, realtime work, or response completion for isGroupChat=false", async () => {
+  it("rejects isGroupChat=false without persistence or realtime work", async () => {
     const recorder = responseRecorder();
+    const next = vi.fn();
 
     await createChat(request({
       body: { isGroupChat: "false", members: ["member-1"], name: "Ignored" },
-    }), recorder.response, vi.fn() as NextFunction);
+    }), recorder.response, next as NextFunction);
 
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 400,
+      message: "Only group chats can be created through this endpoint",
+    }));
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(uploadFilesToCloudinary).not.toHaveBeenCalled();
     expect(joinMembersInChatRoom).not.toHaveBeenCalled();
@@ -203,7 +209,7 @@ describe("chat flow characterization", () => {
     expect(cleanupTemporaryFiles).toHaveBeenCalledWith([]);
   });
 
-  it("adds group members after admin authorization, joins their sockets, emits both events, and only sets status", async () => {
+  it("adds group members after admin authorization, joins their sockets, emits both events, and returns the event payload", async () => {
     vi.mocked(prisma.chatMembers.findMany)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -250,10 +256,13 @@ describe("chat flow characterization", () => {
     expectCalledBefore(vi.mocked(prisma.chat.findFirst), vi.mocked(prisma.chatMembers.createMany));
     expectCalledBefore(vi.mocked(prisma.chatMembers.createMany), vi.mocked(joinMembersInChatRoom));
     expectCalledBefore(vi.mocked(joinMembersInChatRoom), vi.mocked(emitEvent));
-    expectIncompleteResponse(recorder, 200);
+    expectJsonResponse(recorder, 200, {
+      chatId: CHAT_ID,
+      members: [newMember],
+    });
   });
 
-  it("removes members, removes their sockets, emits removed and remaining-member events, and only sets status", async () => {
+  it("removes members, removes their sockets, emits removed and remaining-member events, and returns the event payload", async () => {
     vi.mocked(prisma.chatMembers.findMany).mockResolvedValue([
       { userId: CREATOR_ID },
       { userId: "member-1" },
@@ -287,7 +296,10 @@ describe("chat flow characterization", () => {
     });
     expectCalledBefore(vi.mocked(prisma.chatMembers.deleteMany), vi.mocked(disconnectMembersFromChatRoom));
     expectCalledBefore(vi.mocked(disconnectMembersFromChatRoom), vi.mocked(emitEvent));
-    expectIncompleteResponse(recorder, 200);
+    expectJsonResponse(recorder, 200, {
+      chatId: CHAT_ID,
+      membersId: ["member-3"],
+    });
   });
 
   it("reassigns the administrator before deleting membership when the current admin leaves", async () => {
@@ -335,12 +347,13 @@ describe("chat flow characterization", () => {
     expect(disconnectMembersFromChatRoom).not.toHaveBeenCalled();
   });
 
-  it("updates group metadata after admin authorization, emits GROUP_CHAT_UPDATE, and only sets status", async () => {
-    vi.mocked(prisma.chat.update).mockResolvedValue({
+  it("updates group metadata after admin authorization, emits GROUP_CHAT_UPDATE, and returns the projected chat", async () => {
+    const updatedChat = {
       id: CHAT_ID,
       name: "Renamed group",
       avatar: "existing-avatar",
-    } as never);
+    };
+    vi.mocked(prisma.chat.update).mockResolvedValue(updatedChat as never);
     const recorder = responseRecorder();
 
     await updateChat(
@@ -367,6 +380,6 @@ describe("chat flow characterization", () => {
     expect(deleteFilesFromCloudinary).not.toHaveBeenCalled();
     expectCalledBefore(vi.mocked(prisma.chat.findFirst), vi.mocked(prisma.chat.update));
     expectCalledBefore(vi.mocked(prisma.chat.update), vi.mocked(emitEventToRoom));
-    expectIncompleteResponse(recorder, 200);
+    expectJsonResponse(recorder, 200, updatedChat);
   });
 });
