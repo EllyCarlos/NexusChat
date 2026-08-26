@@ -25,6 +25,7 @@ vi.mock("../src/utils/generic.js", () => ({ sendPushNotification: vi.fn() }));
 vi.mock("../src/socket/webrtc/socket.js", () => ({ default: vi.fn() }));
 
 import { Events } from "../src/enums/event/event.enum.js";
+import { ApplicationError } from "../src/errors/application-error.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import { MAX_SOCKET_AUDIO_BYTES, MAX_SOCKET_TEXT_LENGTH } from "../src/schemas/socket.schema.js";
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
@@ -373,5 +374,26 @@ describe("authorization remains authoritative", () => {
     await harness.trigger(Events.USER_TYPING, { chatId: CHAT_ID });
 
     expect(JSON.stringify(vi.mocked(harness.socket.emit).mock.calls)).not.toContain("secret Prisma failure");
+  });
+
+  it("sanitizes known application failures without changing the Socket client contract", async () => {
+    const applicationError = new ApplicationError({
+      code: "FORBIDDEN",
+      message: "Operation is not permitted",
+      statusCode: 403,
+    });
+    vi.mocked(prisma.chat.findFirst).mockRejectedValue(applicationError);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const harness = await createHarness();
+    vi.mocked(harness.socket.emit).mockClear();
+
+    await harness.trigger(Events.USER_TYPING, { chatId: CHAT_ID });
+
+    const clientOutput = JSON.stringify(vi.mocked(harness.socket.emit).mock.calls);
+    const logOutput = JSON.stringify(errorSpy.mock.calls);
+    expect(clientOutput).not.toContain(applicationError.message);
+    expect(clientOutput).not.toContain(applicationError.code);
+    expect(logOutput).toContain("FORBIDDEN");
+    expect(logOutput).not.toContain(applicationError.message);
   });
 });

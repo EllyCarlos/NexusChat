@@ -11,6 +11,7 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
 }));
 
 import { createApp } from "../src/app.js";
+import { ApplicationError } from "../src/errors/application-error.js";
 import { createRequestLogger } from "../src/middlewares/request-logger.middleware.js";
 import { verifyToken } from "../src/middlewares/verify-token.middleware.js";
 import { createOriginPolicy } from "../src/security/origin-policy.js";
@@ -27,6 +28,11 @@ const createTestApplication = (writeLog: (line: string) => void = () => undefine
     error.stack = `Error: ${INTERNAL_MESSAGE}\n at C:\\internal\\source.ts:12:3`;
     next(error);
   });
+  router.get("/application", (_req, _res, next) => next(new ApplicationError({
+    code: "CONFLICT",
+    message: "Application conflict is safe",
+    statusCode: 409,
+  })));
   router.get("/custom", (_req, _res, next) => next(new CustomError("Conflict is safe", 409)));
   router.get("/validation", () => {
     z.object({ name: z.string().min(1, "Name is required") }).parse({ name: "" });
@@ -103,6 +109,17 @@ describe("HTTP application boundary", () => {
 
     expect(response.status).toBe(409);
     expect(response.body).toEqual({ success: false, message: "Conflict is safe" });
+  });
+
+  it("maps ApplicationError without changing the public error response shape", async () => {
+    const response = await request(createTestApplication()).get("/test/application");
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      success: false,
+      message: "Application conflict is safe",
+    });
+    expect(response.body).not.toHaveProperty("code");
   });
 
   it("preserves safe Zod validation detail", async () => {

@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { CustomError } from "../utils/error.utils.js";
+import { ApplicationError } from "../errors/application-error.js";
 import { ZodError } from "zod";
 import jwt from 'jsonwebtoken'
 import { MulterError } from "multer";
@@ -51,11 +51,12 @@ export const errorMiddleware = (
     return sendError(res, 401, "Invalid or expired token");
   }
 
-  if (err instanceof CustomError) {
-    if (err.statusCode >= 500) {
+  if (err instanceof ApplicationError) {
+    const statusCode = err.statusCode ?? 500;
+    if (statusCode >= 500) {
       logServerError("Application request failed.", err);
     }
-    return sendError(res, err.statusCode, err.message);
+    return sendError(res, statusCode, err.message);
   }
 
   logServerError("Unexpected request failure.", err);
