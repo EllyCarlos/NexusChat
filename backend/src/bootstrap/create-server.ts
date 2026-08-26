@@ -1,10 +1,9 @@
 import { createServer, type Server as HttpServer } from "node:http";
 import { Server as SocketServer } from "socket.io";
-import "../config/cloudinary.config.js";
-import "../passport/google.strategy.js";
 
 import { createApp } from "../app.js";
 import { config } from "../config/env.config.js";
+import { initializeProviders } from "../config/providers.config.js";
 import { socketAuthenticatorMiddleware } from "../middlewares/socket-auth.middleware.js";
 import attachmentRoutes from "../routes/attachment.router.js";
 import authRoutes from "../routes/auth.router.js";
@@ -12,7 +11,6 @@ import chatRoutes from "../routes/chat.router.js";
 import messageRoutes from "../routes/message.router.js";
 import requestRoutes from "../routes/request.router.js";
 import userRoutes from "../routes/user.router.js";
-import { env } from "../schemas/env.schema.js";
 import {
   createOriginPolicy,
   createSocketAllowRequest,
@@ -26,14 +24,15 @@ export type BackendServer = {
 };
 
 export const createBackendServer = (): BackendServer => {
+  initializeProviders(config);
   const originPolicy = createOriginPolicy({
-    environment: env.NODE_ENV,
-    frontendOrigin: config.clientUrl,
-    vercelUrl: process.env.VERCEL_URL,
+    environment: config.app.environment,
+    frontendOrigin: config.app.clientUrl,
+    vercelUrl: config.app.vercelUrl,
   });
   const app = createApp({
     originPolicy,
-    environment: env.NODE_ENV,
+    environment: config.app.environment,
     routes: [
       { path: "/api/v1/auth", router: authRoutes },
       { path: "/api/v1/chat", router: chatRoutes },

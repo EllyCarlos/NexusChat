@@ -1,5 +1,5 @@
 import { Message } from "firebase-admin/messaging";
-import { messaging } from "../config/firebase.config.js";
+import { getFirebaseMessaging } from "../config/firebase.config.js";
 import { notificationTitles } from "../constants/notification-title.contant.js";
 import { logServerError } from "./safe-logger.utils.js";
 
@@ -29,7 +29,7 @@ export const sendPushNotification = ({fcmToken,body,title}:{fcmToken:string,body
               },
             },
           };
-        void messaging.send(payload).catch((error) => {
+        void getFirebaseMessaging().send(payload).catch((error) => {
           logServerError("FCM send failed.", error);
         });
     }

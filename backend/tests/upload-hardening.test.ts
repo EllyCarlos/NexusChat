@@ -60,6 +60,21 @@ vi.mock("../src/utils/generic.js", () => ({
 
 vi.mock("../src/utils/email.util.js", () => ({ sendMail: vi.fn() }));
 vi.mock("../src/utils/jwt.utils.js", () => ({ signPasswordResetToken: vi.fn() }));
+vi.mock("../src/config/env.config.js", async () => {
+  const { tmpdir: getTempDirectory } = await import("node:os");
+  const { join: joinPath } = await import("node:path");
+  return {
+    config: {
+      app: { frontendUrl: "https://nexuswebapp.vercel.app" },
+      upload: {
+        tempDirectory: joinPath(
+          getTempDirectory(),
+          `nexuschat-upload-tests-${process.pid}`,
+        ),
+      },
+    },
+  };
+});
 
 import { uploadAttachment } from "../src/controllers/attachment.controller.js";
 import { createChat, updateChat } from "../src/controllers/chat.controller.js";
@@ -196,7 +211,6 @@ const authorizedChat = () => ({
 });
 
 beforeAll(async () => {
-  process.env.NEXUSCHAT_UPLOAD_TEMP_DIR = TEST_TEMP_DIRECTORY;
   await resetTempDirectory();
 });
 
@@ -235,7 +249,6 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  delete process.env.NEXUSCHAT_UPLOAD_TEMP_DIR;
   await rm(TEST_TEMP_DIRECTORY, { recursive: true, force: true });
 });
 

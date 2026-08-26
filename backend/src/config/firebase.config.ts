@@ -1,7 +1,14 @@
-import { cert, getApps, initializeApp, type ServiceAccount } from "firebase-admin/app";
-import { getMessaging } from "firebase-admin/messaging";
-import { createRequire } from "module";
-import { env } from "../schemas/env.schema.js";
+import {
+  cert,
+  getApp,
+  getApps,
+  initializeApp,
+  type ServiceAccount,
+} from "firebase-admin/app";
+import { getMessaging, type Messaging } from "firebase-admin/messaging";
+import { createRequire } from "node:module";
+import { ApplicationError } from "../errors/application-error.js";
+import type { RuntimeConfig } from "../interfaces/config/config.interface.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
 
 interface ServiceAccountCredentials {
@@ -10,42 +17,70 @@ interface ServiceAccountCredentials {
   client_email: string;
 }
 
-let serviceAccount: ServiceAccount;
+let messaging: Messaging | undefined;
 
-if (env.NODE_ENV === 'production') {
-  // Production: Use environment variables
-  if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
-    throw new Error('Missing Firebase environment variables. Please set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY');
-  }
-  
-  serviceAccount = {
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'), // Handle escaped newlines
-  };
-} else {
-  // Development: Use local JSON file
+const loadDevelopmentServiceAccount = (): ServiceAccount => {
   try {
     const require = createRequire(import.meta.url);
-    const credentials = require("../../firebase-admin-cred.json");
-    const typedCredentials = credentials as ServiceAccountCredentials;
-    
-    serviceAccount = {
-      projectId: typedCredentials.project_id,
-      privateKey: typedCredentials.private_key,
-      clientEmail: typedCredentials.client_email,
+    const credentials = require("../../firebase-admin-cred.json") as ServiceAccountCredentials;
+    return {
+      projectId: credentials.project_id,
+      privateKey: credentials.private_key,
+      clientEmail: credentials.client_email,
     };
   } catch (error) {
-    logServerError('Firebase credentials loading failed.', error);
-    throw new Error('Firebase credentials unavailable.');
+    logServerError("Firebase credentials loading failed.", error);
+    throw new ApplicationError({
+      code: "FIREBASE_CONFIGURATION_UNAVAILABLE",
+      message: "Firebase credentials unavailable.",
+      statusCode: 500,
+    });
   }
-}
+};
 
-// Initialize Firebase Admin SDK
-if (!getApps().length) {
-  initializeApp({
-    credential: cert(serviceAccount),
-  });
-}
+const loadProductionServiceAccount = (
+  configuration: RuntimeConfig["firebase"],
+): ServiceAccount => {
+  if (!configuration.projectId || !configuration.clientEmail || !configuration.privateKey) {
+    throw new ApplicationError({
+      code: "FIREBASE_CONFIGURATION_UNAVAILABLE",
+      message: "Firebase credentials unavailable.",
+      statusCode: 500,
+    });
+  }
 
-export const messaging = getMessaging();
+  return {
+    projectId: configuration.projectId,
+    clientEmail: configuration.clientEmail,
+    privateKey: configuration.privateKey.replace(/\\n/g, "\n"),
+  };
+};
+
+export const initializeFirebaseAdmin = (
+  configuration: Pick<RuntimeConfig, "app" | "firebase">,
+): Messaging => {
+  if (messaging) {
+    return messaging;
+  }
+
+  const serviceAccount = configuration.app.environment === "production"
+    ? loadProductionServiceAccount(configuration.firebase)
+    : loadDevelopmentServiceAccount();
+  const firebaseApp = getApps().length > 0
+    ? getApp()
+    : initializeApp({ credential: cert(serviceAccount) });
+
+  messaging = getMessaging(firebaseApp);
+  return messaging;
+};
+
+export const getFirebaseMessaging = (): Messaging => {
+  if (!messaging) {
+    throw new ApplicationError({
+      code: "FIREBASE_NOT_INITIALIZED",
+      message: "Firebase provider is not initialized.",
+      statusCode: 500,
+    });
+  }
+  return messaging;
+};

@@ -11,13 +11,13 @@ export const OAUTH_STATE_COOKIE_NAME = "nexuschat_oauth_state";
 
 const oauthStateCookieOptions: CookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: config.app.environment === "production",
   sameSite: "lax",
   path: "/api/v1/auth/google",
 };
 
 const getOAuthFailureUrl = (errorCode: string) =>
-  `${config.clientUrl}/auth/oauth-redirect?error=${errorCode}`;
+  `${config.app.clientUrl}/auth/oauth-redirect?error=${errorCode}`;
 
 export const beginGoogleOAuth = (
   req: Request,

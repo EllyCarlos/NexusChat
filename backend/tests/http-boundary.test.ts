@@ -2,7 +2,11 @@ import express from "express";
 import multer from "multer";
 import request from "supertest";
 import { z } from "zod";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../src/config/env.config.js", () => ({
+  config: { auth: { jwtSecret: "test-secret-that-is-long-enough" } },
+}));
 
 vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: {
@@ -53,10 +57,6 @@ const createTestApplication = (writeLog: (line: string) => void = () => undefine
 };
 
 describe("HTTP application boundary", () => {
-  beforeEach(() => {
-    process.env.JWT_SECRET = "test-secret-that-is-long-enough";
-  });
-
   afterEach(() => {
     vi.restoreAllMocks();
   });

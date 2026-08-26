@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RequestHandler } from "express";
 import multer from "multer";
+import { config } from "../config/env.config.js";
 import {
   ACCEPTED_FILE_MIME_TYPES,
   ACCEPTED_IMAGE_TYPES,
@@ -23,7 +23,7 @@ const COMMON_LIMITS = {
 } as const;
 
 export const resolveUploadTempDirectory = (): string =>
-  process.env.NEXUSCHAT_UPLOAD_TEMP_DIR || join(tmpdir(), "nexuschat-uploads");
+  config.upload.tempDirectory;
 
 const storage = multer.diskStorage({
   destination: (_request, _file, callback) => {

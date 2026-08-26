@@ -1,4 +1,4 @@
-import { env } from "../../schemas/env.schema.js";
+import { config } from "../../config/env.config.js";
 import { emailLayout } from "./email.layout.js";
 
 const welcomeEmailBody = (username: string) => {
@@ -50,7 +50,7 @@ const otpVerificationBody = (username: string, otp: string) => {
         <p>A verification code is required to access your NexusChat account.</p>
         <p>Your one-time verification code (OTP) is:</p>
         <p class='otp'>${otp}</p>
-        <p>This code is valid for ${env.OTP_EXPIRATION_MINUTES} minutes. Please enter it on the verification page to proceed.</p>
+        <p>This code is valid for ${config.auth.otpExpirationMinutes} minutes. Please enter it on the verification page to proceed.</p>
         <p>If you did not request OTP verification, you can safely ignore this email.</p>
         <p>For your security, please do not share this code with anyone.</p>
         <p>Thanks,</p>
@@ -66,7 +66,7 @@ const privateKeyRecoveryBody = (username:string,verificationUrl:string) => {
         <a href="${verificationUrl}">
             <button>Verify Private Key Recovery</button>
         </a>
-        <p>For security reasons, this link will expire in ${env.OTP_EXPIRATION_MINUTES} minutes.</p>
+        <p>For security reasons, this link will expire in ${config.auth.otpExpirationMinutes} minutes.</p>
         <p>Thank you for your prompt attention to this matter.</p>
         <p>Best regards,</p>
         <p>NexusChat Support Team</p>

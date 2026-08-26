@@ -5,13 +5,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/config/nodemailer.config.js", () => ({
-  transporter: { sendMail: mocks.sendMail },
+  getEmailTransporter: () => ({ sendMail: mocks.sendMail }),
 }));
 
-vi.mock("../src/schemas/env.schema.js", () => ({
-  env: {
-    EMAIL: "sender@example.test",
-    OTP_EXPIRATION_MINUTES: "5",
+vi.mock("../src/config/env.config.js", () => ({
+  config: {
+    auth: { otpExpirationMinutes: "5" },
+    email: { sender: "sender@example.test" },
   },
 }));
 

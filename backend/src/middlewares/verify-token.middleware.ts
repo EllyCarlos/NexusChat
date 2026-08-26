@@ -28,13 +28,6 @@ export const verifyToken = asyncErrorHandler(async (req: AuthenticatedRequest, r
         return next(new CustomError("Token missing, please login again", 401));
     }
 
-    // --- Ensure JWT_SECRET is available ---
-    const secretKey = process.env.JWT_SECRET;
-    if (!secretKey) {
-        console.error("Server configuration error: JWT_SECRET environment variable is not defined!");
-        return next(new CustomError("Internal server error", 500));
-    }
-
     let decodedInfo: SessionTokenPayload;
     try {
         decodedInfo = verifyApiSessionToken(token);

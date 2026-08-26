@@ -1,8 +1,17 @@
-import {v2 as cloudinary} from 'cloudinary'
-import { env } from '../schemas/env.schema.js'
+import { v2 as cloudinary } from "cloudinary";
+import type { CloudinaryConfig } from "../interfaces/config/config.interface.js";
 
-cloudinary.config({
-    cloud_name:env.CLOUDINARY_CLOUD_NAME,
-    api_key:env.CLOUDINARY_API_KEY,
-    api_secret:env.CLOUDINARY_API_SECRET
-})
+let isConfigured = false;
+
+export const configureCloudinary = (configuration: CloudinaryConfig): void => {
+  if (isConfigured) {
+    return;
+  }
+
+  cloudinary.config({
+    cloud_name: configuration.cloudName,
+    api_key: configuration.apiKey,
+    api_secret: configuration.apiSecret,
+  });
+  isConfigured = true;
+};

@@ -3,7 +3,6 @@ import { config } from "../config/env.config.js";
 import type { AuthenticatedRequest, OAuthAuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from '../lib/prisma.lib.js';
 import type { fcmTokenSchemaType } from "../schemas/auth.schema.js";
-import { env } from "../schemas/env.schema.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { signOAuthExchangeToken } from "../utils/jwt.utils.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
@@ -94,15 +93,15 @@ const redirectHandler = asyncErrorHandler(async (req: OAuthAuthenticatedRequest,
       console.log('OAuth redirect issued.');
       return res.redirect(
         307,
-        `${config.clientUrl}/auth/oauth-redirect#token=${encodeURIComponent(tempToken)}`
+        `${config.app.clientUrl}/auth/oauth-redirect#token=${encodeURIComponent(tempToken)}`
       );
     }
 
     console.warn('OAuth callback did not produce a user.');
-    return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?error=no_user_data`);
+    return res.redirect(307, `${config.app.clientUrl}/auth/oauth-redirect?error=no_user_data`);
   } catch {
     console.error('OAuth redirect failed.');
-    return res.redirect(307, `${config.clientUrl}/auth/oauth-redirect?error=oauth_failed`);
+    return res.redirect(307, `${config.app.clientUrl}/auth/oauth-redirect?error=oauth_failed`);
   }
 });
 
@@ -150,9 +149,9 @@ const logoutHandler = asyncErrorHandler(async (req: AuthenticatedRequest, res: R
   // Changed cookie name from 'sessionToken' to 'session'
   res.clearCookie('session', {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
+    secure: config.app.environment === 'production',
     path: '/',
-    domain: env.NODE_ENV === 'production' ? config.cookieDomain : undefined,
+    domain: config.app.environment === 'production' ? config.app.cookieDomain : undefined,
     partitioned: true // For CHIPS
   });
 

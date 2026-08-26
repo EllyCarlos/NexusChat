@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/config/firebase.config.js", () => ({
-  messaging: { send: mocks.send },
+  getFirebaseMessaging: () => ({ send: mocks.send }),
 }));
 
 import { sendPushNotification } from "../src/utils/generic.js";

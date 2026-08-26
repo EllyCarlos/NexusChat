@@ -1,4 +1,5 @@
 
+import { config } from "../config/env.config.js";
 import { prisma } from "../lib/prisma.lib.js";
 import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/auth.util.js";
 import { sendMail } from "../utils/email.util.js";
@@ -7,9 +8,8 @@ import { signPasswordResetToken } from "../utils/jwt.utils.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
 import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 
-// Get base URL from environment variables
 const getBaseUrl = () => {
-    return process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://nexuswebapp.vercel.app';
+    return config.app.frontendUrl;
 };
 
 // Generate password reset token

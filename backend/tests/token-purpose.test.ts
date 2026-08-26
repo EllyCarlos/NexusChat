@@ -3,6 +3,10 @@ import jwt, { type SignOptions } from "jsonwebtoken";
 import type { Socket } from "socket.io";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../src/config/env.config.js", () => ({
+  config: { auth: { jwtSecret: "phase-1c-1a-test-secret" } },
+}));
+
 vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: {
     user: {
@@ -74,7 +78,6 @@ const getRejectedAuthError = (next: ReturnType<typeof vi.fn>) => {
 
 describe("backend token-purpose enforcement", () => {
   beforeEach(() => {
-    process.env.JWT_SECRET = JWT_SECRET;
     vi.clearAllMocks();
   });
 
@@ -232,11 +235,4 @@ describe("backend token-purpose enforcement", () => {
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it("requires JWT_SECRET at runtime", () => {
-    delete process.env.JWT_SECRET;
-
-    expect(() => signPasswordResetToken({ userId: USER_ID, expiresAt: futureExpiry() })).toThrow(
-      "JWT_SECRET",
-    );
-  });
 });

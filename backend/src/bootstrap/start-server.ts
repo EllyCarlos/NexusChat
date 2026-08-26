@@ -1,7 +1,6 @@
 import type { Server as HttpServer } from "node:http";
 import { config } from "../config/env.config.js";
 import { prisma } from "../lib/prisma.lib.js";
-import { env } from "../schemas/env.schema.js";
 import {
   createBackendServer,
   type BackendServer,
@@ -41,22 +40,22 @@ const listen = (httpServer: HttpServer, port: string | number) => new Promise<vo
 });
 
 const logSuccessfulStartup = (port: string | number) => {
-  const baseUrl = env.NODE_ENV === "production"
-    ? "https://nexuschat-4slv.onrender.com"
+  const baseUrl = config.app.environment === "production"
+    ? config.app.serverUrl
     : `http://localhost:${port}`;
 
   console.log(`Server started at ${baseUrl}`);
-  console.log(`Environment: ${env.NODE_ENV}`);
-  console.log(`CORS origin: ${config.clientUrl}`);
+  console.log(`Environment: ${config.app.environment}`);
+  console.log(`CORS origin: ${config.app.clientUrl}`);
   console.log("Socket.IO enabled with authentication");
-  console.log(env.NODE_ENV === "production"
+  console.log(config.app.environment === "production"
     ? "Production mode - security measures active"
     : "Development mode");
 };
 
 export const startServer = async ({
   createServer = createBackendServer,
-  port = env.PORT,
+  port = config.app.port,
   disconnectPrisma = () => prisma.$disconnect(),
   registerHandlers = registerProcessHandlers,
   logStarted = logSuccessfulStartup,

@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { config } from "../config/env.config.js";
 
 export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -9,16 +10,8 @@ type OAuthStateCookiePayload = {
 
 const OAUTH_STATE_SIGNATURE_CONTEXT = "nexuschat:oauth-state:v1";
 
-const getSigningSecret = () => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET environment variable is not defined.");
-  }
-  return secret;
-};
-
 const signPayload = (encodedPayload: string) =>
-  createHmac("sha256", getSigningSecret())
+  createHmac("sha256", config.auth.jwtSecret)
     .update(`${OAUTH_STATE_SIGNATURE_CONTEXT}:${encodedPayload}`)
     .digest("base64url");
 

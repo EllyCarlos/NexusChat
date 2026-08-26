@@ -1,4 +1,5 @@
 import jwt, { type JwtPayload } from "jsonwebtoken";
+import { config } from "../config/env.config.js";
 import {
   SESSION_TOKEN_AUDIENCES,
   TOKEN_AUDIENCES,
@@ -35,14 +36,6 @@ type OAuthExchangeTokenInput = {
   userId: string;
   isNewUser: boolean;
   email: string;
-};
-
-const getJwtSecret = (): string => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET environment variable is not defined.");
-  }
-  return secret;
 };
 
 const validatePurposeTokenInput = ({ userId, expiresAt }: PurposeTokenInput) => {
@@ -84,7 +77,7 @@ const signPurposeToken = ({
       expiresAt: expiresAt.toISOString(),
       tokenType,
     },
-    getJwtSecret(),
+    config.auth.jwtSecret,
     {
       algorithm: "HS256",
       expiresIn,
@@ -137,7 +130,7 @@ const verifySessionTokenForAudience = (
   token: string,
   expectedAudience: typeof TOKEN_AUDIENCES.API | typeof TOKEN_AUDIENCES.SOCKET,
 ): SessionTokenPayload => {
-  const payload = jwt.verify(token, getJwtSecret(), {
+  const payload = jwt.verify(token, config.auth.jwtSecret, {
     algorithms: ["HS256"],
     issuer: TOKEN_ISSUERS.WEB,
     audience: expectedAudience,

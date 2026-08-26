@@ -24,12 +24,6 @@ export const socketAuthenticatorMiddleware = async (socket: Socket, next: NextFu
             return next(new CustomError("Invalid token format", 401));
         }
 
-        const secret = process.env.JWT_SECRET;
-        if (!secret) {
-            console.error("JWT_SECRET environment variable is not set");
-            return next(new CustomError("Server configuration error", 500));
-        }
-
         const decodedPayload = verifySocketSessionToken(token);
 
         const existingUser = await prisma.user.findUnique({

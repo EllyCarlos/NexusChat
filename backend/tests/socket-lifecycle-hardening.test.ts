@@ -3,6 +3,10 @@ import type { NextFunction } from "connect";
 import type { Server, Socket } from "socket.io";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../src/config/env.config.js", () => ({
+  config: { auth: { jwtSecret: "obvious-fake-socket-test-secret" } },
+}));
+
 vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: {
     user: { update: vi.fn(), findUnique: vi.fn() },

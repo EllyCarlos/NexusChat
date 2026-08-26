@@ -5,18 +5,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   disconnectPrisma: vi.fn(async () => undefined),
+  initializeProviders: vi.fn(),
   registerSocketHandlers: vi.fn(),
   route: vi.fn((_request, _response, next) => next()),
   socketAuthenticator: vi.fn((_socket, next) => next()),
+  runtimeConfig: {
+    app: {
+      environment: "test",
+      port: "4000",
+      clientUrl: "http://localhost:3000",
+      serverUrl: "http://localhost:4000",
+    },
+  },
 }));
 
-vi.mock("../src/config/cloudinary.config.js", () => ({}));
-vi.mock("../src/passport/google.strategy.js", () => ({}));
 vi.mock("../src/config/env.config.js", () => ({
-  config: { clientUrl: "http://localhost:3000" },
+  config: mocks.runtimeConfig,
 }));
-vi.mock("../src/schemas/env.schema.js", () => ({
-  env: { NODE_ENV: "test", PORT: "4000" },
+vi.mock("../src/config/providers.config.js", () => ({
+  initializeProviders: mocks.initializeProviders,
 }));
 vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: { $disconnect: mocks.disconnectPrisma },
@@ -79,6 +86,7 @@ describe("backend server construction", () => {
     await import("../src/bootstrap/create-server.js");
 
     expect(listenSpy).not.toHaveBeenCalled();
+    expect(mocks.initializeProviders).not.toHaveBeenCalled();
     listenSpy.mockRestore();
   });
 
@@ -92,6 +100,10 @@ describe("backend server construction", () => {
     expect(runtime.httpServer).toBeInstanceOf(HttpServer);
     expect(runtime.httpServer.listening).toBe(false);
     expect(runtime.io).toBeDefined();
+    expect(mocks.initializeProviders).toHaveBeenCalledWith(mocks.runtimeConfig);
+    expect(mocks.initializeProviders.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.registerSocketHandlers.mock.invocationCallOrder[0],
+    );
     expect(useSpy).toHaveBeenCalledWith(mocks.socketAuthenticator);
     expect(mocks.registerSocketHandlers).toHaveBeenCalledWith(runtime.io);
     runtime.io.close();
