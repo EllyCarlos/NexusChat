@@ -18,12 +18,17 @@ const AddMemberForm = () => {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [searchVal, setSearchVal] = useState<string>("");
   const filteredFriends = useMemo<fetchUserFriendsResponse[]>(() => {
-    if (!friends || !searchVal.trim()) {
+    if (!friends) {
       return [];
     }
 
+    const normalizedSearch = searchVal.trim().toLowerCase();
+    if (!normalizedSearch) {
+      return friends;
+    }
+
     return friends.filter((friend) =>
-      friend.username.toLowerCase().includes(searchVal.toLowerCase())
+      friend.username.toLowerCase().includes(normalizedSearch)
     );
   }, [friends, searchVal]);
 

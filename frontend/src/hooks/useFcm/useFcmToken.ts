@@ -6,80 +6,128 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-async function getNotificationPermissionAndToken(){
+export type FcmTokenLoadResult = {
+  token: string | null;
+  permission: NotificationPermission;
+};
+
+type LoadFcmTokenWithRetryOptions = {
+  getPermissionAndToken?: () => Promise<FcmTokenLoadResult | null>;
+  maxAttempts?: number;
+  retryDelayMs?: number;
+  signal?: AbortSignal;
+  wait?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
+  onRetry?: () => void;
+  onExhausted?: () => void;
+};
+
+const MAX_FCM_TOKEN_ATTEMPTS = 4;
+const FCM_TOKEN_RETRY_DELAY_MS = 500;
+
+const waitForFcmRetry = (delayMs: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", handleAbort);
+      resolve();
+    };
+    const timeoutId = setTimeout(finish, delayMs);
+    const handleAbort = () => {
+      clearTimeout(timeoutId);
+      finish();
+    };
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+    if (signal?.aborted) {
+      handleAbort();
+    }
+  });
+
+async function getNotificationPermissionAndToken(): Promise<FcmTokenLoadResult | null> {
   // Step 1: Check if Notifications are supported in the browser.
   if (!("Notification" in window)) {
     return null;
   }
 
-  // Step 2: Check if permission is already granted.
-  if (Notification.permission === "granted") {
-    const token = await fetchToken();
-    return token;
+  let permission = Notification.permission;
+  if (permission === "default") {
+    permission = await Notification.requestPermission();
   }
 
-  // Step 3: If permission is not denied, request permission from the user.
-  if (Notification.permission !== "denied") {
-    const permission = await Notification.requestPermission();
-    if (permission === "granted") {
-      const token = await fetchToken();
-      return token;
+  if (permission !== "granted") {
+    return { token: null, permission };
+  }
+
+  return { token: await fetchToken(), permission };
+}
+
+export const loadFcmTokenWithRetry = async ({
+  getPermissionAndToken = getNotificationPermissionAndToken,
+  maxAttempts = MAX_FCM_TOKEN_ATTEMPTS,
+  retryDelayMs = FCM_TOKEN_RETRY_DELAY_MS,
+  signal,
+  wait = waitForFcmRetry,
+  onRetry = () => console.error("Notification token retrieval failed. Retrying."),
+  onExhausted = () => console.error("Notification token retrieval failed after retrying."),
+}: LoadFcmTokenWithRetryOptions = {}): Promise<FcmTokenLoadResult | null> => {
+  const boundedAttempts = Math.max(1, maxAttempts);
+
+  for (let attempt = 0; attempt < boundedAttempts; attempt += 1) {
+    if (signal?.aborted) return null;
+
+    const result = await getPermissionAndToken();
+    if (signal?.aborted || !result) return null;
+
+    if (result.permission !== "granted" || result.token) {
+      return result;
     }
+
+    if (attempt === boundedAttempts - 1) {
+      onExhausted();
+      return result;
+    }
+
+    onRetry();
+    await wait(retryDelayMs, signal);
   }
 
   return null;
-}
+};
 
 const useFcmToken = () => {
-  const router = useRouter(); // Initialize the router for navigation.
+  const router = useRouter();
   const [notificationPermissionStatus, setNotificationPermissionStatus] =
     useState<NotificationPermission | null>(null); // State to store the notification permission status.
   const [token, setToken] = useState<string | null>(null); // State to store the FCM token.
-  const retryLoadToken = useRef(0); // Ref to keep track of retry attempts.
   const isLoading = useRef(false); // Ref to keep track if a token fetch is currently in progress.
 
-  const loadToken = useCallback(async () => {
+  const loadToken = useCallback(async (signal: AbortSignal) => {
     // Step 4: Prevent multiple fetches if already fetched or in progress.
-    if (isLoading.current) return;
+    if (isLoading.current) return null;
 
     isLoading.current = true; // Mark loading as in progress.
-    while (retryLoadToken.current <= 3) {
-      const token = await getNotificationPermissionAndToken();
-
-      // Step 5: Handle the case where permission is denied.
-      if (Notification.permission === "denied") {
-        isLoading.current = false;
-        return { token: null, permission: "denied" as const };
-      }
-
-      if (token) {
-        isLoading.current = false;
-        return { token, permission: Notification.permission };
-      }
-
-      if (retryLoadToken.current >= 3) {
-        alert("Unable to load token, refresh the browser");
-        isLoading.current = false;
-        return null;
-      }
-
-      retryLoadToken.current += 1;
-      console.error("An error occurred while retrieving token. Retrying...");
+    try {
+      return await loadFcmTokenWithRetry({ signal });
+    } finally {
+      isLoading.current = false;
     }
-
-    isLoading.current = false;
-    return null;
   },[]);
 
   useEffect(() => {
     // Step 8: Initialize token loading when the component mounts.
+    const controller = new AbortController();
+
     if ("Notification" in window) {
-      void loadToken().then((result) => {
-        if (!result) return;
+      void loadToken(controller.signal).then((result) => {
+        if (controller.signal.aborted || !result) return;
         setNotificationPermissionStatus(result.permission);
         if (result.token) setToken(result.token);
       });
     }
+
+    return () => controller.abort();
   }, [loadToken]);
 
   useEffect(() => {
@@ -140,16 +188,23 @@ const useFcmToken = () => {
       return unsubscribe;
     };
 
+    let cancelled = false;
     let unsubscribe: Unsubscribe | null = null;
 
     setupListener().then((unsub) => {
-      if (unsub) {
-        unsubscribe = unsub;
+      if (!unsub) return;
+      if (cancelled) {
+        unsub();
+        return;
       }
+      unsubscribe = unsub;
     });
 
     // Step 11: Cleanup the listener when the component unmounts.
-    return () => unsubscribe?.();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [token, router]);
 
   return { token, notificationPermissionStatus }; // Return the token and permission status.

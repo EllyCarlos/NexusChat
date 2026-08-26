@@ -2,7 +2,7 @@ import { useGetSharedKey } from "@/hooks/useAuth/useGetSharedKey";
 import { decryptAudioBlob } from "@/lib/client/encryption";
 import { setNewMessageFormed } from "@/lib/client/slices/uiSlice";
 import { useAppDispatch } from "@/lib/client/store/hooks";
-import { fetchUserChatsResponse } from "@/lib/server/services/userService";
+import type { fetchUserChatsResponse } from "@/lib/server/services/userService";
 import { getOtherMemberOfPrivateChat } from "@/lib/shared/helpers";
 import { useEffect, useState } from "react";
 
@@ -23,6 +23,8 @@ export const VoiceNote = ({audioUrl,loggedInUserId,selectedChatDetails}:PropType
       selectedChatDetails,
       loggedInUserId
     ).user;
+    const otherMemberId = otherMember.id;
+    const otherMemberPublicKey = otherMember.publicKey;
 
     useEffect(() => {
       let cancelled = false;
@@ -31,13 +33,24 @@ export const VoiceNote = ({audioUrl,loggedInUserId,selectedChatDetails}:PropType
       void (async () => {
         try {
           const response = await fetch(audioUrl);
+          if (!response.ok) {
+            console.error("Failed to load encrypted audio.");
+            return;
+          }
+
           const encryptedAudio = new Uint8Array(await response.arrayBuffer());
           let blob: Blob | null;
 
           if (selectedChatDetails.isGroupChat) {
             blob = new Blob([encryptedAudio], { type: "audio/webm" });
           } else {
-            const sharedKey = await getSharedKey({ loggedInUserId, otherMember });
+            const sharedKey = await getSharedKey({
+              loggedInUserId,
+              otherMember: {
+                id: otherMemberId,
+                publicKey: otherMemberPublicKey,
+              },
+            });
             blob = sharedKey
               ? await decryptAudioBlob({ sharedKey, encryptedAudio })
               : null;
@@ -54,9 +67,20 @@ export const VoiceNote = ({audioUrl,loggedInUserId,selectedChatDetails}:PropType
 
       return () => {
         cancelled = true;
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        if (objectUrl) {
+          const revokedUrl = objectUrl;
+          setUrl((currentUrl) => currentUrl === revokedUrl ? null : currentUrl);
+          URL.revokeObjectURL(revokedUrl);
+        }
       };
-    }, [audioUrl, getSharedKey, loggedInUserId, otherMember, selectedChatDetails.isGroupChat]);
+    }, [
+      audioUrl,
+      getSharedKey,
+      loggedInUserId,
+      otherMemberId,
+      otherMemberPublicKey,
+      selectedChatDetails.isGroupChat,
+    ]);
 
     useEffect(()=>{
         if(url){
