@@ -5,7 +5,7 @@ import {
   createOAuthStateBinding,
   OAUTH_STATE_TTL_MS,
   verifyOAuthStateBinding,
-} from "../utils/oauth-state.utils.js";
+} from "../modules/auth/oauth/oauth-state.service.js";
 
 export const OAUTH_STATE_COOKIE_NAME = "nexuschat_oauth_state";
 

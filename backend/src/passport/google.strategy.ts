@@ -1,9 +1,7 @@
-import bcrypt from "bcryptjs";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { DEFAULT_AVATAR } from "../constants/file.constant.js";
 import type { RuntimeConfig } from "../interfaces/config/config.interface.js";
-import { prisma } from "../lib/prisma.lib.js";
+import { provisionGoogleAccount } from "../modules/auth/google-account.service.js";
 
 let isRegistered = false;
 
@@ -21,50 +19,14 @@ export const registerGoogleStrategy = (
   }, async function (_accessToken, _refreshToken, profile, done) {
     try {
       if (profile.emails && profile.emails[0].value && profile.displayName) {
-        const isExistingUser = await prisma.user.findUnique({
-          where: { email: profile.emails[0].value },
+        const identity = await provisionGoogleAccount({
+          providerId: profile.id,
+          email: profile.emails[0].value,
+          displayName: profile.displayName,
+          givenName: profile.name?.givenName!,
+          avatarUrl: profile.photos && profile.photos[0].value,
         });
-
-        if (isExistingUser) {
-          done(null, {
-            id: isExistingUser.id,
-            username: isExistingUser.username,
-            name: isExistingUser.name,
-            avatar: isExistingUser.avatar,
-            email: isExistingUser.email,
-            emailVerified: isExistingUser.emailVerified,
-            newUser: false,
-            googleId: profile.id,
-          });
-          return;
-        }
-
-        let avatarUrl = DEFAULT_AVATAR;
-        if (profile.photos && profile.photos[0].value) {
-          avatarUrl = profile.photos[0].value;
-        }
-        const newUser = await prisma.user.create({
-          data: {
-            username: profile.displayName,
-            name: profile.name?.givenName!,
-            avatar: avatarUrl,
-            email: profile.emails[0].value,
-            hashedPassword: await bcrypt.hash(profile.id, 10),
-            emailVerified: true,
-            oAuthSignup: true,
-            googleId: profile.id,
-          },
-          select: {
-            id: true,
-            username: true,
-            name: true,
-            avatar: true,
-            email: true,
-            emailVerified: true,
-            googleId: true,
-          },
-        });
-        done(null, { ...newUser, newUser: true });
+        done(null, identity);
         return;
       }
       throw new Error("Some Error occured");

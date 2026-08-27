@@ -35,6 +35,23 @@ import {
 const JWT_SECRET = "phase-1c-1a-test-secret";
 const USER_ID = "token-purpose-user";
 const futureExpiry = () => new Date(Date.now() + 60 * 60 * 1000);
+const SESSION_USER = {
+  id: USER_ID,
+  name: "Session User",
+  username: "session-user",
+  avatar: "https://example.test/avatar.png",
+  email: "session-user@example.test",
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+  emailVerified: true,
+  publicKey: "public-key",
+  needsKeyRecovery: false,
+  keyRecoveryCompletedAt: null,
+  notificationsEnabled: true,
+  verificationBadge: false,
+  fcmToken: null,
+  oAuthSignup: false,
+};
 
 const signRawToken = (
   tokenType?: string,
@@ -70,11 +87,64 @@ const signRawToken = (
   );
 };
 
-const getRejectedAuthError = (next: ReturnType<typeof vi.fn>) => {
+const getRejectedAuthError = (
+  next: ReturnType<typeof vi.fn>,
+  message: string,
+) => {
   expect(next).toHaveBeenCalledTimes(1);
   const error = next.mock.calls[0]?.[0];
-  expect(error).toMatchObject({ statusCode: 401 });
+  expect(error).toMatchObject({ statusCode: 401, message });
 };
+
+const signExpiredSessionToken = () => jwt.sign(
+  {
+    tokenType: TOKEN_TYPES.SESSION,
+    userId: USER_ID,
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+  },
+  JWT_SECRET,
+  {
+    algorithm: "HS256",
+    expiresIn: -1,
+    issuer: TOKEN_ISSUERS.WEB,
+    audience: [...SESSION_TOKEN_AUDIENCES],
+  },
+);
+
+const signCustomSessionToken = ({
+  algorithm = "HS256",
+  audience = [...SESSION_TOKEN_AUDIENCES] as string[],
+  expiresAt = futureExpiry().toISOString(),
+  expiresIn = "1h" as SignOptions["expiresIn"],
+  includeExp = true,
+  includeExpiresAt = true,
+  includeUserId = true,
+  signingSecret = JWT_SECRET,
+  userId = USER_ID,
+}: {
+  algorithm?: SignOptions["algorithm"];
+  audience?: string[];
+  expiresAt?: string;
+  expiresIn?: SignOptions["expiresIn"];
+  includeExp?: boolean;
+  includeExpiresAt?: boolean;
+  includeUserId?: boolean;
+  signingSecret?: string;
+  userId?: string;
+} = {}) => jwt.sign(
+  {
+    tokenType: TOKEN_TYPES.SESSION,
+    ...(includeUserId ? { userId } : {}),
+    ...(includeExpiresAt ? { expiresAt } : {}),
+  },
+  signingSecret,
+  {
+    algorithm,
+    ...(includeExp ? { expiresIn } : {}),
+    issuer: TOKEN_ISSUERS.WEB,
+    audience,
+  },
+);
 
 describe("backend token-purpose enforcement", () => {
   beforeEach(() => {
@@ -166,6 +236,222 @@ describe("backend token-purpose enforcement", () => {
   });
 
   it.each([
+    ["a non-HS256 algorithm", () => signCustomSessionToken({ algorithm: "HS384" })],
+    ["an invalid signature", () => signCustomSessionToken({ signingSecret: "other-test-secret" })],
+    ["a missing userId", () => signCustomSessionToken({ includeUserId: false })],
+    ["an empty userId", () => signCustomSessionToken({ userId: "" })],
+    ["a missing expiresAt", () => signCustomSessionToken({ includeExpiresAt: false })],
+    ["an invalid expiresAt", () => signCustomSessionToken({ expiresAt: "not-a-date" })],
+    ["a past expiresAt", () => signCustomSessionToken({
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    })],
+    ["a missing exp", () => signCustomSessionToken({ includeExp: false })],
+    ["an extra audience", () => signCustomSessionToken({
+      audience: [...SESSION_TOKEN_AUDIENCES, "urn:nexuschat:unexpected"],
+    })],
+  ])("rejects a session token with %s", (_label, createToken) => {
+    expect(() => verifyApiSessionToken(createToken())).toThrow();
+  });
+
+  it("REST authentication hydrates the selected session user for a valid cookie token", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(SESSION_USER as never);
+    const next = vi.fn();
+    const request = {
+      cookies: { session: signRawToken(TOKEN_TYPES.SESSION) },
+      headers: {},
+    } as unknown as AuthenticatedRequest;
+
+    await verifyToken(request, {} as Response, next as NextFunction);
+
+    expect(request.user).toBe(SESSION_USER);
+    expect(next).toHaveBeenCalledWith();
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: USER_ID },
+      select: expect.objectContaining({
+        id: true,
+        username: true,
+        email: true,
+        publicKey: true,
+      }),
+    }));
+  });
+
+  it("REST authentication preserves cookie precedence over a Bearer token", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(SESSION_USER as never);
+    const next = vi.fn();
+    const request = {
+      cookies: { session: signRawToken(TOKEN_TYPES.SESSION) },
+      headers: {
+        authorization: `Bearer ${signRawToken(TOKEN_TYPES.PASSWORD_RESET)}`,
+      },
+    } as unknown as AuthenticatedRequest;
+
+    await verifyToken(request, {} as Response, next as NextFunction);
+
+    expect(request.user).toBe(SESSION_USER);
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it("REST authentication preserves missing, expired, and deleted-user failures", async () => {
+    const missingNext = vi.fn();
+    await verifyToken(
+      { cookies: {}, headers: {} } as unknown as AuthenticatedRequest,
+      {} as Response,
+      missingNext as NextFunction,
+    );
+    expect(missingNext).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      message: "Token missing, please login again",
+    }));
+
+    const expiredNext = vi.fn();
+    await verifyToken(
+      {
+        cookies: {},
+        headers: { authorization: `Bearer ${signExpiredSessionToken()}` },
+      } as unknown as AuthenticatedRequest,
+      {} as Response,
+      expiredNext as NextFunction,
+    );
+    expect(expiredNext).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      message: "Invalid or expired token",
+    }));
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
+    const deletedNext = vi.fn();
+    await verifyToken(
+      {
+        cookies: {},
+        headers: { authorization: `Bearer ${signRawToken(TOKEN_TYPES.SESSION)}` },
+      } as unknown as AuthenticatedRequest,
+      {} as Response,
+      deletedNext as NextFunction,
+    );
+    expect(deletedNext).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      message: "Invalid or expired token",
+    }));
+  });
+
+  it("REST authentication forwards repository failures without exposing them itself", async () => {
+    vi.mocked(prisma.user.findUnique).mockRejectedValueOnce(
+      new Error("obvious-fake-database-detail"),
+    );
+    const next = vi.fn();
+
+    await verifyToken(
+      {
+        cookies: {},
+        headers: { authorization: `Bearer ${signRawToken(TOKEN_TYPES.SESSION)}` },
+      } as unknown as AuthenticatedRequest,
+      {} as Response,
+      next as NextFunction,
+    );
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(next.mock.calls[0]?.[0]).toMatchObject({
+      code: "SESSION_AUTH_REPOSITORY_FAILURE",
+      statusCode: 500,
+      message: "Internal server error",
+    });
+    expect(JSON.stringify(next.mock.calls)).not.toContain("obvious-fake-database-detail");
+  });
+
+  it("Socket authentication hydrates the existing user for a valid session token", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(SESSION_USER as never);
+    const next = vi.fn();
+    const socket = {
+      handshake: { query: { token: signRawToken(TOKEN_TYPES.SESSION) } },
+    } as unknown as Socket;
+
+    await socketAuthenticatorMiddleware(socket, next as NextFunction);
+
+    expect(socket.user).toEqual({
+      id: SESSION_USER.id,
+      username: SESSION_USER.username,
+      avatar: SESSION_USER.avatar,
+    });
+    expect(next).toHaveBeenCalledWith();
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: USER_ID },
+    }));
+  });
+
+  it("Socket authentication rejects array-valued handshake credentials before Prisma", async () => {
+    const next = vi.fn();
+    await socketAuthenticatorMiddleware(
+      { handshake: { query: { token: ["a.b.c"] } } } as unknown as Socket,
+      next as NextFunction,
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      message: "Invalid token format",
+    }));
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("Socket authentication preserves missing, expired, and deleted-user failures", async () => {
+    const missingNext = vi.fn();
+    await socketAuthenticatorMiddleware(
+      { handshake: { query: {} } } as unknown as Socket,
+      missingNext as NextFunction,
+    );
+    expect(missingNext).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      message: "Token missing, please login again",
+    }));
+
+    const expiredNext = vi.fn();
+    await socketAuthenticatorMiddleware(
+      { handshake: { query: { token: signExpiredSessionToken() } } } as unknown as Socket,
+      expiredNext as NextFunction,
+    );
+    expect(expiredNext).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      message: "Token expired, please login again",
+    }));
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
+    const deletedNext = vi.fn();
+    await socketAuthenticatorMiddleware(
+      {
+        handshake: { query: { token: signRawToken(TOKEN_TYPES.SESSION) } },
+      } as unknown as Socket,
+      deletedNext as NextFunction,
+    );
+    expect(deletedNext).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      message: "Invalid Token, please login again",
+    }));
+  });
+
+  it("Socket authentication conceals and sanitizes repository failures", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(prisma.user.findUnique).mockRejectedValueOnce(
+      new Error("obvious-fake-database-detail"),
+    );
+    const next = vi.fn();
+
+    await socketAuthenticatorMiddleware(
+      {
+        handshake: { query: { token: signRawToken(TOKEN_TYPES.SESSION) } },
+      } as unknown as Socket,
+      next as NextFunction,
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      message: "Invalid Token, please login again",
+    }));
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("obvious-fake-database-detail");
+    errorLog.mockRestore();
+  });
+
+  it.each([
     TOKEN_TYPES.PASSWORD_RESET,
     TOKEN_TYPES.PRIVATE_KEY_RECOVERY,
     TOKEN_TYPES.OAUTH_EXCHANGE,
@@ -179,7 +465,7 @@ describe("backend token-purpose enforcement", () => {
 
     await verifyToken(request, {} as Response, next as NextFunction);
 
-    getRejectedAuthError(next);
+    getRejectedAuthError(next, "Invalid or expired token");
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
@@ -197,7 +483,7 @@ describe("backend token-purpose enforcement", () => {
 
     await verifyToken(request, {} as Response, next as NextFunction);
 
-    getRejectedAuthError(next);
+    getRejectedAuthError(next, "Invalid or expired token");
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
@@ -214,7 +500,7 @@ describe("backend token-purpose enforcement", () => {
 
     await socketAuthenticatorMiddleware(socket, next as NextFunction);
 
-    getRejectedAuthError(next);
+    getRejectedAuthError(next, "Invalid token format");
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
@@ -231,7 +517,7 @@ describe("backend token-purpose enforcement", () => {
 
     await socketAuthenticatorMiddleware(socket, next as NextFunction);
 
-    getRejectedAuthError(next);
+    getRejectedAuthError(next, "Invalid token format");
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 

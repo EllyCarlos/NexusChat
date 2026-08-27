@@ -4,7 +4,7 @@ import type { AuthenticatedRequest, OAuthAuthenticatedRequest } from "../interfa
 import { prisma } from '../lib/prisma.lib.js';
 import type { fcmTokenSchemaType } from "../schemas/auth.schema.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-import { signOAuthExchangeToken } from "../utils/jwt.utils.js";
+import { signOAuthExchangeToken } from "../modules/auth/token/session-token.service.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
 
 const getUserInfo = asyncErrorHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

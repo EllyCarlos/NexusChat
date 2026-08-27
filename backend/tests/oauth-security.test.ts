@@ -32,7 +32,7 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
   },
 }));
 
-vi.mock("../src/utils/jwt.utils.js", () => ({
+vi.mock("../src/modules/auth/token/session-token.service.js", () => ({
   signOAuthExchangeToken: mocks.signOAuthExchangeToken,
 }));
 
