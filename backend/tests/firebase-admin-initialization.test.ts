@@ -52,6 +52,26 @@ describe("Firebase Admin initialization", () => {
     expect(mocks.getMessaging).not.toHaveBeenCalled();
   });
 
+  it("guards access to Firebase Messaging before initialization", async () => {
+    const { getFirebaseMessaging } = await import("../src/config/firebase.config.js");
+    let thrownError: unknown;
+
+    try {
+      getFirebaseMessaging();
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toMatchObject({
+      code: "FIREBASE_NOT_INITIALIZED",
+      message: "Firebase provider is not initialized.",
+      statusCode: 500,
+    });
+    expect(mocks.cert).not.toHaveBeenCalled();
+    expect(mocks.initializeApp).not.toHaveBeenCalled();
+    expect(mocks.getMessaging).not.toHaveBeenCalled();
+  });
+
   it("initializes once through the production credential path", async () => {
     const { getFirebaseMessaging, initializeFirebaseAdmin } = await import(
       "../src/config/firebase.config.js"

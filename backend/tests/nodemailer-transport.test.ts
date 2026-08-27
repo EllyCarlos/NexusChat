@@ -21,6 +21,24 @@ describe("backend Nodemailer transport", () => {
     expect(mocks.createTransport).not.toHaveBeenCalled();
   });
 
+  it("rejects access before the email provider is configured", async () => {
+    const { getEmailTransporter } = await import("../src/config/nodemailer.config.js");
+
+    let thrown: unknown;
+    try {
+      getEmailTransporter();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      code: "EMAIL_PROVIDER_NOT_INITIALIZED",
+      message: "Email provider is not initialized.",
+      statusCode: 500,
+    });
+    expect(mocks.createTransport).not.toHaveBeenCalled();
+  });
+
   it("creates the Gmail transport once with server-only credentials", async () => {
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const { configureNodemailer, getEmailTransporter } = await import(
