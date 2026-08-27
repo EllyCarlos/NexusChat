@@ -35,7 +35,7 @@ vi.mock("../src/utils/chat.util.js", () => ({
   joinMembersInChatRoom: vi.fn(),
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
   sendPushNotification: vi.fn(),
 }));
 
@@ -55,7 +55,7 @@ import {
   enforcePairRateLimit,
 } from "../src/middlewares/rate-limit.middleware.js";
 import { joinMembersInChatRoom } from "../src/utils/chat.util.js";
-import { sendPushNotification } from "../src/utils/generic.js";
+import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 import { emitEvent, emitEventToRoom } from "../src/utils/socket.util.js";
 
 const ACTOR_ID = "actor-user";
@@ -202,7 +202,7 @@ describe("friend-request creation characterization", () => {
       otherUserId: OTHER_USER_ID,
     }));
     expect(sendPushNotification).toHaveBeenCalledWith({
-      fcmToken: "receiver-fcm-token",
+      recipientToken: "receiver-fcm-token",
       body: expect.stringContaining("actor sent you a friend request"),
     });
     expect(emitEvent).toHaveBeenCalledWith({
@@ -260,7 +260,7 @@ describe("friend-request handling characterization", () => {
     expect(prisma.chat.create).toHaveBeenCalledTimes(1);
     expect(prisma.friends.create).toHaveBeenCalledTimes(1);
     expect(sendPushNotification).toHaveBeenCalledWith({
-      fcmToken: "sender-fcm-token",
+      recipientToken: "sender-fcm-token",
       body: expect.stringContaining("actor has accepted your friend request"),
     });
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
@@ -327,7 +327,7 @@ describe("friend-request handling characterization", () => {
       where: { id: REQUEST_ID },
     }));
     expect(sendPushNotification).toHaveBeenCalledWith({
-      fcmToken: "sender-fcm-token",
+      recipientToken: "sender-fcm-token",
       body: expect.stringContaining("actor has rejected your friend request"),
     });
     expect(joinMembersInChatRoom).not.toHaveBeenCalled();
