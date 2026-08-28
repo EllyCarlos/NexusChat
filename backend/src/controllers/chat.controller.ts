@@ -5,6 +5,7 @@ import { DEFAULT_AVATAR } from "../constants/file.constant.js";
 import { Events } from "../enums/event/event.enum.js";
 import type { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from "../lib/prisma.lib.js";
+import { getUserChatsQuery } from "../modules/read-queries/read-query.service.js";
 import type { addMemberToChatType, createChatSchemaType, removeMemberfromChatType, updateChatSchemaType } from "../schemas/chat.schema.js";
 import { assertChatAdmin, getCachedAuthorizedChat } from "../services/authorization.service.js";
 import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/auth.util.js";
@@ -221,111 +222,7 @@ const createChat = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response
 })
 
 const getUserChats = asyncErrorHandler(async(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
-      const chats = await prisma.chat.findMany({
-          where:{
-            ChatMembers:{
-              some:{
-                userId:req.user.id
-              }
-            }
-          },
-          omit:{
-            avatarCloudinaryPublicId:true,
-          },
-          include:{
-            ChatMembers:{
-              include:{
-                user:{
-                  select:{
-                    id:true,
-                    username:true,
-                    avatar:true,
-                    isOnline:true,
-                    publicKey: true,
-                    lastSeen:true,
-                    verificationBadge:true,
-                  }
-                },
-              },
-              omit:{
-                chatId:true,
-                userId:true,
-                id:true,
-              }
-            },
-            UnreadMessages:{
-              select:{
-                count:true,
-                message:{
-                  select:{
-                    isTextMessage:true,
-                    url:true,
-                    attachments:{
-                      select:{
-                        secureUrl:true,
-                      }
-                    },
-                    isPollMessage:true,
-                    createdAt:true,
-                    textMessageContent:true,
-                  }
-                },
-                sender:{
-                  select:{
-                    id:true,
-                    username:true,
-                    avatar:true,
-                    isOnline:true,
-                    publicKey:true,
-                    lastSeen:true,
-                    verificationBadge:true
-                  }
-                },
-              }
-            },
-            latestMessage:{
-              include:{
-                sender:{
-                  select:{
-                    id:true,
-                    username:true,
-                    avatar:true,
-                  }
-                },
-                attachments:{
-                  select:{
-                    secureUrl:true
-                  }
-                },
-                poll:true,
-                reactions:{
-                  include:{
-                    user:{
-                      select:{
-                        id:true,
-                        username:true,
-                        avatar:true
-                      }
-                    },
-                  },
-                  omit:{
-                    id: true,
-                    createdAt: true,
-                    updatedAt: true,
-                    userId: true,
-                    messageId: true
-                  }
-                },
-              }
-            }
-          },
-      })
-  
-      const chatsWithUserTyping = chats.map(chat => ({
-        ...chat,
-        typingUsers: []
-      }));
-  
+    const chatsWithUserTyping = await getUserChatsQuery(req.user.id);
     return res.status(200).json(chatsWithUserTyping)
 
 })

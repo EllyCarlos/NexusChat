@@ -3,10 +3,10 @@ import { Server } from "socket.io";
 import { Events } from "../enums/event/event.enum.js";
 import { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { prisma } from "../lib/prisma.lib.js";
+import { getChatAttachmentsQuery } from "../modules/read-queries/read-query.service.js";
 import { assertChatMember, getCachedAuthorizedChat } from "../services/authorization.service.js";
 import { deleteFilesFromCloudinary, uploadFilesToCloudinary } from "../utils/auth.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-import { calculateSkip } from "../utils/generic.js";
 import { emitEventToRoom } from "../utils/socket.util.js";
 import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
@@ -150,35 +150,11 @@ export const fetchAttachments = asyncErrorHandler(async(req:AuthenticatedRequest
     const { page = 1, limit = 6 } = req.query;
 
     await assertChatMember(req.user.id, id)
-
-    const attachments = await prisma.attachment.findMany({
-      where:{
-        message:{
-          chatId:id,
-        }
-      },
-      omit:{
-        id:true,
-        cloudinaryPublicId:true,
-        messageId:true,
-      },
-      orderBy:{
-        message:{
-          createdAt:"desc"
-        }
-      },
-      skip:calculateSkip(Number(page),Number(limit)),
-      take:Number(limit)
-    })
-
-    const totalAttachmentsCount = await prisma.attachment.count({where:{message:{chatId:id}}})
-    const totalPages =  Math.ceil(totalAttachmentsCount/Number(limit))
-
-    const payload = {
-      attachments,
-      totalAttachmentsCount,
-      totalPages,
-    }
+    const payload = await getChatAttachmentsQuery({
+      chatId: id,
+      page,
+      limit,
+    });
     
     res.status(200).json(payload);
 })
