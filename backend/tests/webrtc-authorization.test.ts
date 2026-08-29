@@ -13,7 +13,7 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
   },
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
   sendPushNotification: vi.fn(),
 }));
 
@@ -23,7 +23,7 @@ import { MAX_SOCKET_ICE_CANDIDATE_LENGTH, MAX_SOCKET_SDP_LENGTH } from "../src/s
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
-import { sendPushNotification } from "../src/utils/generic.js";
+import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 
 const CALLER_ID = "cm10000000000000000000001";
 const CALLEE_ID = "cm10000000000000000000002";
@@ -345,7 +345,7 @@ describe("WebRTC authorized call operations", () => {
     });
 
     expect(pushNotification).toHaveBeenCalledWith({
-      fcmToken: "callee-token",
+      recipientToken: "callee-token",
       title: "Missed Call",
       body: `You have missed a call from user-${CALLER_ID}`,
     });

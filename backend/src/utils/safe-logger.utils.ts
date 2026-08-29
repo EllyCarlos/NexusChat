@@ -1,5 +1,8 @@
+import { ApplicationError } from "../errors/application-error.js";
+
 type SafeErrorMetadata = {
   errorType: string;
+  applicationCode?: string;
 };
 
 const SAFE_ERROR_TYPES = new Set([
@@ -18,6 +21,13 @@ const SAFE_ERROR_TYPES = new Set([
 export const getSafeErrorMetadata = (error: unknown): SafeErrorMetadata => {
   if (!(error instanceof Error)) {
     return { errorType: "UnknownError" };
+  }
+
+  if (error instanceof ApplicationError) {
+    return {
+      errorType: error.name === "CustomError" ? "CustomError" : "ApplicationError",
+      applicationCode: error.code,
+    };
   }
 
   return {

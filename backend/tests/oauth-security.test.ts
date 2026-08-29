@@ -15,12 +15,12 @@ vi.mock("passport", () => ({
 
 vi.mock("../src/config/env.config.js", () => ({
   config: {
-    clientUrl: "https://web.example",
+    app: {
+      clientUrl: "https://web.example",
+      environment: "test",
+    },
+    auth: { jwtSecret: "oauth-state-test-secret" },
   },
-}));
-
-vi.mock("../src/schemas/env.schema.js", () => ({
-  env: { NODE_ENV: "test" },
 }));
 
 vi.mock("../src/lib/prisma.lib.js", () => ({
@@ -32,7 +32,7 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
   },
 }));
 
-vi.mock("../src/utils/jwt.utils.js", () => ({
+vi.mock("../src/modules/auth/token/session-token.service.js", () => ({
   signOAuthExchangeToken: mocks.signOAuthExchangeToken,
 }));
 
@@ -47,9 +47,8 @@ import { createRequestLogger } from "../src/middlewares/request-logger.middlewar
 import {
   createOAuthStateBinding,
   OAUTH_STATE_TTL_MS,
-} from "../src/utils/oauth-state.utils.js";
+} from "../src/modules/auth/oauth/oauth-state.service.js";
 
-const JWT_SECRET = "oauth-state-test-secret";
 const RAW_EXCHANGE_TOKEN = "raw.oauth.exchange.jwt";
 
 const createResponse = () => {
@@ -91,7 +90,6 @@ const captureMorganOutput = async (requestPath: string) => {
 
 describe("OAuth state boundary", () => {
   beforeEach(() => {
-    process.env.JWT_SECRET = JWT_SECRET;
     vi.clearAllMocks();
     mocks.authenticate.mockReturnValue(mocks.providerMiddleware);
     mocks.signOAuthExchangeToken.mockReturnValue(RAW_EXCHANGE_TOKEN);
@@ -346,7 +344,6 @@ describe("OAuth state boundary", () => {
 
 describe("OAuth-sensitive logging", () => {
   beforeEach(() => {
-    process.env.JWT_SECRET = JWT_SECRET;
     vi.clearAllMocks();
     mocks.signOAuthExchangeToken.mockReturnValue(RAW_EXCHANGE_TOKEN);
   });

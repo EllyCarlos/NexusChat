@@ -2,7 +2,11 @@ import express from "express";
 import multer from "multer";
 import request from "supertest";
 import { z } from "zod";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../src/config/env.config.js", () => ({
+  config: { auth: { jwtSecret: "test-secret-that-is-long-enough" } },
+}));
 
 vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: {
@@ -11,6 +15,7 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
 }));
 
 import { createApp } from "../src/app.js";
+import { ApplicationError } from "../src/errors/application-error.js";
 import { createRequestLogger } from "../src/middlewares/request-logger.middleware.js";
 import { verifyToken } from "../src/middlewares/verify-token.middleware.js";
 import { createOriginPolicy } from "../src/security/origin-policy.js";
@@ -27,12 +32,18 @@ const createTestApplication = (writeLog: (line: string) => void = () => undefine
     error.stack = `Error: ${INTERNAL_MESSAGE}\n at C:\\internal\\source.ts:12:3`;
     next(error);
   });
+  router.get("/application", (_req, _res, next) => next(new ApplicationError({
+    code: "CONFLICT",
+    message: "Application conflict is safe",
+    statusCode: 409,
+  })));
   router.get("/custom", (_req, _res, next) => next(new CustomError("Conflict is safe", 409)));
   router.get("/validation", () => {
     z.object({ name: z.string().min(1, "Name is required") }).parse({ name: "" });
   });
   router.get("/jwt", verifyToken, (_req, res) => res.status(204).send());
   router.post("/file", testUpload.single("file"), (_req, res) => res.status(204).send());
+  router.post("/json", (req, res) => res.status(200).json({ length: req.body.content.length }));
 
   return createApp({
     originPolicy: createOriginPolicy({
@@ -42,15 +53,10 @@ const createTestApplication = (writeLog: (line: string) => void = () => undefine
     environment: "test",
     routes: [{ path: "/test", router }],
     requestLogger: createRequestLogger({ stream: { write: writeLog } }),
-    getConnectedClientCount: () => 3,
   });
 };
 
 describe("HTTP application boundary", () => {
-  beforeEach(() => {
-    process.env.JWT_SECRET = "test-secret-that-is-long-enough";
-  });
-
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -62,6 +68,17 @@ describe("HTTP application boundary", () => {
 
     expect(app).toBeTypeOf("function");
     expect(listenSpy).not.toHaveBeenCalled();
+  });
+
+  it("retains the configured 10 MB JSON parser beyond the Express default limit", async () => {
+    const content = "x".repeat(150 * 1_024);
+
+    const response = await request(createTestApplication())
+      .post("/test/json")
+      .send({ content });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ length: content.length });
   });
 
   it.each(["/definitely-not-a-route", "/api/v1/unknown"]) (
@@ -92,6 +109,17 @@ describe("HTTP application boundary", () => {
 
     expect(response.status).toBe(409);
     expect(response.body).toEqual({ success: false, message: "Conflict is safe" });
+  });
+
+  it("maps ApplicationError without changing the public error response shape", async () => {
+    const response = await request(createTestApplication()).get("/test/application");
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      success: false,
+      message: "Application conflict is safe",
+    });
+    expect(response.body).not.toHaveProperty("code");
   });
 
   it("preserves safe Zod validation detail", async () => {

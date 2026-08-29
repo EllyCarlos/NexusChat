@@ -3,6 +3,10 @@ import type { NextFunction } from "connect";
 import type { Server, Socket } from "socket.io";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../src/config/env.config.js", () => ({
+  config: { auth: { jwtSecret: "obvious-fake-socket-test-secret" } },
+}));
+
 vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: {
     user: { update: vi.fn(), findUnique: vi.fn() },
@@ -24,7 +28,7 @@ vi.mock("../src/utils/auth.util.js", () => ({
   uploadEncryptedAudioToCloudinary: vi.fn(),
 }));
 
-vi.mock("../src/utils/generic.js", () => ({ sendPushNotification: vi.fn() }));
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({ sendPushNotification: vi.fn() }));
 vi.mock("../src/socket/webrtc/socket.js", () => ({ default: vi.fn() }));
 
 import { Events } from "../src/enums/event/event.enum.js";
@@ -268,7 +272,7 @@ describe("pre-auth cheap rejection", () => {
   });
 
   it("keeps the explicit Engine.IO byte cap and namespace timeout", () => {
-    const source = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../src/bootstrap/create-server.ts", import.meta.url), "utf8");
     expect(source).toContain("connectTimeout: 10_000");
     expect(source).toContain("maxHttpBufferSize: 1_000_000");
     expect(source).not.toContain("req.ip");

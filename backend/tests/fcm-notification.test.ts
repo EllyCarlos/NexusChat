@@ -1,26 +1,33 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getFirebaseMessaging: vi.fn(),
   send: vi.fn(),
 }));
 
 vi.mock("../src/config/firebase.config.js", () => ({
-  messaging: { send: mocks.send },
+  getFirebaseMessaging: mocks.getFirebaseMessaging,
 }));
 
-import { sendPushNotification } from "../src/utils/generic.js";
+import { notificationTitles } from "../src/constants/notification-title.contant.js";
+import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 
 describe("FCM notification payload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getFirebaseMessaging.mockReturnValue({ send: mocks.send });
     mocks.send.mockResolvedValue("message-id");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("sends the configured token, title, and body through Firebase Messaging", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     sendPushNotification({
-      fcmToken: "recipient-token",
+      recipientToken: "recipient-token",
       title: "Missed Call",
       body: "You have missed a call",
     });
@@ -32,13 +39,80 @@ describe("FCM notification payload", () => {
         body: "You have missed a call",
       }),
     }));
+    expect(mocks.send).toHaveBeenCalledWith({
+      token: "recipient-token",
+      notification: {
+        title: "Missed Call",
+        body: "You have missed a call",
+        imageUrl: "https://res.cloudinary.com/dhdo2yb0w/image/upload/t_media_lib_thumb/logo192_hwepne.png",
+      },
+      webpush: {
+        fcmOptions: {
+          link: "/",
+        },
+      },
+    });
     expect(mocks.send.mock.calls[0][0]).not.toHaveProperty("data");
     expect(JSON.stringify([...logSpy.mock.calls, ...errorSpy.mock.calls])).not.toContain("recipient-token");
   });
 
+  it("uses the random fallback for omitted and empty titles without awaiting delivery", async () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+    let resolveSend!: (messageId: string) => void;
+    const pendingSend = new Promise<string>((resolve) => {
+      resolveSend = resolve;
+    });
+    mocks.send.mockReturnValue(pendingSend);
+
+    const omittedTitleResult = sendPushNotification({
+      recipientToken: "opaque-omitted-title-token",
+      body: "Omitted title body",
+    });
+    const emptyTitleResult = sendPushNotification({
+      recipientToken: "opaque-empty-title-token",
+      title: "",
+      body: "Empty title body",
+    });
+
+    expect(omittedTitleResult).toBeUndefined();
+    expect(emptyTitleResult).toBeUndefined();
+    expect(randomSpy).toHaveBeenCalledTimes(2);
+    expect(mocks.send).toHaveBeenNthCalledWith(1, {
+      token: "opaque-omitted-title-token",
+      notification: {
+        title: notificationTitles[0],
+        body: "Omitted title body",
+        imageUrl: "https://res.cloudinary.com/dhdo2yb0w/image/upload/t_media_lib_thumb/logo192_hwepne.png",
+      },
+      webpush: {
+        fcmOptions: {
+          link: "/",
+        },
+      },
+    });
+    expect(mocks.send).toHaveBeenNthCalledWith(2, {
+      token: "opaque-empty-title-token",
+      notification: {
+        title: notificationTitles[0],
+        body: "Empty title body",
+        imageUrl: "https://res.cloudinary.com/dhdo2yb0w/image/upload/t_media_lib_thumb/logo192_hwepne.png",
+      },
+      webpush: {
+        fcmOptions: {
+          link: "/",
+        },
+      },
+    });
+    expect(mocks.send.mock.calls[0][0]).not.toHaveProperty("data");
+    expect(mocks.send.mock.calls[1][0]).not.toHaveProperty("data");
+
+    resolveSend("message-id");
+    await pendingSend;
+  });
+
   it("continues to pass an opaque invalid token to the SDK for handling", () => {
     sendPushNotification({
-      fcmToken: "invalid-token",
+      recipientToken: "invalid-token",
       title: "Notification",
       body: "Body",
     });
@@ -51,15 +125,46 @@ describe("FCM notification payload", () => {
   it("does not log the registration token when Firebase rejects the send", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "log").mockImplementation(() => undefined);
-    mocks.send.mockRejectedValue(new Error("Firebase rejected sensitive-fcm-token"));
+    const sensitiveBody = "Private notification body";
+    const providerErrorDetail = "Firebase rejected sensitive-fcm-token";
+    mocks.send.mockRejectedValue(new Error(providerErrorDetail));
 
-    sendPushNotification({
-      fcmToken: "sensitive-fcm-token",
+    const result = sendPushNotification({
+      recipientToken: "sensitive-fcm-token",
       title: "Notification",
-      body: "Body",
+      body: sensitiveBody,
     });
 
+    expect(result).toBeUndefined();
     await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    expect(errorSpy).toHaveBeenCalledWith("FCM send failed.", { errorType: "Error" });
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("sensitive-fcm-token");
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(sensitiveBody);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(providerErrorDetail);
+  });
+
+  it("swallows synchronous provider acquisition failures without logging sensitive details", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const sensitiveToken = "sensitive-acquisition-token";
+    const sensitiveBody = "Sensitive acquisition body";
+    const providerErrorDetail = "Firebase provider acquisition failed privately";
+    mocks.getFirebaseMessaging.mockImplementationOnce(() => {
+      throw new Error(`${providerErrorDetail}: ${sensitiveToken}: ${sensitiveBody}`);
+    });
+
+    const result = sendPushNotification({
+      recipientToken: sensitiveToken,
+      title: "Notification",
+      body: sensitiveBody,
+    });
+
+    expect(result).toBeUndefined();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith("FCM send failed.", { errorType: "Error" });
+    const loggedOutput = JSON.stringify(errorSpy.mock.calls);
+    expect(loggedOutput).not.toContain(sensitiveToken);
+    expect(loggedOutput).not.toContain(sensitiveBody);
+    expect(loggedOutput).not.toContain(providerErrorDetail);
   });
 });

@@ -37,11 +37,6 @@ vi.mock("../src/utils/chat.util.js", () => ({
   joinMembersInChatRoom: vi.fn(),
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
-  calculateSkip: (page: number, limit: number) => (page - 1) * limit,
-  sendPushNotification: vi.fn(),
-}));
-
 vi.mock("../src/utils/socket.util.js", () => ({
   emitEvent: vi.fn(),
   emitEventToRoom: vi.fn(),

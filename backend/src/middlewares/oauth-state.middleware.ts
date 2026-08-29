@@ -5,19 +5,19 @@ import {
   createOAuthStateBinding,
   OAUTH_STATE_TTL_MS,
   verifyOAuthStateBinding,
-} from "../utils/oauth-state.utils.js";
+} from "../modules/auth/oauth/oauth-state.service.js";
 
 export const OAUTH_STATE_COOKIE_NAME = "nexuschat_oauth_state";
 
 const oauthStateCookieOptions: CookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: config.app.environment === "production",
   sameSite: "lax",
   path: "/api/v1/auth/google",
 };
 
 const getOAuthFailureUrl = (errorCode: string) =>
-  `${config.clientUrl}/auth/oauth-redirect?error=${errorCode}`;
+  `${config.app.clientUrl}/auth/oauth-redirect?error=${errorCode}`;
 
 export const beginGoogleOAuth = (
   req: Request,

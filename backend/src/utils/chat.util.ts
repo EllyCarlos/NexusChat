@@ -1,35 +1,5 @@
-import { Server } from "socket.io";
+import type { Server } from "socket.io";
 import { socketConnectionRegistry } from "../socket/connection-registry.js";
-
-
-// export const deleteChat = async(isExistingChat: Document<unknown, {}, IChat> & IChat & Required<{_id: Types.ObjectId}>)=>{
-
-//         const publicIdsToBeDestroyed:Array<string> = []
-
-//         if(isExistingChat.avatar?.publicId){
-//           publicIdsToBeDestroyed.push(isExistingChat.avatar.publicId)
-//         }
-
-//         const messageWithAttachements = await Message.find({chat:isExistingChat._id,attachments:{$ne:[]}})
-        
-//         messageWithAttachements.forEach(message=>{
-
-//          if(message.attachments?.length){
-//            const attachmentsPublicId = message.attachments.map(attachment=>attachment.publicId)
-//            publicIdsToBeDestroyed.push(...attachmentsPublicId)
-//          }
-
-//         })
-
-//         const chatDeletePromise:Array<Promise<any>> = [
-//           isExistingChat.deleteOne(),
-//           Message.deleteMany({chat:isExistingChat._id}),
-//           UnreadMessage.deleteMany({chat:isExistingChat._id}),
-//           deleteFilesFromCloudinary({publicIds:publicIdsToBeDestroyed})
-//         ]
-
-//         await Promise.all(chatDeletePromise)
-// }
 
 export const joinMembersInChatRoom = ({memberIds,roomToJoin,io}:{memberIds:string[],roomToJoin:string,io:Server})=>{
 

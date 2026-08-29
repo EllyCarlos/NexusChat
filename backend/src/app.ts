@@ -11,18 +11,16 @@ import {
   type OriginPolicy,
 } from "./security/origin-policy.js";
 
-export type AppRoute = {
+type AppRoute = {
   path: string;
   router: Router;
 };
 
-export type CreateAppOptions = {
+type CreateAppOptions = {
   originPolicy: OriginPolicy;
   environment: string;
   routes?: AppRoute[];
   requestLogger?: ReturnType<typeof createRequestLogger>;
-  getConnectedClientCount?: () => number;
-  io?: unknown;
 };
 
 export const createApp = ({
@@ -30,7 +28,6 @@ export const createApp = ({
   environment,
   routes = [],
   requestLogger = createRequestLogger(),
-  io,
 }: CreateAppOptions) => {
   const app = express();
 
@@ -53,17 +50,12 @@ export const createApp = ({
     xXssProtection: true,
   }));
 
-  if (io !== undefined) {
-    app.set("io", io);
-  }
-
   app.use(cors({
     credentials: true,
     origin: createCorsOriginDelegate(originPolicy),
   }));
   app.use(createMutationOriginMiddleware(originPolicy));
   app.use(passport.initialize());
-  app.use(express.json());
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
   app.use(cookieParser());

@@ -53,13 +53,26 @@ vi.mock("../src/utils/socket.util.js", () => ({
 }));
 
 vi.mock("../src/utils/generic.js", () => ({
-  calculateSkip: (page: number, limit: number) => (page - 1) * limit,
   convertBufferToBase64: vi.fn(),
-  sendPushNotification: vi.fn(),
 }));
 
 vi.mock("../src/utils/email.util.js", () => ({ sendMail: vi.fn() }));
-vi.mock("../src/utils/jwt.utils.js", () => ({ signPasswordResetToken: vi.fn() }));
+vi.mock("../src/modules/auth/token/session-token.service.js", () => ({ signPasswordResetToken: vi.fn() }));
+vi.mock("../src/config/env.config.js", async () => {
+  const { tmpdir: getTempDirectory } = await import("node:os");
+  const { join: joinPath } = await import("node:path");
+  return {
+    config: {
+      app: { frontendUrl: "https://nexuswebapp.vercel.app" },
+      upload: {
+        tempDirectory: joinPath(
+          getTempDirectory(),
+          `nexuschat-upload-tests-${process.pid}`,
+        ),
+      },
+    },
+  };
+});
 
 import { uploadAttachment } from "../src/controllers/attachment.controller.js";
 import { createChat, updateChat } from "../src/controllers/chat.controller.js";
@@ -196,7 +209,6 @@ const authorizedChat = () => ({
 });
 
 beforeAll(async () => {
-  process.env.NEXUSCHAT_UPLOAD_TEMP_DIR = TEST_TEMP_DIRECTORY;
   await resetTempDirectory();
 });
 
@@ -235,7 +247,6 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  delete process.env.NEXUSCHAT_UPLOAD_TEMP_DIR;
   await rm(TEST_TEMP_DIRECTORY, { recursive: true, force: true });
 });
 
@@ -576,6 +587,8 @@ describe("Cloudinary compensation and avatar replacement ordering", () => {
     const file = await createTempMulterFile("user-avatar");
     const req = {
       user: { id: ACTOR_ID, avatarCloudinaryPublicId: "old-user-avatar" },
+      body: { userId: "body-controlled-user-id" },
+      params: { id: "path-controlled-user-id" },
       file,
     } as unknown as AuthenticatedRequest;
     const res = responseMock();
@@ -587,7 +600,138 @@ describe("Cloudinary compensation and avatar replacement ordering", () => {
       .toBeLessThan(mocks.userUpdate.mock.invocationCallOrder[0]);
     expect(mocks.userUpdate.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.cloudinaryDestroy.mock.invocationCallOrder[0]);
+    expect(mocks.userUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: ACTOR_ID },
+      data: {
+        avatar: "https://cloudinary.example/new-avatar",
+        avatarCloudinaryPublicId: "new-avatar-id",
+      },
+    }));
+    const responseBody = (res.json as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    expect(responseBody).toEqual({
+      id: ACTOR_ID,
+      name: "Upload User",
+      username: "upload-user",
+      avatar: "https://cloudinary.example/new-avatar",
+      email: "upload@example.com",
+      createdAt: expect.any(Date),
+      updatedAt: expect.any(Date),
+      emailVerified: true,
+      publicKey: null,
+      notificationsEnabled: true,
+      verificationBadge: false,
+      fcmToken: null,
+      oAuthSignup: false,
+    });
+    expect(responseBody).not.toHaveProperty("avatarCloudinaryPublicId");
+    expect(responseBody).not.toHaveProperty("hashedPassword");
+    expect(responseBody).not.toHaveProperty("privateKey");
     expect(existsSync(file.path)).toBe(false);
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("rolls back a user avatar when database persistence fails", async () => {
+    const file = await createTempMulterFile("user-avatar-db-failure");
+    mocks.userUpdate.mockRejectedValueOnce(new Error("private database detail"));
+    const next = vi.fn();
+
+    await updateUser({
+      user: { id: ACTOR_ID, avatarCloudinaryPublicId: "old-user-avatar" },
+      file,
+    } as unknown as AuthenticatedRequest, responseMock(), next as NextFunction);
+
+    expect(mocks.cloudinaryDestroy).toHaveBeenCalledWith(
+      "new-avatar-id",
+      { resource_type: "image" },
+    );
+    expect(mocks.cloudinaryDestroy).not.toHaveBeenCalledWith(
+      "old-user-avatar",
+      { resource_type: "image" },
+    );
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 500,
+      message: "Failed to update user profile",
+    }));
+    expect(JSON.stringify(next.mock.calls)).not.toContain("private database detail");
+    expect(existsSync(file.path)).toBe(false);
+  });
+
+  it("does not persist or delete the old avatar when user-avatar upload fails", async () => {
+    const file = await createTempMulterFile("user-avatar-upload-failure");
+    mocks.cloudinaryUpload.mockRejectedValueOnce(new Error("private provider detail"));
+    const next = vi.fn();
+
+    await updateUser({
+      user: { id: ACTOR_ID, avatarCloudinaryPublicId: "old-user-avatar" },
+      file,
+    } as unknown as AuthenticatedRequest, responseMock(), next as NextFunction);
+
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.cloudinaryDestroy).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 500,
+      message: "Failed to update user profile",
+    }));
+    expect(JSON.stringify(next.mock.calls)).not.toContain("private provider detail");
+    expect(existsSync(file.path)).toBe(false);
+  });
+
+  it("keeps a committed user avatar when previous-avatar cleanup fails", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const file = await createTempMulterFile("user-avatar-old-cleanup-failure");
+    mocks.cloudinaryDestroy.mockRejectedValueOnce(new Error("private cleanup detail"));
+    const response = responseMock();
+    const next = vi.fn();
+
+    await updateUser({
+      user: { id: ACTOR_ID, avatarCloudinaryPublicId: "old-user-avatar" },
+      file,
+    } as unknown as AuthenticatedRequest, response, next as NextFunction);
+
+    expect(mocks.userUpdate).toHaveBeenCalledOnce();
+    expect(mocks.cloudinaryDestroy).toHaveBeenCalledWith(
+      "old-user-avatar",
+      { resource_type: "image" },
+    );
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(next).not.toHaveBeenCalled();
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("private cleanup detail");
+    expect(existsSync(file.path)).toBe(false);
+    errorLog.mockRestore();
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["unchanged", "new-avatar-id"],
+  ])("skips %s previous-avatar cleanup", async (_label, existingPublicId) => {
+    const file = await createTempMulterFile(`user-avatar-${_label}-old-id`);
+    const response = responseMock();
+    const next = vi.fn();
+
+    await updateUser({
+      user: { id: ACTOR_ID, avatarCloudinaryPublicId: existingPublicId },
+      file,
+    } as unknown as AuthenticatedRequest, response, next as NextFunction);
+
+    expect(mocks.userUpdate).toHaveBeenCalledOnce();
+    expect(mocks.cloudinaryDestroy).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(next).not.toHaveBeenCalled();
+    expect(existsSync(file.path)).toBe(false);
+  });
+
+  it("rejects a missing user-avatar file before provider or persistence work", async () => {
+    const next = vi.fn();
+
+    await updateUser({
+      user: { id: ACTOR_ID },
+    } as unknown as AuthenticatedRequest, responseMock(), next as NextFunction);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 400,
+      message: "Please provide an image",
+    }));
+    expect(mocks.cloudinaryUpload).not.toHaveBeenCalled();
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
   });
 });

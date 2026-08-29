@@ -1,23 +1,13 @@
-import { Prisma } from "@prisma/client";
-import { Request } from "express";
+import type { Request } from "express";
+import type {
+    AuthenticatedIdentity,
+    OAuthCallbackIdentity,
+} from "../../modules/auth/contracts/auth-identity.js";
 
 export interface AuthenticatedRequest extends Request {
-    user:Omit<Prisma.UserCreateInput,'id' | 'name' | 'email' | 'username' | 'hashedPassword' > & Required<Pick<Prisma.UserCreateInput,'id' | 'name' | 'email' | 'username'>> & {hashedPassword?:string}
+    user: AuthenticatedIdentity;
 }
 
 export interface OAuthAuthenticatedRequest extends Request {
-    user?:Prisma.UserCreateInput & {newUser:boolean,googleId:string}
-}
-
-export interface IAvatar {
-    secureUrl:string,
-    publicId:string
-}
-
-export interface IGithub {
-    id:string
-    displayName:string
-    username:string
-    photos:Array<{value:string}>
-    _json:{email:string}
+    user?: OAuthCallbackIdentity;
 }

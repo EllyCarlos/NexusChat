@@ -1,8 +1,8 @@
-import { transporter } from "../config/nodemailer.config.js"
+import { config } from "../config/env.config.js";
+import { deliverEmail } from "../modules/notifications/email-delivery.service.js";
 import { otpVerificationBody, privateKeyRecoveryBody, resetPasswordBody, welcomeEmailBody } from "../constants/emails/email.body.js"
 import { otpVerificationSubject, privateKeyRecoverySubject, resetPasswordSubject, welcomeEmailSubject } from "../constants/emails/email.subject.js"
 import type { EmailType } from "../interfaces/email/email.interface.js"
-import { env } from "../schemas/env.schema.js"
 
 export const sendMail = async(
     to: string,
@@ -37,8 +37,8 @@ export const sendMail = async(
             throw new Error(`Unsupported email type: ${type}`);
     }
 
-    await transporter.sendMail({
-        from: env.EMAIL,
+    await deliverEmail({
+        from: config.email.sender,
         to,
         subject,
         html: htmlContent,

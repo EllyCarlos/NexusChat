@@ -48,7 +48,7 @@ vi.mock("../src/utils/auth.util.js", () => ({
   uploadEncryptedAudioToCloudinary: vi.fn(),
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
   sendPushNotification: vi.fn(),
 }));
 
@@ -66,7 +66,7 @@ import {
   uploadAudioToCloudinary,
   uploadEncryptedAudioToCloudinary,
 } from "../src/utils/auth.util.js";
-import { sendPushNotification } from "../src/utils/generic.js";
+import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 
 const ACTOR_ID = "cm00000000000000000000001";
 const CHAT_ID = "cm00000000000000000000002";
@@ -423,7 +423,7 @@ describe("Socket chat/message authorized operations", () => {
     });
 
     expect(pushNotification).toHaveBeenCalledWith({
-      fcmToken: "offline-token",
+      recipientToken: "offline-token",
       body: "New message from actor",
     });
   });

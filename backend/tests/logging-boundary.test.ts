@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ApplicationError } from "../src/errors/application-error.js";
 import { logServerError } from "../src/utils/safe-logger.utils.js";
 
 const sensitiveValues = [
@@ -40,5 +41,23 @@ describe("safe server logging", () => {
     for (const value of sensitiveValues) {
       expect(output).not.toContain(value);
     }
+  });
+
+  it("logs only stable ApplicationError metadata", () => {
+    const error = new ApplicationError({
+      code: "FORBIDDEN",
+      message: "Public but unnecessary log detail",
+      statusCode: 403,
+    }) as ApplicationError & { token: string };
+    error.token = sensitiveValues[0];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    logServerError("Socket operation failed.", error);
+
+    const output = JSON.stringify(errorSpy.mock.calls);
+    expect(output).toContain("ApplicationError");
+    expect(output).toContain("FORBIDDEN");
+    expect(output).not.toContain(error.message);
+    expect(output).not.toContain(error.token);
   });
 });
