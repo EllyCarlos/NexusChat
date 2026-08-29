@@ -496,6 +496,135 @@ describe("Socket interaction error boundaries", () => {
     expect(harness.roomEmit).not.toHaveBeenCalled();
     expect(harness.broadcastRoomEmit).not.toHaveBeenCalled();
   });
+
+  const roomDeliveryFailureCases = [
+    {
+      event: Events.NEW_REACTION,
+      payload: { chatId: CHAT_ID, messageId: MESSAGE_ID, reaction: "like" },
+      prepare: () => undefined,
+      completedWrite: () => vi.mocked(prisma.reactions.create),
+      log: "Socket reaction addition failed.",
+    },
+    {
+      event: Events.DELETE_REACTION,
+      payload: { chatId: CHAT_ID, messageId: MESSAGE_ID },
+      prepare: () => undefined,
+      completedWrite: () => vi.mocked(prisma.reactions.deleteMany),
+      log: "Socket reaction deletion failed.",
+    },
+    {
+      event: Events.VOTE_IN,
+      payload: { chatId: CHAT_ID, messageId: MESSAGE_ID, optionIndex: 1 },
+      prepare: () => {
+        vi.mocked(prisma.message.findFirst).mockResolvedValue(authorizedMessage(POLL_ID) as never);
+      },
+      completedWrite: () => vi.mocked(prisma.vote.create),
+      log: "Socket poll vote failed.",
+    },
+    {
+      event: Events.VOTE_OUT,
+      payload: { chatId: CHAT_ID, messageId: MESSAGE_ID, optionIndex: 1 },
+      prepare: () => {
+        vi.mocked(prisma.message.findFirst).mockResolvedValue(authorizedMessage(POLL_ID) as never);
+      },
+      completedWrite: () => vi.mocked(prisma.vote.deleteMany),
+      log: "Socket poll vote removal failed.",
+    },
+    {
+      event: Events.PIN_MESSAGE,
+      payload: { chatId: CHAT_ID, messageId: MESSAGE_ID },
+      prepare: () => undefined,
+      completedWrite: () => vi.mocked(prisma.message.update),
+      log: "Socket message pin failed.",
+    },
+    {
+      event: Events.UNPIN_MESSAGE,
+      payload: { pinId: PIN_ID },
+      prepare: () => undefined,
+      completedWrite: () => vi.mocked(prisma.message.update),
+      log: "Socket message unpin failed.",
+    },
+  ] as const;
+
+  it.each(roomDeliveryFailureCases)(
+    "preserves completed persistence and safe-logs a thrown $event room delivery",
+    async ({ completedWrite, event, log, payload, prepare }) => {
+      const privateFailure = new Error(`private-${event}-delivery-detail`);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      prepare();
+      const harness = await createHarness();
+      harness.roomEmit.mockImplementationOnce(() => {
+        throw privateFailure;
+      });
+
+      await harness.trigger(event, payload);
+
+      expect(completedWrite()).toHaveBeenCalled();
+      expect(harness.io.to).toHaveBeenCalled();
+      expect(harness.roomEmit).toHaveBeenCalledOnce();
+      expect(errorSpy).toHaveBeenCalledWith(log, { errorType: "Error" });
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+      expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
+    },
+  );
+
+  it("safe-logs a thrown typing broadcast while retaining sender exclusion", async () => {
+    const privateFailure = new Error("private-typing-delivery-detail");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const harness = await createHarness();
+    harness.broadcastRoomEmit.mockImplementationOnce(() => {
+      throw privateFailure;
+    });
+
+    await harness.trigger(Events.USER_TYPING, { chatId: CHAT_ID });
+
+    expect(harness.socket.broadcast.to).toHaveBeenCalledWith(CHAT_ID);
+    expect(harness.broadcastRoomEmit).toHaveBeenCalledWith(Events.USER_TYPING, {
+      user: ACTOR,
+      chatId: CHAT_ID,
+    });
+    expect(harness.io.to).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith("Socket typing event failed.", { errorType: "Error" });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
+  });
+
+  it("stops pin replacement work and safe-logs when PIN_LIMIT_REACHED delivery throws", async () => {
+    vi.mocked(prisma.pinnedMessages.findMany).mockResolvedValue([
+      { id: OLD_PIN_ID, messageId: OLD_MESSAGE_ID },
+      { id: "second-pin", messageId: "second-message" },
+      { id: "third-pin", messageId: "third-message" },
+    ] as never);
+    vi.mocked(prisma.message.update).mockResolvedValueOnce({ id: OLD_MESSAGE_ID } as never);
+    const privateFailure = new Error("private-pin-limit-delivery-detail");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const harness = await createHarness();
+    harness.roomEmit.mockImplementationOnce(() => {
+      throw privateFailure;
+    });
+
+    await harness.trigger(Events.PIN_MESSAGE, {
+      chatId: CHAT_ID,
+      messageId: MESSAGE_ID,
+    });
+
+    expect(prisma.pinnedMessages.delete).toHaveBeenCalledWith({ where: { id: OLD_PIN_ID } });
+    expect(prisma.message.update).toHaveBeenCalledWith({
+      where: { id: OLD_MESSAGE_ID },
+      data: { isPinned: false },
+      select: { id: true },
+    });
+    expect(harness.roomEmit).toHaveBeenCalledWith(Events.PIN_LIMIT_REACHED, {
+      oldestPinId: OLD_PIN_ID,
+      messageId: OLD_MESSAGE_ID,
+      chatId: CHAT_ID,
+    });
+    expect(prisma.pinnedMessages.create).not.toHaveBeenCalled();
+    expect(prisma.message.update).toHaveBeenCalledOnce();
+    expect(errorSpy).toHaveBeenCalledWith("Socket message pin failed.", { errorType: "Error" });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
+  });
 });
 
 describe("Socket reaction characterization", () => {

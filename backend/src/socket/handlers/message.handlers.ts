@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import type { UploadApiResponse } from "cloudinary";
-import type { Server, Socket } from "socket.io";
+import type { Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
 import { prisma } from "../../lib/prisma.lib.js";
 import { messageEventSchema } from "../../schemas/socket.schema.js";
@@ -15,6 +15,11 @@ import {
 } from "../../utils/auth.util.js";
 import { sendPushNotification } from "../../utils/generic.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
+import type {
+  MessageRealtimePayload,
+  UnreadMessageRealtimePayload,
+} from "../realtime/contracts/chat-realtime.types.js";
+import type { MessageRealtimePort } from "../realtime/contracts/message-realtime.port.js";
 import {
   enforceSocketEventLimits,
   parseSocketPayload,
@@ -22,35 +27,18 @@ import {
   type SocketEventRateLimiter,
 } from "../socket-security.js";
 
-type UnreadMessageEventSendPayload = {
-  chatId: string;
-  message?: {
-    textMessageContent?: string | undefined | null;
-    url?: boolean | undefined | null;
-    attachments?: boolean;
-    poll?: boolean;
-    createdAt: Date;
-    audio?: boolean;
-  };
-  sender: {
-    id: string;
-    avatar: string;
-    username: string;
-  };
-};
-
 type RegisterMessageHandlersInput = {
-  io: Server;
   socket: Socket;
   userId: string;
   limiter: SocketEventRateLimiter;
+  realtime: MessageRealtimePort;
 };
 
 export const registerMessageHandlers = ({
-  io,
   socket,
   userId,
   limiter,
+  realtime,
 }: RegisterMessageHandlersInput): void => {
   socket.on(Events.MESSAGE, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.MESSAGE, messageEventSchema, rawPayload);
@@ -290,7 +278,8 @@ export const registerMessageHandlers = ({
         return;
       }
 
-      io.to(chatId).emit(Events.MESSAGE, { ...message, isNew: true })
+      const messagePayload: MessageRealtimePayload = { ...message, isNew: true }
+      realtime.emitMessage(chatId, messagePayload)
 
       // Using non-null assertion (!) here since socket.user is confirmed to be defined above.
       const currentChatMembers = currentChat.ChatMembers.filter(({ user: { id } }) => id != socket.user!.id)
@@ -343,7 +332,7 @@ export const registerMessageHandlers = ({
 
       await Promise.all(updateOrCreateUnreadMessagePromises)
 
-      const unreadMessagePayload: UnreadMessageEventSendPayload = {
+      const unreadMessagePayload: UnreadMessageRealtimePayload = {
         chatId: chatId,
         message: {
           textMessageContent: newMessage.isTextMessage ? newMessage.textMessageContent : undefined,
@@ -361,7 +350,7 @@ export const registerMessageHandlers = ({
         }
       }
 
-      io.to(chatId).emit(Events.UNREAD_MESSAGE, unreadMessagePayload)
+      realtime.emitUnreadMessage(chatId, unreadMessagePayload)
 
     } catch (error) {
       logServerError('Socket message send failed.', error);

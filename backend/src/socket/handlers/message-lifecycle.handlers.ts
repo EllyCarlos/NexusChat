@@ -1,4 +1,4 @@
-import type { Server, Socket } from "socket.io";
+import type { Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
 import { prisma } from "../../lib/prisma.lib.js";
 import {
@@ -9,6 +9,12 @@ import {
 import { assertChatMember, assertMessageOwner } from "../../services/authorization.service.js";
 import { deleteFilesFromCloudinary } from "../../utils/auth.util.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
+import type {
+    MessageDeleteRealtimePayload,
+    MessageEditRealtimePayload,
+    MessageSeenRealtimePayload,
+} from "../realtime/contracts/chat-realtime.types.js";
+import type { MessageRealtimePort } from "../realtime/contracts/message-realtime.port.js";
 import {
     enforceSocketEventLimits,
     parseSocketPayload,
@@ -16,39 +22,18 @@ import {
     type SocketEventRateLimiter,
 } from "../socket-security.js";
 
-type MessageSeenEventSendPayload = {
-    user: {
-        id: string
-        username: string
-        avatar: string
-    },
-    chatId: string,
-    readAt: Date
-}
-
-type MessageEditEventSendPayload = {
-    chatId: string
-    messageId: string
-    updatedTextMessageContent: string
-}
-
-type MessageDeleteEventSendPayload = {
-    chatId: string
-    messageId: string
-}
-
 type RegisterMessageLifecycleHandlersArgs = {
-    io: Server;
     socket: Socket;
     userId: string;
     limiter: SocketEventRateLimiter;
+    realtime: MessageRealtimePort;
 };
 
 export const registerMessageLifecycleHandlers = ({
-    io,
     socket,
     userId,
     limiter,
+    realtime,
 }: RegisterMessageLifecycleHandlersArgs): void => {
     socket.on(Events.MESSAGE_SEEN, async (rawPayload: unknown) => {
         const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_SEEN, messageSeenEventSchema, rawPayload);
@@ -93,7 +78,7 @@ export const registerMessageLifecycleHandlers = ({
                 }
             })
 
-            const payload: MessageSeenEventSendPayload = {
+            const payload: MessageSeenRealtimePayload = {
                 user: {
                     // Using non-null assertion (!) for socket.user.id, username, and avatar here.
                     id: socket.user!.id,
@@ -103,7 +88,7 @@ export const registerMessageLifecycleHandlers = ({
                 chatId,
                 readAt: unreadMessageData.readAt!,
             }
-            io.to(chatId).emit(Events.MESSAGE_SEEN, payload)
+            realtime.emitMessageSeen(chatId, payload)
 
         } catch (error) {
             logServerError('Socket mark-as-seen failed.', error)
@@ -141,13 +126,13 @@ export const registerMessageLifecycleHandlers = ({
                 }
             })
 
-            const payload: MessageEditEventSendPayload = {
+            const payload: MessageEditRealtimePayload = {
                 updatedTextMessageContent: message.textMessageContent!, // Use ! as textMessageContent is expected to be non-null after update
                 chatId,
                 messageId
             }
 
-            io.to(chatId).emit(Events.MESSAGE_EDIT, payload)
+            realtime.emitMessageEdit(chatId, payload)
         } catch (error) {
             logServerError('Socket message edit failed.', error);
         }
@@ -218,11 +203,11 @@ export const registerMessageLifecycleHandlers = ({
             });
 
             if (deletedMessage.id) {
-                const payload: MessageDeleteEventSendPayload = {
+                const payload: MessageDeleteRealtimePayload = {
                     messageId: deletedMessage.id,
                     chatId,
                 }
-                io.to(chatId).emit(Events.MESSAGE_DELETE, payload)
+                realtime.emitMessageDelete(chatId, payload)
             }
         } catch (error) {
             logServerError('Socket message deletion failed.', error);

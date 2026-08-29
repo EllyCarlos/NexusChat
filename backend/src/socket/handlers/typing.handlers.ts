@@ -9,26 +9,21 @@ import {
   SOCKET_EVENT_LIMITS,
   type SocketEventRateLimiter,
 } from "../socket-security.js";
-
-type UserTypingEventSendPayload = {
-  user: {
-    id: string;
-    username: string;
-    avatar: string;
-  };
-  chatId: string;
-};
+import type { UserTypingRealtimePayload } from "../realtime/contracts/chat-realtime.types.js";
+import type { ChatInteractionRealtimePort } from "../realtime/contracts/interaction-realtime.port.js";
 
 type TypingHandlerDependencies = {
   socket: Socket;
   userId: string;
   limiter: SocketEventRateLimiter;
+  realtime: ChatInteractionRealtimePort;
 };
 
 export const registerTypingHandlers = ({
   socket,
   userId,
   limiter,
+  realtime,
 }: TypingHandlerDependencies): void => {
   socket.on(Events.USER_TYPING, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.USER_TYPING, userTypingEventSchema, rawPayload);
@@ -51,7 +46,7 @@ export const registerTypingHandlers = ({
         keyParts: [userId, chatId],
       })) return;
 
-      const payload: UserTypingEventSendPayload = {
+      const payload: UserTypingRealtimePayload = {
         user: {
           id: socket.user.id,
           username: socket.user.username,
@@ -60,7 +55,7 @@ export const registerTypingHandlers = ({
         chatId,
       };
 
-      socket.broadcast.to(chatId).emit(Events.USER_TYPING, payload);
+      realtime.broadcastTypingToOthers(chatId, payload);
     } catch (error) {
       logServerError("Socket typing event failed.", error);
     }

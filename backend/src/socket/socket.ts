@@ -14,6 +14,7 @@ import { registerPinHandlers } from "./handlers/pin.handlers.js";
 import { registerPollHandlers } from "./handlers/poll.handlers.js";
 import { registerReactionHandlers } from "./handlers/reaction.handlers.js";
 import { registerTypingHandlers } from "./handlers/typing.handlers.js";
+import { createSocketChatEventRealtimeAdapter } from "./realtime/infrastructure/socket-chat-event-realtime.adapter.js";
 import {
   emitSocketSecurityError,
   socketEventRateLimiter,
@@ -108,12 +109,14 @@ const registerSocketHandlers = (
       logServerError("Socket room initialization failed.", error);
     }
 
-    registerMessageHandlers({ io, socket, userId, limiter });
-    registerMessageLifecycleHandlers({ io, socket, userId, limiter });
-    registerReactionHandlers({ io, socket, userId, limiter });
-    registerTypingHandlers({ socket, userId, limiter });
-    registerPollHandlers({ io, socket, userId, limiter });
-    registerPinHandlers({ io, socket, userId, limiter });
+    const realtime = createSocketChatEventRealtimeAdapter({ io, socket });
+
+    registerMessageHandlers({ socket, userId, limiter, realtime });
+    registerMessageLifecycleHandlers({ socket, userId, limiter, realtime });
+    registerReactionHandlers({ socket, userId, limiter, realtime });
+    registerTypingHandlers({ socket, userId, limiter, realtime });
+    registerPollHandlers({ socket, userId, limiter, realtime });
+    registerPinHandlers({ socket, userId, limiter, realtime });
     registerWebRtcHandlers(socket, io, { registry, limiter });
   });
 };

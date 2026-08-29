@@ -1,4 +1,4 @@
-import type { Server, Socket } from "socket.io";
+import type { Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
 import { prisma } from "../../lib/prisma.lib.js";
 import { voteEventSchema } from "../../schemas/socket.schema.js";
@@ -10,37 +10,24 @@ import {
   SOCKET_EVENT_LIMITS,
   type SocketEventRateLimiter,
 } from "../socket-security.js";
-
-type VoteInEventSendPayload = {
-  messageId: string;
-  user: {
-    id: string;
-    avatar: string;
-    username: string;
-  };
-  optionIndex: number;
-  chatId: string;
-};
-
-type VoteOutEventSendPayload = {
-  chatId: string;
-  messageId: string;
-  userId: string;
-  optionIndex: number;
-};
+import type {
+  VoteInRealtimePayload,
+  VoteOutRealtimePayload,
+} from "../realtime/contracts/chat-realtime.types.js";
+import type { ChatInteractionRealtimePort } from "../realtime/contracts/interaction-realtime.port.js";
 
 type PollHandlerDependencies = {
-  io: Server;
   socket: Socket;
   userId: string;
   limiter: SocketEventRateLimiter;
+  realtime: ChatInteractionRealtimePort;
 };
 
 export const registerPollHandlers = ({
-  io,
   socket,
   userId,
   limiter,
+  realtime,
 }: PollHandlerDependencies): void => {
   socket.on(Events.VOTE_IN, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.VOTE_IN, voteEventSchema, rawPayload);
@@ -74,7 +61,7 @@ export const registerPollHandlers = ({
         },
       });
 
-      const payload: VoteInEventSendPayload = {
+      const payload: VoteInRealtimePayload = {
         messageId,
         optionIndex,
         user: {
@@ -84,7 +71,7 @@ export const registerPollHandlers = ({
         },
         chatId,
       };
-      io.to(chatId).emit(Events.VOTE_IN, payload);
+      realtime.emitVoteIn(chatId, payload);
     } catch (error) {
       logServerError("Socket poll vote failed.", error);
     }
@@ -131,13 +118,13 @@ export const registerPollHandlers = ({
           optionIndex,
         },
       });
-      const payload: VoteOutEventSendPayload = {
+      const payload: VoteOutRealtimePayload = {
         chatId,
         messageId,
         optionIndex,
         userId: socket.user.id,
       };
-      io.to(chatId).emit(Events.VOTE_OUT, payload);
+      realtime.emitVoteOut(chatId, payload);
     } catch (error) {
       logServerError("Socket poll vote removal failed.", error);
     }

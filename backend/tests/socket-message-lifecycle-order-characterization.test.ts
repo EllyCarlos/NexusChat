@@ -417,6 +417,38 @@ describe("MESSAGE_SEEN characterization", () => {
       { errorType: "Error" },
     );
   });
+
+  it("keeps the persisted seen update when delivery throws and reaches the event-local safe log", async () => {
+    const persistedReadTime = new Date("2026-02-03T04:05:07.000Z");
+    const deliveryError = new Error("private seen delivery failure");
+    unreadFindUnique.mockResolvedValue({ id: UNREAD_ID } as never);
+    unreadUpdate.mockResolvedValue({ readAt: persistedReadTime } as never);
+    const harness = await createHarness();
+    harness.roomEmit.mockImplementation(() => {
+      throw deliveryError;
+    });
+
+    await harness.trigger(Events.MESSAGE_SEEN, { chatId: CHAT_ID });
+
+    expect(unreadUpdate).toHaveBeenCalledOnce();
+    expect(harness.ioTo).toHaveBeenCalledExactlyOnceWith(CHAT_ID);
+    expect(harness.roomEmit).toHaveBeenCalledExactlyOnceWith(Events.MESSAGE_SEEN, {
+      user: {
+        id: ACTOR_ID,
+        username: "lifecycle-actor",
+        avatar: "lifecycle-avatar",
+      },
+      chatId: CHAT_ID,
+      readAt: persistedReadTime,
+    });
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      "Socket mark-as-seen failed.",
+      { errorType: "Error" },
+    );
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+      "private seen delivery failure",
+    );
+  });
 });
 
 describe("MESSAGE_EDIT characterization", () => {
@@ -479,6 +511,36 @@ describe("MESSAGE_EDIT characterization", () => {
     expect(console.error).toHaveBeenCalledExactlyOnceWith(
       "Socket message edit failed.",
       { errorType: "Error" },
+    );
+  });
+
+  it("keeps the persisted edit when delivery throws and reaches the event-local safe log", async () => {
+    const deliveryError = new Error("private edit delivery failure");
+    messageUpdate.mockResolvedValue({ textMessageContent: "persisted edit" } as never);
+    const harness = await createHarness();
+    harness.roomEmit.mockImplementation(() => {
+      throw deliveryError;
+    });
+
+    await harness.trigger(Events.MESSAGE_EDIT, {
+      chatId: CHAT_ID,
+      messageId: MESSAGE_ID,
+      updatedTextContent: "requested edit",
+    });
+
+    expect(messageUpdate).toHaveBeenCalledOnce();
+    expect(harness.ioTo).toHaveBeenCalledExactlyOnceWith(CHAT_ID);
+    expect(harness.roomEmit).toHaveBeenCalledExactlyOnceWith(Events.MESSAGE_EDIT, {
+      updatedTextMessageContent: "persisted edit",
+      chatId: CHAT_ID,
+      messageId: MESSAGE_ID,
+    });
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      "Socket message edit failed.",
+      { errorType: "Error" },
+    );
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+      "private edit delivery failure",
     );
   });
 });
@@ -617,6 +679,41 @@ describe("MESSAGE_DELETE destructive lifecycle characterization", () => {
     expect(messageDelete).toHaveBeenCalledTimes(1);
     expect(harness.ioTo).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();
+  });
+
+  it("keeps all destructive work when delivery throws and reaches the event-local safe log", async () => {
+    const deliveryError = new Error("private delete delivery failure");
+    messageFindFirst.mockResolvedValue(ownedMessage({
+      attachments: [{ cloudinaryPublicId: "attachment-public-id" }],
+      audioPublicId: "audio-public-id",
+    }) as never);
+    messageDelete.mockResolvedValue({ id: DELETED_MESSAGE_ID } as never);
+    const harness = await createHarness();
+    harness.roomEmit.mockImplementation(() => {
+      throw deliveryError;
+    });
+
+    await harness.trigger(Events.MESSAGE_DELETE, { chatId: CHAT_ID, messageId: MESSAGE_ID });
+
+    expect(pinDeleteMany).toHaveBeenCalledOnce();
+    expect(messageUpdateMany).toHaveBeenCalledOnce();
+    expect(unreadDeleteMany).toHaveBeenCalledOnce();
+    expect(reactionDeleteMany).toHaveBeenCalledOnce();
+    expect(attachmentDeleteMany).toHaveBeenCalledOnce();
+    expect(deleteMedia).toHaveBeenCalledTimes(2);
+    expect(messageDelete).toHaveBeenCalledOnce();
+    expect(harness.ioTo).toHaveBeenCalledExactlyOnceWith(CHAT_ID);
+    expect(harness.roomEmit).toHaveBeenCalledExactlyOnceWith(Events.MESSAGE_DELETE, {
+      messageId: DELETED_MESSAGE_ID,
+      chatId: CHAT_ID,
+    });
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      "Socket message deletion failed.",
+      { errorType: "Error" },
+    );
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+      "private delete delivery failure",
+    );
   });
 
   it.each(DELETE_STEPS)("stops after the destructive %s step rejects", async (failAt) => {

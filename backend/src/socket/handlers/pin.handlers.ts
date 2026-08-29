@@ -1,4 +1,4 @@
-import type { Server, Socket } from "socket.io";
+import type { Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
 import { prisma } from "../../lib/prisma.lib.js";
 import {
@@ -16,31 +16,24 @@ import {
   SOCKET_EVENT_LIMITS,
   type SocketEventRateLimiter,
 } from "../socket-security.js";
-
-type UnpinMessageEventSendPayload = {
-  pinId: string;
-  chatId: string;
-  messageId: string;
-};
-
-type PinLimitReachedEventSendPayload = {
-  oldestPinId: string;
-  messageId: string;
-  chatId: string;
-};
+import type {
+  PinLimitReachedRealtimePayload,
+  UnpinMessageRealtimePayload,
+} from "../realtime/contracts/chat-realtime.types.js";
+import type { ChatInteractionRealtimePort } from "../realtime/contracts/interaction-realtime.port.js";
 
 type PinHandlerDependencies = {
-  io: Server;
   socket: Socket;
   userId: string;
   limiter: SocketEventRateLimiter;
+  realtime: ChatInteractionRealtimePort;
 };
 
 export const registerPinHandlers = ({
-  io,
   socket,
   userId,
   limiter,
+  realtime,
 }: PinHandlerDependencies): void => {
   socket.on(Events.PIN_MESSAGE, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.PIN_MESSAGE, pinMessageEventSchema, rawPayload);
@@ -75,12 +68,12 @@ export const registerPinHandlers = ({
           data: { isPinned: false },
           select: { id: true },
         });
-        const payload: PinLimitReachedEventSendPayload = {
+        const payload: PinLimitReachedRealtimePayload = {
           oldestPinId: pinnedMessages[0].id,
           messageId: unpinnedMessage.id,
           chatId,
         };
-        io.to(chatId).emit(Events.PIN_LIMIT_REACHED, payload);
+        realtime.emitPinLimitReached(chatId, payload);
       }
 
       const pinnedMessage = await prisma.pinnedMessages.create({
@@ -176,7 +169,7 @@ export const registerPinHandlers = ({
         data: { isPinned: true },
       });
 
-      io.to(chatId).emit(Events.PIN_MESSAGE, pinnedMessage);
+      realtime.emitPinMessage(chatId, pinnedMessage);
     } catch (error) {
       logServerError("Socket message pin failed.", error);
     }
@@ -219,12 +212,12 @@ export const registerPinHandlers = ({
         data: { isPinned: false },
       });
 
-      const payload: UnpinMessageEventSendPayload = {
+      const payload: UnpinMessageRealtimePayload = {
         pinId: deletedPinnedMessage.id,
         chatId: deletedPinnedMessage.chatId,
         messageId: deletedPinnedMessage.messageId,
       };
-      io.to(deletedPinnedMessage.chatId).emit(Events.UNPIN_MESSAGE, payload);
+      realtime.emitUnpinMessage(deletedPinnedMessage.chatId, payload);
     } catch (error) {
       logServerError("Socket message unpin failed.", error);
     }

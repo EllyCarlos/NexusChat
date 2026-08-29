@@ -1,4 +1,4 @@
-import type { Server, Socket } from "socket.io";
+import type { Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
 import { prisma } from "../../lib/prisma.lib.js";
 import {
@@ -13,36 +13,24 @@ import {
   SOCKET_EVENT_LIMITS,
   type SocketEventRateLimiter,
 } from "../socket-security.js";
-
-type NewReactionEventSendPayload = {
-  chatId: string;
-  messageId: string;
-  user: {
-    id: string;
-    username: string;
-    avatar: string;
-  };
-  reaction: string;
-};
-
-type DeleteReactionEventSendPayload = {
-  chatId: string;
-  messageId: string;
-  userId: string;
-};
+import type {
+  DeleteReactionRealtimePayload,
+  NewReactionRealtimePayload,
+} from "../realtime/contracts/chat-realtime.types.js";
+import type { ChatInteractionRealtimePort } from "../realtime/contracts/interaction-realtime.port.js";
 
 type ReactionHandlerDependencies = {
-  io: Server;
   socket: Socket;
   userId: string;
   limiter: SocketEventRateLimiter;
+  realtime: ChatInteractionRealtimePort;
 };
 
 export const registerReactionHandlers = ({
-  io,
   socket,
   userId,
   limiter,
+  realtime,
 }: ReactionHandlerDependencies): void => {
   socket.on(Events.NEW_REACTION, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.NEW_REACTION, newReactionEventSchema, rawPayload);
@@ -82,7 +70,7 @@ export const registerReactionHandlers = ({
         },
       });
 
-      const payload: NewReactionEventSendPayload = {
+      const payload: NewReactionRealtimePayload = {
         chatId,
         messageId,
         user: {
@@ -93,7 +81,7 @@ export const registerReactionHandlers = ({
         reaction,
       };
 
-      io.to(chatId).emit(Events.NEW_REACTION, payload);
+      realtime.emitNewReaction(chatId, payload);
     } catch (error) {
       logServerError("Socket reaction addition failed.", error);
     }
@@ -126,12 +114,12 @@ export const registerReactionHandlers = ({
           messageId: authorizedMessage.id,
         },
       });
-      const payload: DeleteReactionEventSendPayload = {
+      const payload: DeleteReactionRealtimePayload = {
         chatId,
         messageId,
         userId: socket.user.id,
       };
-      io.to(chatId).emit(Events.DELETE_REACTION, payload);
+      realtime.emitDeleteReaction(chatId, payload);
     } catch (error) {
       logServerError("Socket reaction deletion failed.", error);
     }
