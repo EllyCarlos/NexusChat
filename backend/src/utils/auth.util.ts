@@ -1,23 +1,7 @@
-// Add this import at the top of auth.util.ts
-import { Prisma } from '@prisma/client';
 import type { UploadApiResponse } from 'cloudinary';
 import { v2 as cloudinary } from 'cloudinary';
 import { convertBufferToBase64 } from './generic.js';
 import { logServerError } from './safe-logger.utils.js';
-
-
-const thirtyDaysInMilliseconds = 30 * 24 * 60 * 60 * 1000;
-
-// const cookieOptions:CookieOptions = {
-//     maxAge:thirtyDaysInMilliseconds,
-//     httpOnly:true,
-//     path:"/",
-//     priority:"high",
-//     secure:true,
-//     sameSite:env.NODE_ENV==='development'?"lax":"none",
-//     domain: env.NODE_ENV === 'development' ? 'localhost',
-//     partitioned:true,
-// }
 
 export const deleteFilesFromCloudinary = async ({
     publicIds,
@@ -79,37 +63,3 @@ export const uploadAudioToCloudinary = async ({buffer}: {buffer: Uint8Array<Arra
       logServerError("Cloudinary audio upload failed.", error);
     }
 };
-
-export const getSecureUserInfo = (user: Prisma.UserGetPayload<{
-    select: {
-        id: true,
-        name: true,
-        username: true,
-        avatar: true,
-        email: true,
-        createdAt: true,
-        updatedAt: true,
-        verified: true,
-        publicKey: true,
-        notificationsEnabled: true,
-        verificationBadge: true,
-        fcmToken: true,
-        oAuthSignup: true
-    }
-}>): any => {
-    return {
-        id: user.id,
-        name: user.name,
-        username: user.username,
-        avatar: user.avatar, // Now properly typed
-        email: user.email,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-        verified: user.verified, // Now properly typed
-        publicKey: user?.publicKey,
-        notificationsEnabled: user.notificationsEnabled,
-        verificationBadge: user.verificationBadge,
-        fcmTokenExists: user.fcmToken?.length ? true : false, // Now properly typed
-        oAuthSignup: user.oAuthSignup
-    }
-}

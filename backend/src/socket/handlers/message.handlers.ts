@@ -3,6 +3,7 @@ import type { UploadApiResponse } from "cloudinary";
 import type { Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
 import { prisma } from "../../lib/prisma.lib.js";
+import { sendPushNotification } from "../../modules/notifications/push-notification.service.js";
 import { messageEventSchema } from "../../schemas/socket.schema.js";
 import {
   assertChatMember,
@@ -13,7 +14,6 @@ import {
   uploadAudioToCloudinary,
   uploadEncryptedAudioToCloudinary,
 } from "../../utils/auth.util.js";
-import { sendPushNotification } from "../../utils/generic.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
 import type {
   MessageRealtimePayload,
@@ -288,7 +288,7 @@ export const registerMessageHandlers = ({
 
         if (!member.user.isOnline && member.user.notificationsEnabled && member.user.fcmToken) {
           // Using non-null assertion (!) for socket.user.username here.
-          sendPushNotification({ fcmToken: member.user.fcmToken, body: `New message from ${socket.user!.username}` })
+          sendPushNotification({ recipientToken: member.user.fcmToken, body: `New message from ${socket.user!.username}` })
         }
 
         const isExistingUnreadMessage = await prisma.unreadMessages.findUnique({

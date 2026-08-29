@@ -53,13 +53,11 @@ vi.mock("../src/utils/socket.util.js", () => ({
 }));
 
 vi.mock("../src/utils/generic.js", () => ({
-  calculateSkip: (page: number, limit: number) => (page - 1) * limit,
   convertBufferToBase64: vi.fn(),
-  sendPushNotification: vi.fn(),
 }));
 
 vi.mock("../src/utils/email.util.js", () => ({ sendMail: vi.fn() }));
-vi.mock("../src/utils/jwt.utils.js", () => ({ signPasswordResetToken: vi.fn() }));
+vi.mock("../src/modules/auth/token/session-token.service.js", () => ({ signPasswordResetToken: vi.fn() }));
 vi.mock("../src/config/env.config.js", async () => {
   const { tmpdir: getTempDirectory } = await import("node:os");
   const { join: joinPath } = await import("node:path");

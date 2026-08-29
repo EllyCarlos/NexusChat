@@ -30,7 +30,7 @@ import {
   TOKEN_TYPES,
   verifyApiSessionToken,
   verifySocketSessionToken,
-} from "../src/utils/jwt.utils.js";
+} from "../src/modules/auth/token/session-token.service.js";
 
 const JWT_SECRET = "phase-1c-1a-test-secret";
 const USER_ID = "token-purpose-user";

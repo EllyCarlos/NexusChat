@@ -13,7 +13,7 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
   },
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
   sendPushNotification: vi.fn(),
 }));
 
@@ -29,7 +29,7 @@ import {
   SocketEventRateLimiter,
 } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
-import { sendPushNotification } from "../src/utils/generic.js";
+import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 import { logServerError } from "../src/utils/safe-logger.utils.js";
 
 const CALLER_ID = "cm51000000000000000000001";
@@ -193,7 +193,7 @@ describe("CALL_USER workflow characterization", () => {
       },
     });
     expect(pushNotification).toHaveBeenCalledExactlyOnceWith({
-      fcmToken: "callee-token",
+      recipientToken: "callee-token",
       body: `You have missed a call from user-${CALLER_ID}`,
       title: "Missed Call",
     });

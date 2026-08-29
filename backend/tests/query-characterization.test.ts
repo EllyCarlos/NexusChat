@@ -20,10 +20,6 @@ vi.mock("../src/utils/auth.util.js", () => ({
   uploadFilesToCloudinary: vi.fn(),
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
-  calculateSkip: (page: number, limit: number) => Math.ceil((page - 1) * limit),
-}));
-
 vi.mock("../src/utils/socket.util.js", () => ({
   emitEventToRoom: vi.fn(),
 }));

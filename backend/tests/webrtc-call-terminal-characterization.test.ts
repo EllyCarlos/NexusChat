@@ -13,7 +13,7 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
   },
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
   sendPushNotification: vi.fn(),
 }));
 

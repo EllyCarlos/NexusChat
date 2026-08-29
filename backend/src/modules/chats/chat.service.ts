@@ -5,7 +5,6 @@ import {
 } from "./application/add-chat-members.js";
 import {
   createGroupChatCreator,
-  type CreateGroupChatInput,
 } from "./application/create-group-chat.js";
 import {
   createChatMemberRemover,
@@ -13,7 +12,6 @@ import {
 } from "./application/remove-chat-members.js";
 import {
   createGroupChatUpdater,
-  type UpdateGroupChatInput,
 } from "./application/update-group-chat.js";
 import { createCloudinaryChatAvatarMediaAdapter } from "./infrastructure/cloudinary-chat-avatar-media.adapter.js";
 import { prismaChatRepository } from "./infrastructure/prisma-chat.repository.js";
@@ -76,10 +74,3 @@ export const createUpdateGroupChatOperation = ({
     ? { avatarMedia: createCloudinaryChatAvatarMediaAdapter(avatarFile) }
     : {}),
 });
-
-export type {
-  AddChatMembersInput,
-  CreateGroupChatInput,
-  RemoveChatMembersInput,
-  UpdateGroupChatInput,
-};

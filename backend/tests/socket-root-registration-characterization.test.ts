@@ -40,7 +40,7 @@ vi.mock("../src/utils/auth.util.js", () => ({
   uploadEncryptedAudioToCloudinary: vi.fn(),
 }));
 
-vi.mock("../src/utils/generic.js", () => ({ sendPushNotification: vi.fn() }));
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({ sendPushNotification: vi.fn() }));
 
 vi.mock("../src/socket/webrtc/socket.js", () => ({ default: vi.fn() }));
 

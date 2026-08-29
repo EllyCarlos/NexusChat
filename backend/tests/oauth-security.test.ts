@@ -47,7 +47,7 @@ import { createRequestLogger } from "../src/middlewares/request-logger.middlewar
 import {
   createOAuthStateBinding,
   OAUTH_STATE_TTL_MS,
-} from "../src/utils/oauth-state.utils.js";
+} from "../src/modules/auth/oauth/oauth-state.service.js";
 
 const RAW_EXCHANGE_TOKEN = "raw.oauth.exchange.jwt";
 

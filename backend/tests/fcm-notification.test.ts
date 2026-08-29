@@ -10,7 +10,7 @@ vi.mock("../src/config/firebase.config.js", () => ({
 }));
 
 import { notificationTitles } from "../src/constants/notification-title.contant.js";
-import { sendPushNotification } from "../src/utils/generic.js";
+import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 
 describe("FCM notification payload", () => {
   beforeEach(() => {
@@ -27,7 +27,7 @@ describe("FCM notification payload", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     sendPushNotification({
-      fcmToken: "recipient-token",
+      recipientToken: "recipient-token",
       title: "Missed Call",
       body: "You have missed a call",
     });
@@ -65,11 +65,11 @@ describe("FCM notification payload", () => {
     mocks.send.mockReturnValue(pendingSend);
 
     const omittedTitleResult = sendPushNotification({
-      fcmToken: "opaque-omitted-title-token",
+      recipientToken: "opaque-omitted-title-token",
       body: "Omitted title body",
     });
     const emptyTitleResult = sendPushNotification({
-      fcmToken: "opaque-empty-title-token",
+      recipientToken: "opaque-empty-title-token",
       title: "",
       body: "Empty title body",
     });
@@ -112,7 +112,7 @@ describe("FCM notification payload", () => {
 
   it("continues to pass an opaque invalid token to the SDK for handling", () => {
     sendPushNotification({
-      fcmToken: "invalid-token",
+      recipientToken: "invalid-token",
       title: "Notification",
       body: "Body",
     });
@@ -130,7 +130,7 @@ describe("FCM notification payload", () => {
     mocks.send.mockRejectedValue(new Error(providerErrorDetail));
 
     const result = sendPushNotification({
-      fcmToken: "sensitive-fcm-token",
+      recipientToken: "sensitive-fcm-token",
       title: "Notification",
       body: sensitiveBody,
     });
@@ -154,7 +154,7 @@ describe("FCM notification payload", () => {
     });
 
     const result = sendPushNotification({
-      fcmToken: sensitiveToken,
+      recipientToken: sensitiveToken,
       title: "Notification",
       body: sensitiveBody,
     });

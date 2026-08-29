@@ -3,7 +3,7 @@ import { config } from "../config/env.config.js";
 import { updateUserAvatar } from "../modules/users/profile.service.js";
 import { sendMail } from "../utils/email.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-import { signPasswordResetToken } from "../utils/jwt.utils.js";
+import { signPasswordResetToken } from "../modules/auth/token/session-token.service.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
 import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 

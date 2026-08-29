@@ -46,7 +46,7 @@ vi.mock("../src/utils/auth.util.js", () => ({
   uploadEncryptedAudioToCloudinary: vi.fn(),
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
   sendPushNotification: vi.fn(),
 }));
 
@@ -73,7 +73,7 @@ import {
   uploadAudioToCloudinary,
   uploadEncryptedAudioToCloudinary,
 } from "../src/utils/auth.util.js";
-import { sendPushNotification } from "../src/utils/generic.js";
+import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 import { logServerError } from "../src/utils/safe-logger.utils.js";
 
 const ACTOR_ID = "cm41000000000000000000001";
@@ -768,7 +768,7 @@ describe("Socket MESSAGE projection, notification, and unread characterization",
     });
     expect(sendPushNotification).toHaveBeenCalledOnce();
     expect(sendPushNotification).toHaveBeenCalledWith({
-      fcmToken: "private-offline-token",
+      recipientToken: "private-offline-token",
       body: "New message from socket-actor",
     });
     expectBefore(harness.roomEmit, sendPushNotification, 0, 0);

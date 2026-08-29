@@ -11,16 +11,3 @@ export interface AuthenticatedRequest extends Request {
 export interface OAuthAuthenticatedRequest extends Request {
     user?: OAuthCallbackIdentity;
 }
-
-export interface IAvatar {
-    secureUrl:string,
-    publicId:string
-}
-
-export interface IGithub {
-    id:string
-    displayName:string
-    username:string
-    photos:Array<{value:string}>
-    _json:{email:string}
-}

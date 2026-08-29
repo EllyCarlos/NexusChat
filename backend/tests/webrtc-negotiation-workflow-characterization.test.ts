@@ -26,7 +26,7 @@ vi.mock("../src/services/authorization.service.js", () => ({
   assertCanCallUser: mocks.assertCanCallUser,
 }));
 
-vi.mock("../src/utils/generic.js", () => ({
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
   sendPushNotification: mocks.sendPushNotification,
 }));
 

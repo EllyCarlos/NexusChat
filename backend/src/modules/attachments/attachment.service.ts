@@ -1,6 +1,5 @@
 import {
   createChatAttachmentUploader,
-  type UploadChatAttachmentsInput,
 } from "./application/upload-chat-attachments.js";
 import { createCloudinaryAttachmentMediaAdapter } from "./infrastructure/cloudinary-attachment-media.adapter.js";
 import { prismaAttachmentRepository } from "./infrastructure/prisma-attachment.repository.js";
@@ -22,5 +21,3 @@ export const createUploadChatAttachmentsOperation = ({
   repository: prismaAttachmentRepository,
   realtime: createSocketAttachmentRealtimeAdapter(resolveSocketServer),
 });
-
-export type { UploadChatAttachmentsInput };
