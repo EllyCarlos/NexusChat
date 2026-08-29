@@ -38,6 +38,7 @@
     "nodemailer": "9.0.5",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "redis": "^6.2.1",
     "socket.io": "^4.7.5",
     "zod": "^3.22.4"
   },

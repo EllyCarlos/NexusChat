@@ -28,6 +28,10 @@ export interface DatabaseConfig {
   readonly directUrl: string;
 }
 
+export interface RedisConfig {
+  readonly url?: string;
+}
+
 export interface FirebaseConfig {
   readonly projectId?: string;
   readonly clientEmail?: string;
@@ -55,6 +59,7 @@ export interface RuntimeConfig {
   readonly auth: AuthConfig;
   readonly oauth: OAuthConfig;
   readonly database: DatabaseConfig;
+  readonly redis: RedisConfig;
   readonly firebase: FirebaseConfig;
   readonly cloudinary: CloudinaryConfig;
   readonly email: EmailConfig;

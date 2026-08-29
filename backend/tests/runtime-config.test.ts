@@ -99,6 +99,45 @@ describe("runtime configuration boundary", () => {
     }
   });
 
+  it("keeps Redis optional and treats whitespace-only configuration as absent", () => {
+    expect(parseEnvironment(runtimeEnvironment).REDIS_URL).toBeUndefined();
+    expect(parseEnvironment({
+      ...runtimeEnvironment,
+      REDIS_URL: "   \t  ",
+    }).REDIS_URL).toBeUndefined();
+  });
+
+  it.each([
+    "redis://redis.example.test:6379",
+    "rediss://redis.example.test:6380",
+  ])("accepts and trims a supported Redis URL: %s", (redisUrl) => {
+    const parsed = parseEnvironment({
+      ...runtimeEnvironment,
+      REDIS_URL: `  ${redisUrl}  `,
+    });
+
+    expect(parsed.REDIS_URL).toBe(redisUrl);
+    expect(createRuntimeConfig(parsed).redis).toEqual({ url: redisUrl });
+  });
+
+  it.each([
+    "http://sentinel-user:sentinel-secret@redis.example.test:6380",
+    "https://sentinel-user:sentinel-secret@redis.example.test:6380",
+    "not-a-redis-url",
+  ])("rejects an invalid Redis URL without exposing its value: %s", (redisUrl) => {
+    let thrown: unknown;
+    try {
+      parseEnvironment({ ...runtimeEnvironment, REDIS_URL: redisUrl });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ApplicationError);
+    expect((thrown as Error).message).toContain("REDIS_URL");
+    expect((thrown as Error).message).not.toContain(redisUrl);
+    expect(JSON.stringify(thrown)).not.toContain("sentinel-secret");
+  });
+
   it("creates one structured deeply immutable configuration", () => {
     const created = createRuntimeConfig(parseEnvironment(runtimeEnvironment));
 
@@ -111,6 +150,7 @@ describe("runtime configuration boundary", () => {
       frontendUrl: "https://nexuswebapp.vercel.app",
     });
     expect(created.auth.jwtSecret).toBe(runtimeEnvironment.JWT_SECRET);
+    expect(created.redis).toEqual({ url: undefined });
     expect(created.oauth.callbackUrl).toBe(
       "http://localhost:4000/api/v1/auth/google/callback",
     );

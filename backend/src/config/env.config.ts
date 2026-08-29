@@ -41,6 +41,9 @@ export const createRuntimeConfig = (environment: Environment): RuntimeConfig => 
       url: environment.DATABASE_URL,
       directUrl: environment.DIRECT_URL,
     }),
+    redis: Object.freeze({
+      url: environment.REDIS_URL,
+    }),
     firebase: Object.freeze({
       projectId: environment.FIREBASE_PROJECT_ID || undefined,
       clientEmail: environment.FIREBASE_CLIENT_EMAIL || undefined,
