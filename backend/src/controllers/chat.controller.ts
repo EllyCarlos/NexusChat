@@ -38,6 +38,7 @@ const createChat = asyncErrorHandler(async (
   try {
     const { isGroupChat, members, name }: createChatSchemaType = req.body;
     const createGroupChat = createGroupChatOperation({
+      resolveConnectionDirectory: () => req.app.get("connectionDirectory"),
       resolveSocketServer: () => req.app.get("io"),
       ...(avatar ? { avatarFile: avatar } : {}),
     });
@@ -68,6 +69,7 @@ const addMemberToChat = asyncErrorHandler(async (
   const { members }: addMemberToChatType = req.body;
   const chat = await assertChatAdmin(req.user.id, id);
   const addChatMembers = createAddChatMembersOperation({
+    resolveConnectionDirectory: () => req.app.get("connectionDirectory"),
     resolveSocketServer: () => req.app.get("io"),
   });
   const payload = await addChatMembers({
@@ -87,6 +89,7 @@ const removeMemberFromChat = asyncErrorHandler(async (
   const { members }: removeMemberfromChatType = req.body;
   const chat = await assertChatAdmin(req.user.id, id);
   const removeChatMembers = createRemoveChatMembersOperation({
+    resolveConnectionDirectory: () => req.app.get("connectionDirectory"),
     resolveSocketServer: () => req.app.get("io"),
   });
   const payload = await removeChatMembers({
@@ -108,6 +111,7 @@ const updateChat = asyncErrorHandler(async (
 
   try {
     const updateGroupChat = createUpdateGroupChatOperation({
+      resolveConnectionDirectory: () => req.app.get("connectionDirectory"),
       resolveSocketServer: () => req.app.get("io"),
       ...(avatar ? { avatarFile: avatar } : {}),
     });

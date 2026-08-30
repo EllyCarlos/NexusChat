@@ -2,12 +2,17 @@ import type { Server, Socket } from "socket.io";
 import { Events } from "../enums/event/event.enum.js";
 import { prisma } from "../lib/prisma.lib.js";
 import { logServerError } from "../utils/safe-logger.utils.js";
+import type {
+  SocketConnectionDirectory,
+  SocketPresenceTransition,
+} from "./connection-directory.js";
 import {
   socketConnectionRegistry,
   socketPresenceWriteQueue,
   type SocketConnectionRegistry,
   type SocketPresenceWriteQueue,
 } from "./connection-registry.js";
+import { createLocalSocketConnectionDirectory } from "./local-connection-directory.adapter.js";
 import { registerMessageLifecycleHandlers } from "./handlers/message-lifecycle.handlers.js";
 import { registerMessageHandlers } from "./handlers/message.handlers.js";
 import { registerPinHandlers } from "./handlers/pin.handlers.js";
@@ -20,82 +25,154 @@ import {
   socketEventRateLimiter,
   type SocketEventRateLimiter,
 } from "./socket-security.js";
+import {
+  createSocketOperationTracker,
+  type SocketOperationTracker,
+} from "./socket-operation-tracker.js";
+import {
+  createLocalSocketPresenceCoordinator,
+  type SocketPresenceCoordinator,
+} from "./socket-presence.coordinator.js";
+import { createSocketPresencePublisher } from "./socket-presence.publisher.js";
 import registerWebRtcHandlers from "./webrtc/socket.js";
-
-type OfflineUserEventSendPayload = {
-  userId: string;
-};
-
-type OnlineUserEventSendPayload = OfflineUserEventSendPayload;
 
 type OnlineUsersListEventSendPayload = {
   onlineUserIds: string[];
 };
 
 type SocketHandlerDependencies = {
+  directory?: SocketConnectionDirectory;
   registry?: SocketConnectionRegistry;
   limiter?: SocketEventRateLimiter;
   presenceWriteQueue?: SocketPresenceWriteQueue;
+  presence?: SocketPresenceCoordinator;
+  operationTracker?: SocketOperationTracker;
 };
+
+export interface SocketHandlerLifecycle {
+  readonly isAcceptingConnections: boolean;
+  beginDrain(): void;
+  disconnectLocalSockets(): void;
+  drain(): Promise<void>;
+  reconcilePresence(userId: string): Promise<void>;
+  handleLostConnection(userId: string, socketId: string): void;
+}
 
 const registerSocketHandlers = (
   io: Server,
   dependencies: SocketHandlerDependencies = {},
-) => {
+): SocketHandlerLifecycle => {
   const registry = dependencies.registry ?? socketConnectionRegistry;
+  const directory = dependencies.directory
+    ?? createLocalSocketConnectionDirectory(registry);
   const limiter = dependencies.limiter ?? socketEventRateLimiter;
   const presenceWriteQueue = dependencies.presenceWriteQueue ?? socketPresenceWriteQueue;
+  const presence = dependencies.presence ?? createLocalSocketPresenceCoordinator({
+    directory,
+    publisher: createSocketPresencePublisher(io),
+    queue: presenceWriteQueue,
+  });
+  const operationTracker = dependencies.operationTracker
+    ?? createSocketOperationTracker();
 
-  io.on("connection", async (socket: Socket) => {
+  const reconcileTransition = async (transition: SocketPresenceTransition) => {
+    try {
+      await presence.reconcileTransition(transition);
+    } catch (error) {
+      logServerError(
+        transition.state === "online"
+          ? "Socket online presence update failed."
+          : "Socket offline presence update failed.",
+        error,
+      );
+    }
+  };
+
+  io.on("connection", (socket: Socket) => operationTracker.track((async () => {
     if (!socket.user) {
       socket.disconnect(true);
       return;
     }
 
+    if (!operationTracker.isAcceptingConnections) {
+      socket.disconnect(true);
+      return;
+    }
+
     const userId = socket.user.id;
-    const registration = registry.add(userId, socket.id);
+    let registrationAccepted = false;
+    let disconnected = false;
+    let removalPromise: Promise<void> | undefined;
+
+    const removeAcceptedConnection = () => {
+      if (!registrationAccepted) return Promise.resolve();
+      if (removalPromise) return removalPromise;
+
+      removalPromise = (async () => {
+        try {
+          const removal = await directory.remove(userId, socket.id);
+          if (removal.presenceTransition) {
+            await reconcileTransition(removal.presenceTransition);
+          }
+        } catch (error) {
+          logServerError("Socket connection removal failed.", error);
+        }
+      })();
+      return removalPromise;
+    };
+
+    socket.on("disconnect", () => {
+      disconnected = true;
+      if (!registrationAccepted) return undefined;
+      return operationTracker.track(removeAcceptedConnection());
+    });
+
+    let registration;
+    try {
+      registration = await directory.add(userId, socket.id);
+    } catch (error) {
+      logServerError("Socket connection registration failed.", error);
+      socket.disconnect(true);
+      return;
+    }
+
     if (!registration.accepted) {
       emitSocketSecurityError(socket, "CONNECTION_LIMIT", "connection");
       socket.disconnect(true);
       return;
     }
+    registrationAccepted = true;
 
-    socket.on("disconnect", async () => {
-      const removal = registry.remove(userId, socket.id);
-      if (!removal.lastConnection) return;
-
-      try {
-        await presenceWriteQueue.run(userId, () => prisma.user.update({
-          where: { id: userId },
-          data: { isOnline: false, lastSeen: new Date() },
-        }));
-      } catch (error) {
-        logServerError("Socket offline presence update failed.", error);
+    const stopIfNoLongerAdmitted = async (): Promise<boolean> => {
+      if (!disconnected && operationTracker.isAcceptingConnections) {
+        return false;
       }
+      await removeAcceptedConnection();
+      if (!disconnected) socket.disconnect(true);
+      return true;
+    };
 
-      if (registry.isOnline(userId)) return;
-      const payload: OfflineUserEventSendPayload = { userId };
-      socket.broadcast.emit(Events.OFFLINE_USER, payload);
-    });
-
-    if (registration.firstConnection) {
-      try {
-        await presenceWriteQueue.run(userId, () => prisma.user.update({
-          where: { id: userId },
-          data: { isOnline: true },
-        }));
-      } catch (error) {
-        logServerError("Socket online presence update failed.", error);
-      }
-
-      if (registry.isOnline(userId)) {
-        const payload: OnlineUserEventSendPayload = { userId };
-        socket.broadcast.emit(Events.ONLINE_USER, payload);
-      }
+    if (await stopIfNoLongerAdmitted()) {
+      return;
     }
 
+    if (registration.presenceTransition) {
+      await reconcileTransition(registration.presenceTransition);
+    }
+    if (await stopIfNoLongerAdmitted()) return;
+
+    let onlineUserIds: string[];
+    try {
+      onlineUserIds = await directory.onlineUserIds();
+    } catch (error) {
+      logServerError("Socket online users lookup failed.", error);
+      await removeAcceptedConnection();
+      socket.disconnect(true);
+      return;
+    }
+    if (await stopIfNoLongerAdmitted()) return;
     const payloadOnlineUsers: OnlineUsersListEventSendPayload = {
-      onlineUserIds: registry.onlineUserIds(),
+      onlineUserIds,
     };
     socket.emit(Events.ONLINE_USERS_LIST, payloadOnlineUsers);
 
@@ -108,6 +185,7 @@ const registerSocketHandlers = (
     } catch (error) {
       logServerError("Socket room initialization failed.", error);
     }
+    if (await stopIfNoLongerAdmitted()) return;
 
     const realtime = createSocketChatEventRealtimeAdapter({ io, socket });
 
@@ -117,7 +195,25 @@ const registerSocketHandlers = (
     registerTypingHandlers({ socket, userId, limiter, realtime });
     registerPollHandlers({ socket, userId, limiter, realtime });
     registerPinHandlers({ socket, userId, limiter, realtime });
-    registerWebRtcHandlers(socket, io, { registry, limiter });
+    registerWebRtcHandlers(socket, io, { directory, limiter });
+  })()));
+
+  return Object.freeze({
+    get isAcceptingConnections() {
+      return operationTracker.isAcceptingConnections;
+    },
+    beginDrain: () => operationTracker.beginDrain(),
+    disconnectLocalSockets: () => {
+      io.local.disconnectSockets(true);
+    },
+    drain: async () => {
+      await operationTracker.drain();
+      await presence.drain();
+    },
+    reconcilePresence: (userId: string) => presence.reconcileUser(userId),
+    handleLostConnection: (_userId: string, socketId: string) => {
+      io.local.in(socketId).disconnectSockets(true);
+    },
   });
 };
 

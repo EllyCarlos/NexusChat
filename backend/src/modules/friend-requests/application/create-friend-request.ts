@@ -91,7 +91,7 @@ export const createFriendRequestPreparer = ({
         });
       }
 
-      realtime.emitNewFriendRequest(receiverId, createdRequest);
+      await realtime.emitNewFriendRequest(receiverId, createdRequest);
     },
   };
 };

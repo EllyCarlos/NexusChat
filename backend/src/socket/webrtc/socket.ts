@@ -22,10 +22,7 @@ import {
 } from "../../services/authorization.service.js";
 import { CustomError } from "../../utils/error.utils.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
-import {
-  socketConnectionRegistry,
-  type SocketConnectionRegistry,
-} from "../connection-registry.js";
+import type { SocketConnectionDirectory } from "../connection-directory.js";
 import {
   enforceSocketEventLimits,
   parseSocketPayload,
@@ -35,19 +32,19 @@ import {
 } from "../socket-security.js";
 
 type WebRtcHandlerDependencies = {
-  registry?: SocketConnectionRegistry;
+  directory: SocketConnectionDirectory;
   limiter?: SocketEventRateLimiter;
 };
 
 const registerWebRtcHandlers = (
   socket: Socket,
   io: Server,
-  dependencies: WebRtcHandlerDependencies = {},
+  dependencies: WebRtcHandlerDependencies,
 ) => {
-  const registry = dependencies.registry ?? socketConnectionRegistry;
+  const { directory } = dependencies;
   const limiter = dependencies.limiter ?? socketEventRateLimiter;
   const userId = socket.user.id;
-  const calls = createSocketCallSignalingService({ io, socket, registry });
+  const calls = createSocketCallSignalingService({ io, socket, directory });
 
   socket.on(Events.CALL_USER, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.CALL_USER, callUserEventSchema, rawPayload);

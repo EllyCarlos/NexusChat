@@ -170,6 +170,7 @@ describe("chat flow characterization", () => {
       omit: { avatarCloudinaryPublicId: true },
     }));
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
+      directory: io,
       memberIds: ["member-1", "member-2", CREATOR_ID],
       roomToJoin: CHAT_ID,
       io,
@@ -237,17 +238,20 @@ describe("chat flow characterization", () => {
       data: [{ chatId: CHAT_ID, userId: "member-2" }],
     });
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
+      directory: io,
       io,
       roomToJoin: CHAT_ID,
       memberIds: ["member-2"],
     });
     expect(emitEvent).toHaveBeenNthCalledWith(1, {
+      directory: io,
       event: Events.NEW_CHAT,
       data: { ...updatedChat, typingUsers: [], UnreadMessages: [] },
       io,
       users: ["member-2"],
     });
     expect(emitEvent).toHaveBeenNthCalledWith(2, {
+      directory: io,
       data: { chatId: CHAT_ID, members: [newMember] },
       event: Events.NEW_MEMBER_ADDED,
       io,
@@ -278,17 +282,20 @@ describe("chat flow characterization", () => {
       where: { chatId: CHAT_ID, userId: { in: ["member-3"] } },
     });
     expect(disconnectMembersFromChatRoom).toHaveBeenCalledWith({
+      directory: io,
       io,
       memberIds: ["member-3"],
       roomToLeave: CHAT_ID,
     });
     expect(emitEvent).toHaveBeenNthCalledWith(1, {
+      directory: io,
       io,
       event: Events.DELETE_CHAT,
       users: ["member-3"],
       data: { chatId: CHAT_ID },
     });
     expect(emitEvent).toHaveBeenNthCalledWith(2, {
+      directory: io,
       io,
       event: Events.MEMBER_REMOVED,
       data: { chatId: CHAT_ID, membersId: ["member-3"] },

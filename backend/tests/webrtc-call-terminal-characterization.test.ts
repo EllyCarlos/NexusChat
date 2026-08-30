@@ -23,7 +23,7 @@ vi.mock("../src/utils/safe-logger.utils.js", () => ({
 
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
-import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
 import {
   SOCKET_EVENT_LIMITS,
   type SocketEventRateLimiter,
@@ -97,13 +97,15 @@ const createHarness = ({
     disconnect: vi.fn(),
   };
   const io = { to: ioTo };
-  const registry = { getLatestSocket } as unknown as SocketConnectionRegistry;
+  const directory = {
+    getLatestSocket: async (userId: string) => getLatestSocket(userId),
+  } as unknown as SocketConnectionDirectory;
   const limiter = { consumeAll } as unknown as SocketEventRateLimiter;
 
   registerWebRtcHandlers(
     socket as unknown as Socket,
     io as unknown as Server,
-    { registry, limiter },
+    { directory, limiter },
   );
 
   return {
@@ -331,7 +333,7 @@ describe("CALL_END characterization", () => {
     },
   );
 
-  it("stops before registry lookup when persistence fails and logs the exact boundary", async () => {
+  it("stops before directory lookup when persistence fails and logs the exact boundary", async () => {
     const persistenceError = new Error("call end update failed");
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockRejectedValueOnce(persistenceError);

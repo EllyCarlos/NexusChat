@@ -86,7 +86,7 @@ export const createFriendRequestHandlerPreparer = ({
           });
         }
 
-        realtime.joinMembersInChat(
+        await realtime.joinMembersInChat(
           [request.senderId, request.receiverId],
           newChat.id,
         );

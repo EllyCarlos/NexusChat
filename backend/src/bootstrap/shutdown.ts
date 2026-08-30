@@ -5,8 +5,13 @@ import { logServerError } from "../utils/safe-logger.utils.js";
 type ShutdownOptions = {
   httpServer: HttpServer;
   io: SocketServer;
+  beginSocketDrain?: () => void;
+  disconnectLocalSockets?: () => void;
+  drainSocketOperations?: () => Promise<void>;
+  closeConnectionState?: () => Promise<void>;
   closeDistributedRealtime?: () => Promise<void>;
   disconnectPrisma: () => Promise<void>;
+  stageTimeoutMs?: number;
 };
 
 type ProcessHandlerOptions = {
@@ -17,6 +22,25 @@ type ProcessHandlerOptions = {
 
 const closeSocketServer = async (io: SocketServer) => {
   await io.close();
+};
+
+export const SHUTDOWN_STAGE_TIMEOUT_MS = 15_000;
+
+type ShutdownStageOutcome =
+  | { succeeded: true }
+  | { succeeded: false; error: unknown };
+
+const observeShutdownStage = (
+  stage: () => Promise<void>,
+): Promise<ShutdownStageOutcome> => {
+  try {
+    return stage().then(
+      () => ({ succeeded: true }),
+      (error: unknown) => ({ succeeded: false, error }),
+    );
+  } catch (error) {
+    return Promise.resolve({ succeeded: false, error });
+  }
 };
 
 const closeHttpServer = (httpServer: HttpServer) => new Promise<void>((resolve, reject) => {
@@ -40,8 +64,13 @@ const closeHttpServer = (httpServer: HttpServer) => new Promise<void>((resolve, 
 export const createShutdownCoordinator = ({
   httpServer,
   io,
+  beginSocketDrain = () => undefined,
+  disconnectLocalSockets = () => undefined,
+  drainSocketOperations = async () => undefined,
+  closeConnectionState = async () => undefined,
   closeDistributedRealtime = async () => undefined,
   disconnectPrisma,
+  stageTimeoutMs = SHUTDOWN_STAGE_TIMEOUT_MS,
 }: ShutdownOptions) => {
   let shutdownPromise: Promise<void> | undefined;
 
@@ -52,25 +81,65 @@ export const createShutdownCoordinator = ({
 
     shutdownPromise = (async () => {
       console.log("Closing backend runtime resources...");
-      const failures: unknown[] = [];
-      const closeResource = async (context: string, close: () => Promise<void>) => {
-        try {
-          await close();
-        } catch (error) {
-          failures.push(error);
-          logServerError(context, error);
+      let failureCount = 0;
+      const awaitResource = async (
+        context: string,
+        outcome: Promise<ShutdownStageOutcome>,
+      ) => {
+        let timeout: NodeJS.Timeout | undefined;
+        const result = await Promise.race([
+          outcome,
+          new Promise<ShutdownStageOutcome>((resolve) => {
+            timeout = setTimeout(() => {
+              resolve({
+                succeeded: false,
+                error: new Error("Shutdown stage timed out."),
+              });
+            }, stageTimeoutMs);
+          }),
+        ]);
+        if (timeout) clearTimeout(timeout);
+
+        if (!result.succeeded) {
+          failureCount += 1;
+          logServerError(context, result.error);
         }
       };
+      const closeResource = async (
+        context: string,
+        close: () => Promise<void>,
+      ) => awaitResource(context, observeShutdownStage(close));
 
+      await closeResource("Socket admission drain failed.", async () => {
+        beginSocketDrain();
+      });
+      const httpCloseOutcome = observeShutdownStage(
+        () => closeHttpServer(httpServer),
+      );
+      await closeResource("Local Socket disconnect failed.", async () => {
+        disconnectLocalSockets();
+      });
+      await closeResource(
+        "Socket operation drain failed.",
+        drainSocketOperations,
+      );
+      await awaitResource("HTTP server shutdown failed.", httpCloseOutcome);
       await closeResource("Socket.IO shutdown failed.", () => closeSocketServer(io));
+      await closeResource(
+        "Socket operation drain after Socket.IO shutdown failed.",
+        drainSocketOperations,
+      );
+      await closeResource(
+        "Connection state shutdown failed.",
+        closeConnectionState,
+      );
       await closeResource(
         "Distributed realtime shutdown failed.",
         closeDistributedRealtime,
       );
-      await closeResource("HTTP server shutdown failed.", () => closeHttpServer(httpServer));
       await closeResource("Prisma shutdown failed.", disconnectPrisma);
 
-      if (failures.length > 0) {
+      if (failureCount > 0) {
         throw new Error("Backend shutdown failed");
       }
       console.log("Backend runtime resources closed successfully");

@@ -376,6 +376,7 @@ describe("createChat pre-extraction characterization", () => {
     });
     expect(mocks.chatFindUnique).toHaveBeenCalledWith(expectedCreatedChatQuery);
     expect(mocks.joinMembersInChatRoom).toHaveBeenCalledWith({
+      directory: io,
       memberIds: expectedMemberIds,
       roomToJoin: CHAT_ID,
       io,

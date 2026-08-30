@@ -50,6 +50,7 @@ import {
   SocketConnectionRegistry,
   SocketPresenceWriteQueue,
 } from "../src/socket/connection-registry.js";
+import { createLocalSocketConnectionDirectory } from "../src/socket/local-connection-directory.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
@@ -76,11 +77,14 @@ const expectedRootRegistrations = [
   Events.UNPIN_MESSAGE,
 ];
 
-const makeSocket = (user: { id: string; username: string; avatar: string } | null = {
-  id: USER_ID,
-  username: "actor",
-  avatar: "actor-avatar",
-}) => {
+const makeSocket = (
+  user: { id: string; username: string; avatar: string } | null = {
+    id: USER_ID,
+    username: "actor",
+    avatar: "actor-avatar",
+  },
+  broadcastBySocket = new Map<string, ReturnType<typeof vi.fn>>(),
+) => {
   const handlers = new Map<string, RegisteredHandler>();
   const broadcastEmit = vi.fn();
   const socket = {
@@ -98,12 +102,14 @@ const makeSocket = (user: { id: string; username: string; avatar: string } | nul
       to: vi.fn(() => ({ emit: vi.fn() })),
     },
   };
+  broadcastBySocket.set(socket.id, broadcastEmit);
 
   return { broadcastEmit, handlers, socket };
 };
 
 const makeRuntime = () => {
   let connectionHandler: ((socket: Socket) => Promise<void>) | undefined;
+  const broadcastBySocket = new Map<string, ReturnType<typeof vi.fn>>();
   const io = {
     on: vi.fn((event: string, handler: (socket: Socket) => Promise<void>) => {
       expect(event).toBe("connection");
@@ -111,19 +117,29 @@ const makeRuntime = () => {
       return io;
     }),
     to: vi.fn(() => ({ emit: vi.fn() })),
+    emit: vi.fn(),
+    except: vi.fn((socketId: string) => ({
+      emit: (...arguments_: unknown[]) => broadcastBySocket.get(socketId)?.(...arguments_),
+    })),
+    local: {
+      disconnectSockets: vi.fn(),
+      in: vi.fn(() => ({ disconnectSockets: vi.fn() })),
+    },
   };
   const registry = new SocketConnectionRegistry();
+  const directory = createLocalSocketConnectionDirectory(registry);
   const limiter = new SocketEventRateLimiter();
   const presenceWriteQueue = new SocketPresenceWriteQueue();
 
   registerSocketHandlers(io as unknown as Server, {
-    registry,
+    directory,
     limiter,
     presenceWriteQueue,
   });
 
   return {
     io,
+    directory,
     limiter,
     presenceWriteQueue,
     registry,
@@ -131,6 +147,8 @@ const makeRuntime = () => {
       expect(connectionHandler).toBeDefined();
       await connectionHandler!(socket);
     },
+    makeSocket: (user?: Parameters<typeof makeSocket>[0]) =>
+      makeSocket(user, broadcastBySocket),
   };
 };
 
@@ -144,7 +162,7 @@ describe("Socket root connection admission and registration", () => {
   it("disconnects a socket without trusted user state before registry or handler work", async () => {
     const runtime = makeRuntime();
     const addSpy = vi.spyOn(runtime.registry, "add");
-    const client = makeSocket(null);
+    const client = runtime.makeSocket(null);
 
     await runtime.runConnection(client.socket as unknown as Socket);
 
@@ -164,7 +182,7 @@ describe("Socket root connection admission and registration", () => {
       { chatId: CHAT_A },
       { chatId: CHAT_B },
     ] as never);
-    const client = makeSocket();
+    const client = runtime.makeSocket();
 
     await runtime.runConnection(client.socket as unknown as Socket);
 
@@ -186,7 +204,7 @@ describe("Socket root connection admission and registration", () => {
     expect(registerWebRtcHandlers).toHaveBeenCalledWith(
       client.socket,
       runtime.io,
-      { registry: runtime.registry, limiter: runtime.limiter },
+      { directory: runtime.directory, limiter: runtime.limiter },
     );
 
     expect(client.socket.on.mock.invocationCallOrder[0]).toBeLessThan(
@@ -217,7 +235,7 @@ describe("Socket root connection admission and registration", () => {
     vi.mocked(prisma.user.update).mockRejectedValueOnce(privateFailure);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const runtime = makeRuntime();
-    const client = makeSocket();
+    const client = runtime.makeSocket();
 
     await runtime.runConnection(client.socket as unknown as Socket);
 
@@ -239,7 +257,7 @@ describe("Socket root connection admission and registration", () => {
     vi.mocked(prisma.chatMembers.findMany).mockRejectedValueOnce(privateFailure);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const runtime = makeRuntime();
-    const client = makeSocket();
+    const client = runtime.makeSocket();
 
     await runtime.runConnection(client.socket as unknown as Socket);
 
@@ -253,7 +271,7 @@ describe("Socket root connection admission and registration", () => {
     expect(registerWebRtcHandlers).toHaveBeenCalledWith(
       client.socket,
       runtime.io,
-      { registry: runtime.registry, limiter: runtime.limiter },
+      { directory: runtime.directory, limiter: runtime.limiter },
     );
   });
 
@@ -263,7 +281,7 @@ describe("Socket root connection admission and registration", () => {
       .mockRejectedValueOnce(new Error("private offline database detail"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const runtime = makeRuntime();
-    const client = makeSocket();
+    const client = runtime.makeSocket();
     await runtime.runConnection(client.socket as unknown as Socket);
 
     const disconnectHandler = client.handlers.get("disconnect");

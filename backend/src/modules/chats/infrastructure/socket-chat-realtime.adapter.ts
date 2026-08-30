@@ -1,5 +1,6 @@
 import type { Server } from "socket.io";
 import { Events } from "../../../enums/event/event.enum.js";
+import type { SocketConnectionDirectory } from "../../../socket/connection-directory.js";
 import {
   disconnectMembersFromChatRoom,
   joinMembersInChatRoom,
@@ -8,11 +9,14 @@ import { emitEvent, emitEventToRoom } from "../../../utils/socket.util.js";
 import type { ChatRealtimePort } from "../contracts/chat-realtime.port.js";
 
 export type SocketServerResolver = () => Server;
+export type SocketConnectionDirectoryResolver = () => SocketConnectionDirectory;
 
 export const createSocketChatRealtimeAdapter = (
   resolveSocketServer: SocketServerResolver,
+  resolveConnectionDirectory: SocketConnectionDirectoryResolver,
 ): ChatRealtimePort => {
   let resolvedSocketServer: { value: Server } | undefined;
+  let resolvedConnectionDirectory: { value: SocketConnectionDirectory } | undefined;
 
   const getSocketServer = (): Server => {
     if (!resolvedSocketServer) {
@@ -21,10 +25,18 @@ export const createSocketChatRealtimeAdapter = (
     return resolvedSocketServer.value;
   };
 
+  const getConnectionDirectory = (): SocketConnectionDirectory => {
+    if (!resolvedConnectionDirectory) {
+      resolvedConnectionDirectory = { value: resolveConnectionDirectory() };
+    }
+    return resolvedConnectionDirectory.value;
+  };
+
   return {
-    joinMembers: (memberIds, chatId) => {
-      joinMembersInChatRoom({
+    joinMembers: async (memberIds, chatId) => {
+      await joinMembersInChatRoom({
         io: getSocketServer(),
+        directory: getConnectionDirectory(),
         memberIds,
         roomToJoin: chatId,
       });
@@ -39,44 +51,49 @@ export const createSocketChatRealtimeAdapter = (
       });
     },
 
-    emitNewChatToMembers: (memberIds, payload) => {
-      emitEvent({
+    emitNewChatToMembers: async (memberIds, payload) => {
+      await emitEvent({
         io: getSocketServer(),
+        directory: getConnectionDirectory(),
         event: Events.NEW_CHAT,
         users: memberIds,
         data: payload,
       });
     },
 
-    emitMembersAdded: (memberIds, payload) => {
-      emitEvent({
+    emitMembersAdded: async (memberIds, payload) => {
+      await emitEvent({
         io: getSocketServer(),
+        directory: getConnectionDirectory(),
         event: Events.NEW_MEMBER_ADDED,
         users: memberIds,
         data: payload,
       });
     },
 
-    disconnectMembers: (memberIds, chatId) => {
-      disconnectMembersFromChatRoom({
+    disconnectMembers: async (memberIds, chatId) => {
+      await disconnectMembersFromChatRoom({
         io: getSocketServer(),
+        directory: getConnectionDirectory(),
         memberIds,
         roomToLeave: chatId,
       });
     },
 
-    emitDeleteChat: (memberIds, payload) => {
-      emitEvent({
+    emitDeleteChat: async (memberIds, payload) => {
+      await emitEvent({
         io: getSocketServer(),
+        directory: getConnectionDirectory(),
         event: Events.DELETE_CHAT,
         users: memberIds,
         data: payload,
       });
     },
 
-    emitMembersRemoved: (memberIds, payload) => {
-      emitEvent({
+    emitMembersRemoved: async (memberIds, payload) => {
+      await emitEvent({
         io: getSocketServer(),
+        directory: getConnectionDirectory(),
         event: Events.MEMBER_REMOVED,
         users: memberIds,
         data: payload,

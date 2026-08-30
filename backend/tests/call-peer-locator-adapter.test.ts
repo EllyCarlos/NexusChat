@@ -5,38 +5,36 @@ import { createRegistryCallPeerLocator } from "../src/modules/calls/infrastructu
 const USER_ID = "peer-user";
 
 describe("Registry call peer-locator adapter", () => {
-  it("delegates the exact user ID to the registry latest-socket lookup", () => {
-    const getLatestSocket = vi.fn().mockReturnValue("latest-socket");
-    const getSockets = vi.fn().mockReturnValue(["older-socket", "latest-socket"]);
-    const registry = {
+  it("delegates the exact user ID to the async directory latest-socket lookup", async () => {
+    const getLatestSocket = vi.fn().mockResolvedValue("latest-socket");
+    const getSockets = vi.fn().mockResolvedValue(["older-socket", "latest-socket"]);
+    const directory = {
       getLatestSocket,
       getSockets,
     };
-    const locator = createRegistryCallPeerLocator(registry);
+    const locator = createRegistryCallPeerLocator(directory);
 
-    expect(locator.getLatestSocketId(USER_ID)).toBe("latest-socket");
+    await expect(locator.getLatestSocketId(USER_ID)).resolves.toBe("latest-socket");
     expect(getLatestSocket).toHaveBeenCalledOnce();
     expect(getLatestSocket).toHaveBeenCalledWith(USER_ID);
     expect(getSockets).not.toHaveBeenCalled();
   });
 
-  it("preserves an undefined latest-socket result", () => {
-    const getLatestSocket = vi.fn().mockReturnValue(undefined);
+  it("preserves an undefined latest-socket result", async () => {
+    const getLatestSocket = vi.fn().mockResolvedValue(undefined);
     const locator = createRegistryCallPeerLocator({ getLatestSocket });
 
-    expect(locator.getLatestSocketId(USER_ID)).toBeUndefined();
+    await expect(locator.getLatestSocketId(USER_ID)).resolves.toBeUndefined();
     expect(getLatestSocket).toHaveBeenCalledOnce();
     expect(getLatestSocket).toHaveBeenCalledWith(USER_ID);
   });
 
-  it("passes registry lookup failures through unchanged", () => {
-    const failure = new Error("registry lookup failed");
-    const getLatestSocket = vi.fn(() => {
-      throw failure;
-    });
+  it("passes directory lookup failures through unchanged", async () => {
+    const failure = new Error("directory lookup failed");
+    const getLatestSocket = vi.fn().mockRejectedValue(failure);
     const locator = createRegistryCallPeerLocator({ getLatestSocket });
 
-    expect(() => locator.getLatestSocketId(USER_ID)).toThrow(failure);
+    await expect(locator.getLatestSocketId(USER_ID)).rejects.toBe(failure);
     expect(getLatestSocket).toHaveBeenCalledOnce();
     expect(getLatestSocket).toHaveBeenCalledWith(USER_ID);
   });

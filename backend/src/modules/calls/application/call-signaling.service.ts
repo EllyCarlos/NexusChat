@@ -128,7 +128,7 @@ export const createCallSignalingService = ({
   clock,
 }: CallSignalingDependencies): CallSignalingService => ({
   async callUser({ actor, callee, offer }) {
-    const calleeSocketId = peers.getLatestSocketId(callee.id);
+    const calleeSocketId = await peers.getLatestSocketId(callee.id);
 
     if (!calleeSocketId) {
       realtime.emitCalleeOfflineToActor();
@@ -171,7 +171,7 @@ export const createCallSignalingService = ({
   },
 
   async acceptCall({ actorId, call, answer }) {
-    const callerSocketId = peers.getLatestSocketId(call.callerId);
+    const callerSocketId = await peers.getLatestSocketId(call.callerId);
 
     if (!callerSocketId) {
       await history.update({
@@ -209,7 +209,7 @@ export const createCallSignalingService = ({
       },
     });
 
-    const callerSocketId = peers.getLatestSocketId(call.callerId);
+    const callerSocketId = await peers.getLatestSocketId(call.callerId);
     if (callerSocketId) {
       realtime.emitCallRejected(callerSocketId);
       realtime.emitCallEndToPeerViaSocket(callerSocketId);
@@ -228,8 +228,8 @@ export const createCallSignalingService = ({
       },
     });
 
-    const callerSocketId = peers.getLatestSocketId(call.callerId);
-    const calleeSocketId = peers.getLatestSocketId(call.calleeId);
+    const callerSocketId = await peers.getLatestSocketId(call.callerId);
+    const calleeSocketId = await peers.getLatestSocketId(call.calleeId);
     if (callerSocketId) {
       realtime.emitCallEndToPeerViaServer(callerSocketId);
     }
@@ -248,7 +248,7 @@ export const createCallSignalingService = ({
       },
     });
 
-    const callerSocketId = peers.getLatestSocketId(call.callerId);
+    const callerSocketId = await peers.getLatestSocketId(call.callerId);
     if (callerSocketId) {
       realtime.emitCalleeBusy(callerSocketId);
       realtime.emitCallEndToPeerViaSocket(callerSocketId);
@@ -261,7 +261,7 @@ export const createCallSignalingService = ({
     targetUserId,
     candidate,
   }) {
-    const targetSocketId = peers.getLatestSocketId(targetUserId);
+    const targetSocketId = await peers.getLatestSocketId(targetUserId);
     if (!targetSocketId) return;
 
     const payload: IceCandidatePayload = {
@@ -278,7 +278,7 @@ export const createCallSignalingService = ({
     targetUserId,
     offer,
   }) {
-    const targetSocketId = peers.getLatestSocketId(targetUserId);
+    const targetSocketId = await peers.getLatestSocketId(targetUserId);
 
     if (!targetSocketId) {
       await history.update({
@@ -307,7 +307,7 @@ export const createCallSignalingService = ({
     targetUserId,
     answer,
   }) {
-    const targetSocketId = peers.getLatestSocketId(targetUserId);
+    const targetSocketId = await peers.getLatestSocketId(targetUserId);
 
     if (!targetSocketId) {
       await history.update({

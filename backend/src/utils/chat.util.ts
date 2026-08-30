@@ -1,26 +1,37 @@
 import type { Server } from "socket.io";
-import { socketConnectionRegistry } from "../socket/connection-registry.js";
+import type { SocketConnectionDirectory } from "../socket/connection-directory.js";
+import { getMemberSockets } from "./socket.util.js";
 
-export const joinMembersInChatRoom = ({memberIds,roomToJoin,io}:{memberIds:string[],roomToJoin:string,io:Server})=>{
+type SocketLookupDirectory = Pick<SocketConnectionDirectory, "getSockets">;
 
-    for(const memberId of memberIds){
-      for (const memberSocketId of socketConnectionRegistry.getSockets(memberId)) {
-        const memberSocket = io.sockets.sockets.get(memberSocketId);
-        if(memberSocket){
-          memberSocket.join(roomToJoin);
-        }
-      }
-    }
+export const joinMembersInChatRoom = async ({
+  directory,
+  memberIds,
+  roomToJoin,
+  io,
+}:{
+  directory:SocketLookupDirectory,
+  memberIds:string[],
+  roomToJoin:string,
+  io:Server,
+}): Promise<void>=>{
+    const memberSocketIds = await getMemberSockets(memberIds, directory);
+    if (!memberSocketIds.length) return;
+    io.in(memberSocketIds).socketsJoin(roomToJoin);
 }
 
-export const disconnectMembersFromChatRoom = ({memberIds,roomToLeave,io}:{memberIds:string[],roomToLeave:string,io:Server})=>{
-
-    for(const memberId of memberIds){
-      for (const memberSocketId of socketConnectionRegistry.getSockets(memberId)) {
-        const memberSocket = io.sockets.sockets.get(memberSocketId);
-        if(memberSocket){
-          memberSocket.leave(roomToLeave);
-        }
-      }
-    }
+export const disconnectMembersFromChatRoom = async ({
+  directory,
+  memberIds,
+  roomToLeave,
+  io,
+}:{
+  directory:SocketLookupDirectory,
+  memberIds:string[],
+  roomToLeave:string,
+  io:Server,
+}): Promise<void>=>{
+    const memberSocketIds = await getMemberSockets(memberIds, directory);
+    if (!memberSocketIds.length) return;
+    io.in(memberSocketIds).socketsLeave(roomToLeave);
 }

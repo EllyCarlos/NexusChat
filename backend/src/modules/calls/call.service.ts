@@ -1,5 +1,5 @@
 import type { Server, Socket } from "socket.io";
-import type { SocketConnectionRegistry } from "../../socket/connection-registry.js";
+import type { SocketConnectionDirectory } from "../../socket/connection-directory.js";
 import { sendPushNotification } from "../notifications/push-notification.service.js";
 import { createCallSignalingService } from "./application/call-signaling.service.js";
 import { prismaCallHistoryRepository } from "./infrastructure/prisma-call-history.repository.js";
@@ -9,16 +9,16 @@ import { createSocketCallRealtimeAdapter } from "./infrastructure/socket-call-re
 type SocketCallSignalingComposition = {
   io: Server;
   socket: Socket;
-  registry: SocketConnectionRegistry;
+  directory: SocketConnectionDirectory;
 };
 
 export const createSocketCallSignalingService = ({
   io,
   socket,
-  registry,
+  directory,
 }: SocketCallSignalingComposition) => createCallSignalingService({
   history: prismaCallHistoryRepository,
-  peers: createRegistryCallPeerLocator(registry),
+  peers: createRegistryCallPeerLocator(directory),
   realtime: createSocketCallRealtimeAdapter({ io, socket }),
   notifyMissedCall: ({ recipientToken, title, body }) => {
     sendPushNotification({

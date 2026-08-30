@@ -415,8 +415,10 @@ describe("friend-request create pre-extraction characterization", () => {
       recipientToken: "receiver-fcm-token",
       body: `${ACTOR_USERNAME} sent you a friend request 😃`,
     });
-    expect(appGet).toHaveBeenCalledWith("io");
+    expect(appGet).toHaveBeenNthCalledWith(1, "io");
+    expect(appGet).toHaveBeenNthCalledWith(2, "connectionDirectory");
     expect(emitEvent).toHaveBeenCalledWith({
+      directory: io,
       io,
       event: Events.NEW_FRIEND_REQUEST,
       data: createdRequest,
@@ -448,6 +450,7 @@ describe("friend-request create pre-extraction characterization", () => {
     expect(prisma.friendRequest.create).toHaveBeenCalledWith(createPersistenceShape);
     expect(sendPushNotification).not.toHaveBeenCalled();
     expect(emitEvent).toHaveBeenCalledWith({
+      directory: io,
       io,
       event: Events.NEW_FRIEND_REQUEST,
       data: createdRequest,

@@ -332,9 +332,11 @@ describe("addMemberToChat pre-extraction characterization", () => {
     });
     expect(mocks.chatFindUnique).toHaveBeenCalledWith(expectedAddedMemberChatQuery);
     expect(mocks.transaction).not.toHaveBeenCalled();
-    expect(mocks.resolveIo).toHaveBeenCalledOnce();
-    expect(mocks.resolveIo).toHaveBeenCalledWith("io");
+    expect(mocks.resolveIo).toHaveBeenCalledTimes(2);
+    expect(mocks.resolveIo).toHaveBeenNthCalledWith(1, "io");
+    expect(mocks.resolveIo).toHaveBeenNthCalledWith(2, "connectionDirectory");
     expect(mocks.joinMembers).toHaveBeenCalledWith({
+      directory: io,
       io,
       roomToJoin: CHAT_ID,
       memberIds: members,
@@ -346,6 +348,7 @@ describe("addMemberToChat pre-extraction characterization", () => {
         typingUsers: [],
         UnreadMessages: [],
       },
+      directory: io,
       io,
       users: members,
     });
@@ -355,6 +358,7 @@ describe("addMemberToChat pre-extraction characterization", () => {
     };
     expect(mocks.emitEvent).toHaveBeenNthCalledWith(2, {
       data: responsePayload,
+      directory: io,
       event: Events.NEW_MEMBER_ADDED,
       io,
       users: [ACTOR_ID, "old-member"],
@@ -404,6 +408,7 @@ describe("addMemberToChat pre-extraction characterization", () => {
       where: { id: { in: [] } },
     }));
     expect(mocks.joinMembers).toHaveBeenCalledWith({
+      directory: io,
       io,
       roomToJoin: CHAT_ID,
       memberIds: [],
@@ -433,6 +438,7 @@ describe("addMemberToChat pre-extraction characterization", () => {
         typingUsers: [],
         UnreadMessages: [],
       },
+      directory: io,
       io,
       users: ["new-member"],
     });
@@ -602,14 +608,17 @@ describe("removeMemberFromChat pre-extraction characterization", () => {
       },
     });
     expect(mocks.transaction).not.toHaveBeenCalled();
-    expect(mocks.resolveIo).toHaveBeenCalledOnce();
-    expect(mocks.resolveIo).toHaveBeenCalledWith("io");
+    expect(mocks.resolveIo).toHaveBeenCalledTimes(2);
+    expect(mocks.resolveIo).toHaveBeenNthCalledWith(1, "io");
+    expect(mocks.resolveIo).toHaveBeenNthCalledWith(2, "connectionDirectory");
     expect(mocks.disconnectMembers).toHaveBeenCalledWith({
+      directory: io,
       io,
       memberIds: members,
       roomToLeave: CHAT_ID,
     });
     expect(mocks.emitEvent).toHaveBeenNthCalledWith(1, {
+      directory: io,
       io,
       event: Events.DELETE_CHAT,
       users: members,
@@ -622,6 +631,7 @@ describe("removeMemberFromChat pre-extraction characterization", () => {
       membersId: members,
     };
     expect(mocks.emitEvent).toHaveBeenNthCalledWith(2, {
+      directory: io,
       io,
       event: Events.MEMBER_REMOVED,
       data: responsePayload,
@@ -747,6 +757,7 @@ describe("removeMemberFromChat pre-extraction characterization", () => {
       },
     });
     expect(mocks.disconnectMembers).toHaveBeenCalledWith({
+      directory: io,
       io,
       memberIds: [],
       roomToLeave: CHAT_ID,

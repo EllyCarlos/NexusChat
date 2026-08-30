@@ -137,10 +137,17 @@ const createHarness = async () => {
   };
   const limiter = new SocketEventRateLimiter();
   const limitSpy = vi.spyOn(limiter, "consumeAll").mockReturnValue(true);
+  const presence = {
+    reconcileTransition: vi.fn(async () => undefined),
+    reconcileUser: vi.fn(async () => undefined),
+    reconcilePending: vi.fn(async () => 0),
+    drain: vi.fn(async () => undefined),
+  };
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
     limiter,
+    presence,
   });
   expect(connectionHandler).toBeDefined();
   await connectionHandler!(socket as unknown as Socket);

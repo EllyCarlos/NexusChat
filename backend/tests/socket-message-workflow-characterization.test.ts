@@ -156,10 +156,17 @@ const createHarness = async ({
     }),
     to: vi.fn(() => ({ emit: roomEmit })),
   };
+  const presence = {
+    reconcileTransition: vi.fn(async () => undefined),
+    reconcileUser: vi.fn(async () => undefined),
+    reconcilePending: vi.fn(async () => 0),
+    drain: vi.fn(async () => undefined),
+  };
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
     limiter,
+    presence,
   });
   await connectionHandler!(socket as unknown as Socket);
   vi.mocked(socket.emit).mockClear();

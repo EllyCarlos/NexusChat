@@ -13,6 +13,7 @@ vi.mock("../src/utils/socket.util.js", () => ({
 
 import { Events } from "../src/enums/event/event.enum.js";
 import { createSocketChatRealtimeAdapter } from "../src/modules/chats/infrastructure/socket-chat-realtime.adapter.js";
+import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
 import {
   disconnectMembersFromChatRoom,
   joinMembersInChatRoom,
@@ -34,29 +35,39 @@ describe("Socket chat realtime adapter", () => {
     vi.clearAllMocks();
   });
 
-  it("does not resolve Socket.IO merely by importing or constructing the adapter", () => {
+  it("does not resolve Socket.IO or the directory merely by constructing the adapter", () => {
     const resolveSocketServer = vi.fn(() => ({}) as Server);
+    const resolveConnectionDirectory = vi.fn(
+      () => ({}) as SocketConnectionDirectory,
+    );
 
-    createSocketChatRealtimeAdapter(resolveSocketServer);
+    createSocketChatRealtimeAdapter(resolveSocketServer, resolveConnectionDirectory);
 
     expect(resolveSocketServer).not.toHaveBeenCalled();
+    expect(resolveConnectionDirectory).not.toHaveBeenCalled();
     expect(joinMembersInChatRoom).not.toHaveBeenCalled();
     expect(disconnectMembersFromChatRoom).not.toHaveBeenCalled();
     expect(emitEvent).not.toHaveBeenCalled();
     expect(emitEventToRoom).not.toHaveBeenCalled();
   });
 
-  it("joins created-chat members and emits the exact NEW_CHAT room event with one cached server", () => {
+  it("joins created-chat members and emits the exact NEW_CHAT room event with cached dependencies", async () => {
     const io = { marker: "socket-server" } as unknown as Server;
+    const directory = { marker: "directory" } as unknown as SocketConnectionDirectory;
     const resolveSocketServer = vi.fn(() => io);
-    const realtime = createSocketChatRealtimeAdapter(resolveSocketServer);
+    const resolveConnectionDirectory = vi.fn(() => directory);
+    const realtime = createSocketChatRealtimeAdapter(
+      resolveSocketServer,
+      resolveConnectionDirectory,
+    );
     const payload = { id: CHAT_ID, typingUsers: [] } as never;
 
-    realtime.joinMembers(OLD_MEMBERS, CHAT_ID);
+    await realtime.joinMembers(OLD_MEMBERS, CHAT_ID);
     realtime.emitNewChatToRoom(CHAT_ID, payload);
 
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
       io,
+      directory,
       memberIds: OLD_MEMBERS,
       roomToJoin: CHAT_ID,
     });
@@ -68,32 +79,41 @@ describe("Socket chat realtime adapter", () => {
     });
     calledBefore(vi.mocked(joinMembersInChatRoom), vi.mocked(emitEventToRoom));
     expect(resolveSocketServer).toHaveBeenCalledOnce();
+    expect(resolveConnectionDirectory).toHaveBeenCalledOnce();
   });
 
-  it("targets new and old member snapshots with the exact add-member events", () => {
+  it("targets new and old member snapshots with the exact add-member events", async () => {
     const io = { marker: "socket-server" } as unknown as Server;
+    const directory = { marker: "directory" } as unknown as SocketConnectionDirectory;
     const resolveSocketServer = vi.fn(() => io);
-    const realtime = createSocketChatRealtimeAdapter(resolveSocketServer);
+    const resolveConnectionDirectory = vi.fn(() => directory);
+    const realtime = createSocketChatRealtimeAdapter(
+      resolveSocketServer,
+      resolveConnectionDirectory,
+    );
     const newChatPayload = { id: CHAT_ID, typingUsers: [], UnreadMessages: [] } as never;
     const membersAddedPayload = { chatId: CHAT_ID, members: [] };
 
-    realtime.joinMembers(NEW_MEMBERS, CHAT_ID);
-    realtime.emitNewChatToMembers(NEW_MEMBERS, newChatPayload);
-    realtime.emitMembersAdded(OLD_MEMBERS, membersAddedPayload);
+    await realtime.joinMembers(NEW_MEMBERS, CHAT_ID);
+    await realtime.emitNewChatToMembers(NEW_MEMBERS, newChatPayload);
+    await realtime.emitMembersAdded(OLD_MEMBERS, membersAddedPayload);
 
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
       io,
+      directory,
       memberIds: NEW_MEMBERS,
       roomToJoin: CHAT_ID,
     });
     expect(emitEvent).toHaveBeenNthCalledWith(1, {
       io,
+      directory,
       event: Events.NEW_CHAT,
       users: NEW_MEMBERS,
       data: newChatPayload,
     });
     expect(emitEvent).toHaveBeenNthCalledWith(2, {
       io,
+      directory,
       event: Events.NEW_MEMBER_ADDED,
       users: OLD_MEMBERS,
       data: membersAddedPayload,
@@ -103,32 +123,41 @@ describe("Socket chat realtime adapter", () => {
       vi.mocked(emitEvent).mock.invocationCallOrder[1] as number,
     );
     expect(resolveSocketServer).toHaveBeenCalledOnce();
+    expect(resolveConnectionDirectory).toHaveBeenCalledOnce();
   });
 
-  it("disconnects removed members and targets removed then remaining snapshots exactly", () => {
+  it("disconnects removed members and targets removed then remaining snapshots exactly", async () => {
     const io = { marker: "socket-server" } as unknown as Server;
+    const directory = { marker: "directory" } as unknown as SocketConnectionDirectory;
     const resolveSocketServer = vi.fn(() => io);
-    const realtime = createSocketChatRealtimeAdapter(resolveSocketServer);
+    const resolveConnectionDirectory = vi.fn(() => directory);
+    const realtime = createSocketChatRealtimeAdapter(
+      resolveSocketServer,
+      resolveConnectionDirectory,
+    );
     const deletedPayload = { chatId: CHAT_ID };
     const removedPayload = { chatId: CHAT_ID, membersId: REMOVED_MEMBERS };
 
-    realtime.disconnectMembers(REMOVED_MEMBERS, CHAT_ID);
-    realtime.emitDeleteChat(REMOVED_MEMBERS, deletedPayload);
-    realtime.emitMembersRemoved(REMAINING_MEMBERS, removedPayload);
+    await realtime.disconnectMembers(REMOVED_MEMBERS, CHAT_ID);
+    await realtime.emitDeleteChat(REMOVED_MEMBERS, deletedPayload);
+    await realtime.emitMembersRemoved(REMAINING_MEMBERS, removedPayload);
 
     expect(disconnectMembersFromChatRoom).toHaveBeenCalledWith({
       io,
+      directory,
       memberIds: REMOVED_MEMBERS,
       roomToLeave: CHAT_ID,
     });
     expect(emitEvent).toHaveBeenNthCalledWith(1, {
       io,
+      directory,
       event: Events.DELETE_CHAT,
       users: REMOVED_MEMBERS,
       data: deletedPayload,
     });
     expect(emitEvent).toHaveBeenNthCalledWith(2, {
       io,
+      directory,
       event: Events.MEMBER_REMOVED,
       users: REMAINING_MEMBERS,
       data: removedPayload,
@@ -138,12 +167,19 @@ describe("Socket chat realtime adapter", () => {
       vi.mocked(emitEvent).mock.invocationCallOrder[1] as number,
     );
     expect(resolveSocketServer).toHaveBeenCalledOnce();
+    expect(resolveConnectionDirectory).toHaveBeenCalledOnce();
   });
 
   it("emits the exact GROUP_CHAT_UPDATE payload to the chat room", () => {
     const io = { marker: "socket-server" } as unknown as Server;
     const resolveSocketServer = vi.fn(() => io);
-    const realtime = createSocketChatRealtimeAdapter(resolveSocketServer);
+    const resolveConnectionDirectory = vi.fn(
+      () => ({}) as SocketConnectionDirectory,
+    );
+    const realtime = createSocketChatRealtimeAdapter(
+      resolveSocketServer,
+      resolveConnectionDirectory,
+    );
     const payload = {
       chatId: CHAT_ID,
       chatAvatar: "https://media.example/group.png",
@@ -159,5 +195,6 @@ describe("Socket chat realtime adapter", () => {
       data: payload,
     });
     expect(resolveSocketServer).toHaveBeenCalledOnce();
+    expect(resolveConnectionDirectory).not.toHaveBeenCalled();
   });
 });

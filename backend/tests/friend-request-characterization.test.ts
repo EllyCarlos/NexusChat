@@ -206,6 +206,7 @@ describe("friend-request creation characterization", () => {
       body: expect.stringContaining("actor sent you a friend request"),
     });
     expect(emitEvent).toHaveBeenCalledWith({
+      directory: io,
       io,
       event: Events.NEW_FRIEND_REQUEST,
       data: createdRequest,
@@ -264,6 +265,7 @@ describe("friend-request handling characterization", () => {
       body: expect.stringContaining("actor has accepted your friend request"),
     });
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
+      directory: io,
       io,
       memberIds: [OTHER_USER_ID, ACTOR_ID],
       roomToJoin: CHAT_ID,

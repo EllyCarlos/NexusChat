@@ -1,3 +1,3 @@
 export interface CallPeerLocatorPort {
-  getLatestSocketId(userId: string): string | undefined;
+  getLatestSocketId(userId: string): Promise<string | undefined>;
 }

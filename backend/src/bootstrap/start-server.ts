@@ -1,6 +1,10 @@
 import type { Server as HttpServer } from "node:http";
 import { config } from "../config/env.config.js";
 import {
+  createSocketConnectionStateRuntime,
+  type SocketConnectionStateRuntime,
+} from "../infrastructure/redis/socket-connection-state.runtime.js";
+import {
   prepareSocketTransport,
   resolveSocketTransportMode,
   type SocketTransportMode,
@@ -8,6 +12,7 @@ import {
 } from "../infrastructure/redis/socket-io-redis-adapter.js";
 import { prisma } from "../lib/prisma.lib.js";
 import type { NodeEnvironment } from "../schemas/env.schema.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
 import {
   createBackendServer,
   type BackendServer,
@@ -27,6 +32,9 @@ type StartServerOptions = {
     io: BackendServer["io"];
     mode: SocketTransportMode;
   }) => Promise<SocketTransportRuntime>;
+  createConnectionState?: (options: {
+    mode: SocketTransportMode;
+  }) => SocketConnectionStateRuntime;
   disconnectPrisma?: () => Promise<void>;
   registerHandlers?: typeof registerProcessHandlers;
   logStarted?: (port: string | number) => void;
@@ -73,18 +81,51 @@ export const startServer = async ({
   environment = config.app.environment,
   redisUrl = config.redis.url,
   prepareTransport = prepareSocketTransport,
+  createConnectionState = createSocketConnectionStateRuntime,
   disconnectPrisma = () => prisma.$disconnect(),
   registerHandlers = registerProcessHandlers,
   logStarted = logSuccessfulStartup,
 }: StartServerOptions = {}) => {
   const mode = resolveSocketTransportMode({ environment, redisUrl });
+  const connectionState = createConnectionState({ mode });
   let socketTransport: SocketTransportRuntime | undefined;
-  const runtime = createServer({
-    readiness: () => mode.kind === "local" || socketTransport?.isReady === true,
-  });
-  const closeResources = createShutdownCoordinator({
+  let runtime: BackendServer | undefined;
+  let closeResources: (() => Promise<void>) | undefined;
+  try {
+    runtime = createServer({
+      connectionState,
+      readiness: () => socketTransport?.isReady === true
+        && connectionState.isReady
+        && (runtime?.socketLifecycle?.isAcceptingConnections ?? true),
+    });
+  } catch (error) {
+    connectionState.markDraining();
+    try {
+      await connectionState.close();
+    } catch (closeError) {
+      logServerError("Connection state shutdown failed.", closeError);
+    }
+    try {
+      await disconnectPrisma();
+    } catch (closeError) {
+      logServerError("Prisma shutdown failed.", closeError);
+    }
+    throw error;
+  }
+  closeResources = createShutdownCoordinator({
     httpServer: runtime.httpServer,
     io: runtime.io,
+    beginSocketDrain: () => {
+      connectionState.markDraining();
+      runtime?.socketLifecycle?.beginDrain();
+    },
+    disconnectLocalSockets: () => {
+      runtime?.socketLifecycle?.disconnectLocalSockets();
+    },
+    drainSocketOperations: async () => {
+      await runtime?.socketLifecycle?.drain();
+    },
+    closeConnectionState: () => connectionState.close(),
     closeDistributedRealtime: async () => {
       await socketTransport?.close();
     },
@@ -97,6 +138,15 @@ export const startServer = async ({
   };
   try {
     socketTransport = await prepareTransport({ io: runtime.io, mode });
+    await connectionState.connect();
+    await connectionState.start({
+      reconcilePresence: async (userId) => {
+        await runtime?.socketLifecycle?.reconcilePresence(userId);
+      },
+      handleLostConnection: ({ userId, socketId }) => {
+        runtime?.socketLifecycle?.handleLostConnection(userId, socketId);
+      },
+    });
     unregisterHandlers = registerHandlers({ shutdown });
     await listen(runtime.httpServer, port);
   } catch (error) {
@@ -110,5 +160,5 @@ export const startServer = async ({
   }
 
   logStarted(port);
-  return { ...runtime, socketTransport, shutdown };
+  return { ...runtime, connectionState, socketTransport, shutdown };
 };

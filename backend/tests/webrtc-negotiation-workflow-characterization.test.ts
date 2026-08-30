@@ -35,7 +35,7 @@ vi.mock("../src/utils/safe-logger.utils.js", () => ({
 }));
 
 import { Events } from "../src/enums/event/event.enum.js";
-import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
 import {
   SOCKET_EVENT_LIMITS,
   type SocketEventRateLimiter,
@@ -93,6 +93,25 @@ const negotiationDonePayload = (targetId = CALLER_ID) => ({
 });
 
 type EventHandler = (payload?: unknown) => Promise<void> | void;
+type TestConnectionDirectory = SocketConnectionDirectory & {
+  addSocket(userId: string, socketId: string): void;
+  getLatestSocket: ReturnType<typeof vi.fn>;
+};
+
+const createTestConnectionDirectory = (): TestConnectionDirectory => {
+  const socketIdsByUser = new Map<string, string[]>();
+  const getLatestSocket = vi.fn(async (userId: string) => {
+    const socketIds = socketIdsByUser.get(userId);
+    return socketIds?.[socketIds.length - 1];
+  });
+
+  return {
+    addSocket: (userId: string, socketId: string) => {
+      socketIdsByUser.set(userId, [...(socketIdsByUser.get(userId) ?? []), socketId]);
+    },
+    getLatestSocket,
+  } as unknown as TestConnectionDirectory;
+};
 
 const createLimiter = (
   implementation: (
@@ -109,23 +128,23 @@ const createLimiter = (
 
 const createHarness = ({
   actorId = CALLER_ID,
+  directory = createTestConnectionDirectory(),
   ioRelayEmit = vi.fn(),
   limiter = createLimiter().limiter,
-  registry = new SocketConnectionRegistry(),
   socketEmit = vi.fn(),
   socketRelayEmit = vi.fn(),
 }: {
   actorId?: string;
+  directory?: TestConnectionDirectory;
   ioRelayEmit?: ReturnType<typeof vi.fn>;
   limiter?: SocketEventRateLimiter;
-  registry?: SocketConnectionRegistry;
   socketEmit?: ReturnType<typeof vi.fn>;
   socketRelayEmit?: ReturnType<typeof vi.fn>;
 } = {}) => {
   const handlers = new Map<string, EventHandler>();
   const socketTo = vi.fn((_socketId: string) => ({ emit: socketRelayEmit }));
   const ioTo = vi.fn((_socketId: string) => ({ emit: ioRelayEmit }));
-  const getLatestSocket = vi.spyOn(registry, "getLatestSocket");
+  const { getLatestSocket } = directory;
   const socket = {
     id: `socket-${actorId}`,
     user: {
@@ -144,7 +163,7 @@ const createHarness = ({
   const io = { to: ioTo };
 
   registerWebRtcHandlers(socket as unknown as Socket, io as unknown as Server, {
-    registry,
+    directory,
     limiter,
   });
 
@@ -340,11 +359,11 @@ describe("WebRTC negotiation parsing and guard order", () => {
 
 describe("ICE_CANDIDATE workflow compatibility", () => {
   it("authorizes, rate-limits by authoritative call, selects the latest peer socket, and uses io.to", async () => {
-    const registry = new SocketConnectionRegistry();
-    registry.add(CALLEE_ID, "callee-older-socket");
-    registry.add(CALLEE_ID, "callee-latest-socket");
+    const directory = createTestConnectionDirectory();
+    directory.addSocket(CALLEE_ID, "callee-older-socket");
+    directory.addSocket(CALLEE_ID, "callee-latest-socket");
     const { consumeAll, limiter } = createLimiter();
-    const harness = createHarness({ actorId: CALLER_ID, limiter, registry });
+    const harness = createHarness({ actorId: CALLER_ID, directory, limiter });
 
     await harness.trigger(Events.ICE_CANDIDATE, icePayload());
 
@@ -404,11 +423,11 @@ describe("ICE_CANDIDATE workflow compatibility", () => {
 
 describe("NEGO_NEEDED workflow compatibility", () => {
   it("authorizes, rate-limits by authoritative call, selects the latest peer socket, and uses socket.to", async () => {
-    const registry = new SocketConnectionRegistry();
-    registry.add(CALLEE_ID, "callee-older-socket");
-    registry.add(CALLEE_ID, "callee-latest-socket");
+    const directory = createTestConnectionDirectory();
+    directory.addSocket(CALLEE_ID, "callee-older-socket");
+    directory.addSocket(CALLEE_ID, "callee-latest-socket");
     const { consumeAll, limiter } = createLimiter();
-    const harness = createHarness({ actorId: CALLER_ID, limiter, registry });
+    const harness = createHarness({ actorId: CALLER_ID, directory, limiter });
 
     await harness.trigger(Events.NEGO_NEEDED, negotiationNeededPayload());
 
@@ -477,11 +496,11 @@ describe("NEGO_NEEDED workflow compatibility", () => {
 
 describe("NEGO_DONE workflow compatibility", () => {
   it("authorizes, rate-limits by authoritative call, selects the latest peer socket, and emits NEGO_FINAL with socket.to", async () => {
-    const registry = new SocketConnectionRegistry();
-    registry.add(CALLER_ID, "caller-older-socket");
-    registry.add(CALLER_ID, "caller-latest-socket");
+    const directory = createTestConnectionDirectory();
+    directory.addSocket(CALLER_ID, "caller-older-socket");
+    directory.addSocket(CALLER_ID, "caller-latest-socket");
     const { consumeAll, limiter } = createLimiter();
-    const harness = createHarness({ actorId: CALLEE_ID, limiter, registry });
+    const harness = createHarness({ actorId: CALLEE_ID, directory, limiter });
 
     await harness.trigger(Events.NEGO_DONE, negotiationDonePayload());
 
@@ -550,9 +569,9 @@ describe("NEGO_DONE workflow compatibility", () => {
 
 describe("WebRTC negotiation participant-role compatibility", () => {
   it("allows the recorded callee to initiate NEGO_NEEDED toward the recorded caller", async () => {
-    const registry = new SocketConnectionRegistry();
-    registry.add(CALLER_ID, "caller-socket");
-    const harness = createHarness({ actorId: CALLEE_ID, registry });
+    const directory = createTestConnectionDirectory();
+    directory.addSocket(CALLER_ID, "caller-socket");
+    const harness = createHarness({ actorId: CALLEE_ID, directory });
 
     await harness.trigger(Events.NEGO_NEEDED, negotiationNeededPayload(CALLER_ID));
 
@@ -568,9 +587,9 @@ describe("WebRTC negotiation participant-role compatibility", () => {
   });
 
   it("allows the recorded caller to send NEGO_DONE toward the recorded callee", async () => {
-    const registry = new SocketConnectionRegistry();
-    registry.add(CALLEE_ID, "callee-socket");
-    const harness = createHarness({ actorId: CALLER_ID, registry });
+    const directory = createTestConnectionDirectory();
+    directory.addSocket(CALLEE_ID, "callee-socket");
+    const harness = createHarness({ actorId: CALLER_ID, directory });
 
     await harness.trigger(Events.NEGO_DONE, negotiationDonePayload(CALLEE_ID));
 
@@ -621,8 +640,8 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     transport,
   }) => {
     const deliveryError = new Error(`${event} delivery failed`);
-    const registry = new SocketConnectionRegistry();
-    registry.add(targetId, "target-socket");
+    const directory = createTestConnectionDirectory();
+    directory.addSocket(targetId, "target-socket");
     const ioRelayEmit = vi.fn(() => {
       if (transport === "io") throw deliveryError;
     });
@@ -631,8 +650,8 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     });
     const harness = createHarness({
       actorId,
+      directory,
       ioRelayEmit,
-      registry,
       socketRelayEmit,
     });
 

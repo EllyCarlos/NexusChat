@@ -63,14 +63,14 @@ export const createChatMemberAdder = ({
     UnreadMessages: [],
   } as Parameters<ChatRealtimePort["emitNewChatToMembers"]>[1];
 
-  realtime.joinMembers(memberIds, authorizedChat.id);
-  realtime.emitNewChatToMembers(memberIds, newChatPayload);
+  await realtime.joinMembers(memberIds, authorizedChat.id);
+  await realtime.emitNewChatToMembers(memberIds, newChatPayload);
 
   const payload: AddedMembersPayload = {
     chatId: authorizedChat.id,
     members: newMemberDetails,
   };
-  realtime.emitMembersAdded(oldMemberIds, payload);
+  await realtime.emitMembersAdded(oldMemberIds, payload);
 
   return payload;
 };
