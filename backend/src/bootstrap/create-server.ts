@@ -23,7 +23,13 @@ export type BackendServer = {
   io: SocketServer;
 };
 
-export const createBackendServer = (): BackendServer => {
+export type CreateBackendServerOptions = {
+  readiness?: () => boolean;
+};
+
+export const createBackendServer = ({
+  readiness,
+}: CreateBackendServerOptions = {}): BackendServer => {
   initializeProviders(config);
   const originPolicy = createOriginPolicy({
     environment: config.app.environment,
@@ -33,6 +39,7 @@ export const createBackendServer = (): BackendServer => {
   const app = createApp({
     originPolicy,
     environment: config.app.environment,
+    readiness,
     routes: [
       { path: "/api/v1/auth", router: authRoutes },
       { path: "/api/v1/chat", router: chatRoutes },

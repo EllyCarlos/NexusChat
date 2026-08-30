@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { createOriginPolicy } from "../src/security/origin-policy.js";
 
-const createTestApplication = (environment = "test") => {
+const createTestApplication = (
+  environment = "test",
+  readiness: () => boolean = () => true,
+) => {
   const testRouter = express.Router();
   testRouter.get("/ok", (_req, res) => res.status(200).json({ ok: true }));
   testRouter.get("/error", (_req, _res, next) => next(new Error("private failure")));
@@ -20,6 +23,7 @@ const createTestApplication = (environment = "test") => {
       frontendOrigin: "http://localhost:3000",
     }),
     environment,
+    readiness,
     routes: [
       { path: "/test", router: testRouter },
       { path: "/api/v1/auth", router: authRouter },
@@ -99,6 +103,34 @@ describe("API security headers and public status endpoints", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ status: "ok" });
+  });
+
+  it("reports only a minimal unavailable state when distributed readiness is lost", async () => {
+    let publisherReady = true;
+    let subscriberReady = true;
+    const app = createTestApplication(
+      "production",
+      () => publisherReady && subscriberReady,
+    );
+
+    const ready = await request(app).get("/health");
+    expect(ready.status).toBe(200);
+    expect(ready.body).toEqual({ status: "ok" });
+
+    publisherReady = false;
+    const publisherUnavailable = await request(app).get("/health");
+    expect(publisherUnavailable.status).toBe(503);
+    expect(publisherUnavailable.body).toEqual({ status: "unavailable" });
+    expect(publisherUnavailable.headers["cache-control"]).toBe("no-store");
+
+    publisherReady = true;
+    subscriberReady = false;
+    const subscriberUnavailable = await request(app).get("/health");
+    expect(subscriberUnavailable.status).toBe(503);
+    expect(subscriberUnavailable.body).toEqual({ status: "unavailable" });
+    expect(JSON.stringify(subscriberUnavailable.body)).not.toMatch(
+      /redis|url|client|publisher|subscriber|credential/i,
+    );
   });
 
   it("does not expose runtime diagnostics from health", async () => {

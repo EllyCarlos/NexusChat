@@ -5,6 +5,7 @@ import { logServerError } from "../utils/safe-logger.utils.js";
 type ShutdownOptions = {
   httpServer: HttpServer;
   io: SocketServer;
+  closeDistributedRealtime?: () => Promise<void>;
   disconnectPrisma: () => Promise<void>;
 };
 
@@ -39,6 +40,7 @@ const closeHttpServer = (httpServer: HttpServer) => new Promise<void>((resolve, 
 export const createShutdownCoordinator = ({
   httpServer,
   io,
+  closeDistributedRealtime = async () => undefined,
   disconnectPrisma,
 }: ShutdownOptions) => {
   let shutdownPromise: Promise<void> | undefined;
@@ -61,6 +63,10 @@ export const createShutdownCoordinator = ({
       };
 
       await closeResource("Socket.IO shutdown failed.", () => closeSocketServer(io));
+      await closeResource(
+        "Distributed realtime shutdown failed.",
+        closeDistributedRealtime,
+      );
       await closeResource("HTTP server shutdown failed.", () => closeHttpServer(httpServer));
       await closeResource("Prisma shutdown failed.", disconnectPrisma);
 

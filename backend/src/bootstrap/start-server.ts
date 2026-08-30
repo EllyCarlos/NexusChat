@@ -1,9 +1,17 @@
 import type { Server as HttpServer } from "node:http";
 import { config } from "../config/env.config.js";
+import {
+  prepareSocketTransport,
+  resolveSocketTransportMode,
+  type SocketTransportMode,
+  type SocketTransportRuntime,
+} from "../infrastructure/redis/socket-io-redis-adapter.js";
 import { prisma } from "../lib/prisma.lib.js";
+import type { NodeEnvironment } from "../schemas/env.schema.js";
 import {
   createBackendServer,
   type BackendServer,
+  type CreateBackendServerOptions,
 } from "./create-server.js";
 import {
   createShutdownCoordinator,
@@ -11,8 +19,14 @@ import {
 } from "./shutdown.js";
 
 type StartServerOptions = {
-  createServer?: () => BackendServer;
+  createServer?: (options?: CreateBackendServerOptions) => BackendServer;
   port?: string | number;
+  environment?: NodeEnvironment;
+  redisUrl?: string;
+  prepareTransport?: (options: {
+    io: BackendServer["io"];
+    mode: SocketTransportMode;
+  }) => Promise<SocketTransportRuntime>;
   disconnectPrisma?: () => Promise<void>;
   registerHandlers?: typeof registerProcessHandlers;
   logStarted?: (port: string | number) => void;
@@ -56,14 +70,24 @@ const logSuccessfulStartup = (port: string | number) => {
 export const startServer = async ({
   createServer = createBackendServer,
   port = config.app.port,
+  environment = config.app.environment,
+  redisUrl = config.redis.url,
+  prepareTransport = prepareSocketTransport,
   disconnectPrisma = () => prisma.$disconnect(),
   registerHandlers = registerProcessHandlers,
   logStarted = logSuccessfulStartup,
 }: StartServerOptions = {}) => {
-  const runtime = createServer();
+  const mode = resolveSocketTransportMode({ environment, redisUrl });
+  let socketTransport: SocketTransportRuntime | undefined;
+  const runtime = createServer({
+    readiness: () => mode.kind === "local" || socketTransport?.isReady === true,
+  });
   const closeResources = createShutdownCoordinator({
     httpServer: runtime.httpServer,
     io: runtime.io,
+    closeDistributedRealtime: async () => {
+      await socketTransport?.close();
+    },
     disconnectPrisma,
   });
   let unregisterHandlers: () => void = () => undefined;
@@ -71,9 +95,9 @@ export const startServer = async ({
     unregisterHandlers();
     await closeResources();
   };
-  unregisterHandlers = registerHandlers({ shutdown });
-
   try {
+    socketTransport = await prepareTransport({ io: runtime.io, mode });
+    unregisterHandlers = registerHandlers({ shutdown });
     await listen(runtime.httpServer, port);
   } catch (error) {
     unregisterHandlers();
@@ -86,5 +110,5 @@ export const startServer = async ({
   }
 
   logStarted(port);
-  return { ...runtime, shutdown };
+  return { ...runtime, socketTransport, shutdown };
 };

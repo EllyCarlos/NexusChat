@@ -21,6 +21,7 @@ type CreateAppOptions = {
   environment: string;
   routes?: AppRoute[];
   requestLogger?: ReturnType<typeof createRequestLogger>;
+  readiness?: () => boolean;
 };
 
 export const createApp = ({
@@ -28,6 +29,7 @@ export const createApp = ({
   environment,
   routes = [],
   requestLogger = createRequestLogger(),
+  readiness = () => true,
 }: CreateAppOptions) => {
   const app = express();
 
@@ -76,6 +78,10 @@ export const createApp = ({
 
   app.get("/health", (_req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
+    if (!readiness()) {
+      res.status(503).json({ status: "unavailable" });
+      return;
+    }
     res.status(200).json({ status: "ok" });
   });
 
