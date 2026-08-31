@@ -329,6 +329,10 @@ implements SocketConnectionDirectory, SocketConnectionStateMaintenance {
     socketId: string,
     maximumConnections = MAX_CONNECTIONS_PER_USER,
   ): Promise<DirectoryConnectionRegistration> {
+    if (this.executor.isReady === false) {
+      throw new Error("Redis socket connection directory is not ready.");
+    }
+
     const connectionKey = encodeConnectionKey(userId, socketId);
     const registration = parseRegistration(await this.executor.eval(
       ADD_SOCKET_CONNECTION_SCRIPT,

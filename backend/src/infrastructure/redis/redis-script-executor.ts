@@ -4,5 +4,6 @@ export type RedisEvalOptions = {
 };
 
 export interface RedisScriptExecutor {
+  readonly isReady?: boolean;
   eval(script: string, options: RedisEvalOptions): Promise<unknown>;
 }

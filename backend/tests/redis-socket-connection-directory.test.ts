@@ -69,6 +69,19 @@ const offlineTransition = {
 };
 
 describe("Redis Socket connection directory script boundary", () => {
+  it("rejects new admission without EVAL when the Redis executor is unavailable", async () => {
+    const evalMock = vi.fn<RedisScriptExecutor["eval"]>();
+    const directory = new RedisSocketConnectionDirectory({
+      eval: evalMock,
+      isReady: false,
+    });
+
+    await expect(directory.add(USER_ID, SOCKET_ID, 8)).rejects.toThrow(
+      "Redis socket connection directory is not ready.",
+    );
+    expect(evalMock).not.toHaveBeenCalled();
+  });
+
   it("adds a connection with exactly one EVAL and decodes its online transition", async () => {
     const { directory, evalMock } = createHarness();
     evalMock.mockResolvedValue(JSON.stringify({

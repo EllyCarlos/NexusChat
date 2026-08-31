@@ -16,6 +16,7 @@
     "build:production": "npm run build && npm prune --omit=dev --omit=optional --ignore-scripts",
     "postinstall": "prisma generate",
     "test": "vitest run",
+    "test:live:redis": "vitest run --config vitest.live.config.ts",
     "test:security": "vitest run tests/token-purpose.test.ts tests/rest-authorization.test.ts tests/socket-authorization.test.ts tests/webrtc-authorization.test.ts tests/socket-lifecycle-hardening.test.ts tests/socket-event-hardening.test.ts"
   },
   "keywords": [],
