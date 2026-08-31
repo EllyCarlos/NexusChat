@@ -18,7 +18,7 @@ type RateLimitEntry = {
   resetAt: number;
 };
 
-const hashLimiterKey = (namespace: string, key: string) =>
+export const hashLimiterKey = (namespace: string, key: string) =>
   createHash("sha256").update(namespace).update("\0").update(key).digest("base64url");
 
 export class BoundedInMemoryRateLimiter {

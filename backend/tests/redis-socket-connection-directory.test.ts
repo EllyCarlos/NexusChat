@@ -6,8 +6,8 @@ import {
   SOCKET_CONNECTION_RENEWAL_BATCH_SIZE,
   SOCKET_ONLINE_USER_REAP_MAX_PASSES,
   SOCKET_PRESENCE_TRUTH_RETENTION_MS,
-  type RedisScriptExecutor,
 } from "../src/infrastructure/redis/redis-socket-connection-directory.js";
+import type { RedisScriptExecutor } from "../src/infrastructure/redis/redis-script-executor.js";
 import {
   ADD_SOCKET_CONNECTION_SCRIPT,
   CLAIM_PRESENCE_SCRIPT,

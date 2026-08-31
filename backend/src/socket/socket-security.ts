@@ -5,6 +5,8 @@ import {
   BoundedInMemoryRateLimiter,
   type RateLimitPolicy,
 } from "../security/rate-limit.js";
+import { logServerError } from "../utils/safe-logger.utils.js";
+import type { SocketEventRateLimitPort } from "./socket-event-rate-limit.port.js";
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
@@ -86,7 +88,7 @@ export const parseSocketPayload = <Schema extends z.ZodTypeAny>(
   return undefined;
 };
 
-export const enforceSocketEventLimits = ({
+export const enforceSocketEventLimits = async ({
   socket,
   event,
   limiter,
@@ -95,11 +97,15 @@ export const enforceSocketEventLimits = ({
 }: {
   socket: Socket;
   event: string;
-  limiter: SocketEventRateLimiter;
+  limiter: SocketEventRateLimitPort;
   policies: readonly RateLimitPolicy[];
   keyParts: readonly string[];
-}): boolean => {
-  if (limiter.consumeAll(policies, keyParts)) return true;
+}): Promise<boolean> => {
+  try {
+    if (await limiter.consumeAll(policies, keyParts)) return true;
+  } catch (error) {
+    logServerError("Socket rate-limit evaluation failed.", error);
+  }
 
   emitSocketSecurityError(socket, "RATE_LIMITED", event);
   return false;

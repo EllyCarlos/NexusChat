@@ -66,6 +66,11 @@ const createDistributedHarness = () => {
   const createCommandClient = vi.fn(() => commandClient);
   const createRuntime = vi.fn(() => commandRuntime);
   const createDirectory = vi.fn(() => directory);
+  const eventLimiter = {
+    consume: vi.fn(async () => true),
+    consumeAll: vi.fn(async () => true),
+  };
+  const createEventLimiter = vi.fn(() => eventLimiter);
 
   const runtime = createSocketConnectionStateRuntime({
     mode: { kind: "distributed", redisUrl: "redis://example.test" },
@@ -73,6 +78,7 @@ const createDistributedHarness = () => {
       createCommandClient,
       createRuntime,
       createDirectory,
+      createEventLimiter,
       scheduleRecurring,
     },
   });
@@ -85,6 +91,8 @@ const createDistributedHarness = () => {
     createCommandClient,
     createRuntime,
     createDirectory,
+    eventLimiter,
+    createEventLimiter,
     scheduleRecurring,
     recurringTask,
     getScheduledCallback: () => scheduledCallback,
@@ -115,6 +123,11 @@ describe("Socket connection-state runtime", () => {
     });
     expect(createCommandClient).not.toHaveBeenCalled();
     expect(scheduleRecurring).not.toHaveBeenCalled();
+    await expect(runtime.eventLimiter.consume({
+      namespace: "local-runtime",
+      limit: 1,
+      windowMs: 1_000,
+    }, ["user-a"])).resolves.toBe(true);
   });
 
   it("constructs exactly one command client and becomes ready only after initial maintenance", async () => {
@@ -136,6 +149,15 @@ describe("Socket connection-state runtime", () => {
     expect(harness.createCommandClient).toHaveBeenCalledWith({
       url: "redis://example.test",
     });
+    expect(harness.createRuntime).toHaveBeenCalledOnce();
+    expect(harness.createRuntime).toHaveBeenCalledWith(harness.commandClient);
+    expect(harness.createDirectory).toHaveBeenCalledOnce();
+    expect(harness.createDirectory).toHaveBeenCalledWith(harness.commandClient);
+    expect(harness.createEventLimiter).toHaveBeenCalledOnce();
+    expect(harness.createEventLimiter).toHaveBeenCalledWith({
+      executor: harness.commandClient,
+    });
+    expect(harness.runtime.eventLimiter).toBe(harness.eventLimiter);
     expect(harness.runtime.isReady).toBe(false);
 
     await harness.runtime.connect();

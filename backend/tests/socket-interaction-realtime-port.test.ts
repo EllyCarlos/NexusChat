@@ -42,7 +42,7 @@ import { registerPollHandlers } from "../src/socket/handlers/poll.handlers.js";
 import { registerReactionHandlers } from "../src/socket/handlers/reaction.handlers.js";
 import { registerTypingHandlers } from "../src/socket/handlers/typing.handlers.js";
 import type { ChatInteractionRealtimePort } from "../src/socket/realtime/contracts/interaction-realtime.port.js";
-import type { SocketEventRateLimiter } from "../src/socket/socket-security.js";
+import type { SocketEventRateLimitPort } from "../src/socket/socket-event-rate-limit.port.js";
 
 const ACTOR_ID = "cm43000000000000000000001";
 const CHAT_ID = "cm43000000000000000000002";
@@ -111,8 +111,9 @@ const createHarness = () => {
     emit: vi.fn(),
   };
   const limiter = {
-    consumeAll: vi.fn(() => true),
-  } as unknown as SocketEventRateLimiter;
+    consume: vi.fn(async () => true),
+    consumeAll: vi.fn(async () => true),
+  } satisfies SocketEventRateLimitPort;
   const realtime = createRealtime();
   const dependencies = {
     socket: socket as unknown as Socket,

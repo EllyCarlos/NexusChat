@@ -29,8 +29,8 @@ import { ApplicationError } from "../src/errors/application-error.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import { MAX_SOCKET_AUDIO_BYTES, MAX_SOCKET_TEXT_LENGTH } from "../src/schemas/socket.schema.js";
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
-import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import { uploadAudioToCloudinary, uploadEncryptedAudioToCloudinary } from "../src/utils/auth.util.js";
 
 const USER_ID = "cm30000000000000000000001";
@@ -87,7 +87,7 @@ const createHarness = async () => {
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
-    limiter: new SocketEventRateLimiter(),
+    limiter: new LocalSocketEventRateLimitAdapter(),
   });
   await connectionHandler!(socket as unknown as Socket);
   vi.mocked(socket.emit).mockClear();

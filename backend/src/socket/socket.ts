@@ -20,11 +20,9 @@ import { registerPollHandlers } from "./handlers/poll.handlers.js";
 import { registerReactionHandlers } from "./handlers/reaction.handlers.js";
 import { registerTypingHandlers } from "./handlers/typing.handlers.js";
 import { createSocketChatEventRealtimeAdapter } from "./realtime/infrastructure/socket-chat-event-realtime.adapter.js";
-import {
-  emitSocketSecurityError,
-  socketEventRateLimiter,
-  type SocketEventRateLimiter,
-} from "./socket-security.js";
+import { createLocalSocketEventRateLimitProvider } from "./local-socket-event-rate-limit.adapter.js";
+import { emitSocketSecurityError } from "./socket-security.js";
+import type { SocketEventRateLimitPort } from "./socket-event-rate-limit.port.js";
 import {
   createSocketOperationTracker,
   type SocketOperationTracker,
@@ -43,7 +41,7 @@ type OnlineUsersListEventSendPayload = {
 type SocketHandlerDependencies = {
   directory?: SocketConnectionDirectory;
   registry?: SocketConnectionRegistry;
-  limiter?: SocketEventRateLimiter;
+  limiter?: SocketEventRateLimitPort;
   presenceWriteQueue?: SocketPresenceWriteQueue;
   presence?: SocketPresenceCoordinator;
   operationTracker?: SocketOperationTracker;
@@ -65,7 +63,7 @@ const registerSocketHandlers = (
   const registry = dependencies.registry ?? socketConnectionRegistry;
   const directory = dependencies.directory
     ?? createLocalSocketConnectionDirectory(registry);
-  const limiter = dependencies.limiter ?? socketEventRateLimiter;
+  const limiter = dependencies.limiter ?? createLocalSocketEventRateLimitProvider();
   const presenceWriteQueue = dependencies.presenceWriteQueue ?? socketPresenceWriteQueue;
   const presence = dependencies.presence ?? createLocalSocketPresenceCoordinator({
     directory,

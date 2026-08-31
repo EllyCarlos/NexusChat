@@ -7,11 +7,11 @@ import {
 } from "../../schemas/socket.schema.js";
 import { assertMessageAccessible } from "../../services/authorization.service.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
+import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
   parseSocketPayload,
   SOCKET_EVENT_LIMITS,
-  type SocketEventRateLimiter,
 } from "../socket-security.js";
 import type {
   DeleteReactionRealtimePayload,
@@ -22,7 +22,7 @@ import type { ChatInteractionRealtimePort } from "../realtime/contracts/interact
 type ReactionHandlerDependencies = {
   socket: Socket;
   userId: string;
-  limiter: SocketEventRateLimiter;
+  limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
 };
 
@@ -36,22 +36,22 @@ export const registerReactionHandlers = ({
     const parsedPayload = parseSocketPayload(socket, Events.NEW_REACTION, newReactionEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { chatId, messageId, reaction } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.NEW_REACTION,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.NEW_REACTION,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.reactionMessage],
         keyParts: [userId, authorizedMessage.id],
-      })) return;
+      }))) return;
 
       const result = await prisma.reactions.findFirst({
         where: {
@@ -91,22 +91,22 @@ export const registerReactionHandlers = ({
     const parsedPayload = parseSocketPayload(socket, Events.DELETE_REACTION, deleteReactionEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { chatId, messageId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.DELETE_REACTION,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.DELETE_REACTION,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.reactionMessage],
         keyParts: [userId, authorizedMessage.id],
-      })) return;
+      }))) return;
 
       await prisma.reactions.deleteMany({
         where: {

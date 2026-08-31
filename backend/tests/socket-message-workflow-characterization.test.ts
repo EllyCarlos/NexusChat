@@ -63,11 +63,9 @@ import {
   assertMessageAccessible,
 } from "../src/services/authorization.service.js";
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import type { SocketEventRateLimitPort } from "../src/socket/socket-event-rate-limit.port.js";
 import registerSocketHandlers from "../src/socket/socket.js";
-import {
-  SOCKET_EVENT_LIMITS,
-  type SocketEventRateLimiter,
-} from "../src/socket/socket-security.js";
+import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import {
   deleteFilesFromCloudinary,
   uploadAudioToCloudinary,
@@ -116,12 +114,15 @@ const populatedMessage = {
 type EventHandler = (payload?: unknown) => Promise<void> | void;
 
 const createLimiter = (
-  implementation: (...args: unknown[]) => boolean = () => true,
+  implementation: (...args: unknown[]) => boolean | Promise<boolean> = () => true,
 ) => {
-  const consumeAll = vi.fn(implementation);
+  const consumeAll = vi.fn(async (...args: unknown[]) => implementation(...args));
   return {
     consumeAll,
-    limiter: { consumeAll } as unknown as SocketEventRateLimiter,
+    limiter: {
+      consume: vi.fn(async () => true),
+      consumeAll,
+    } satisfies SocketEventRateLimitPort,
   };
 };
 
@@ -129,7 +130,7 @@ const createHarness = async ({
   limiter = createLimiter().limiter,
   roomEmit = vi.fn(),
 }: {
-  limiter?: SocketEventRateLimiter;
+  limiter?: SocketEventRateLimitPort;
   roomEmit?: ReturnType<typeof vi.fn>;
 } = {}) => {
   const handlers = new Map<string, EventHandler>();
@@ -341,6 +342,59 @@ describe("Socket MESSAGE pre-extraction security and rate-limit characterization
       event: Events.MESSAGE,
     });
     expect(prisma.message.create).not.toHaveBeenCalled();
+  });
+
+  it("awaits actor admission before authorization and persistence", async () => {
+    let resolveAdmission: ((allowed: boolean) => void) | undefined;
+    const admission = new Promise<boolean>((resolve) => {
+      resolveAdmission = resolve;
+    });
+    const { consumeAll, limiter } = createLimiter(() => admission);
+    const harness = await createHarness({ limiter });
+
+    const handling = harness.triggerMessage({
+      chatId: CHAT_ID,
+      isPollMessage: false,
+      textMessageContent: "hello",
+    });
+
+    expect(consumeAll).toHaveBeenCalledOnce();
+    expect(assertChatMember).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+
+    resolveAdmission!(true);
+    await handling;
+
+    expect(assertChatMember).toHaveBeenCalledWith(ACTOR_ID, CHAT_ID);
+    expect(consumeAll).toHaveBeenCalledTimes(2);
+    expect(prisma.message.create).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed before authorization when the limiter provider rejects", async () => {
+    const providerFailure = new Error("private Redis provider detail");
+    const { consumeAll, limiter } = createLimiter(async () => {
+      throw providerFailure;
+    });
+    const harness = await createHarness({ limiter });
+
+    await harness.triggerMessage({
+      chatId: CHAT_ID,
+      isPollMessage: false,
+      textMessageContent: "hello",
+    });
+
+    expect(consumeAll).toHaveBeenCalledOnce();
+    expect(logServerError).toHaveBeenCalledWith(
+      "Socket rate-limit evaluation failed.",
+      providerFailure,
+    );
+    expect(harness.socket.emit).toHaveBeenCalledWith(Events.SECURITY_ERROR, {
+      category: "RATE_LIMITED",
+      event: Events.MESSAGE,
+    });
+    expect(assertChatMember).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(harness.roomEmit).not.toHaveBeenCalled();
   });
 
   it("does not consume chat limits when reply authorization fails and safe-logs only", async () => {

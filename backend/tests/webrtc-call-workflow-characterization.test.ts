@@ -24,10 +24,8 @@ vi.mock("../src/utils/safe-logger.utils.js", () => ({
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
-import {
-  SOCKET_EVENT_LIMITS,
-  SocketEventRateLimiter,
-} from "../src/socket/socket-security.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
+import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 import { logServerError } from "../src/utils/safe-logger.utils.js";
@@ -103,7 +101,7 @@ const createHarness = (actorUserId: string) => {
   const addSocket = (userId: string, socketId: string) => {
     socketIdsByUser.set(userId, [...(socketIdsByUser.get(userId) ?? []), socketId]);
   };
-  const limiter = new SocketEventRateLimiter();
+  const limiter = new LocalSocketEventRateLimitAdapter();
   const limit = vi.spyOn(limiter, "consumeAll");
   const socketEmit = vi.fn();
   const socketRelayEmit = vi.fn();
@@ -438,7 +436,7 @@ describe("CALL_ACCEPTED and CALL_REJECTED shared transport/state characterizatio
   ) => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     const harness = createHarness(CALLEE_ID);
-    harness.limit.mockReturnValueOnce(true).mockReturnValueOnce(false);
+    harness.limit.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
     await harness.trigger(event, payload);
 

@@ -94,6 +94,7 @@ export const createBackendServer = ({
     });
   const socketLifecycle = registerSocketHandlers(io, {
     directory: connectionState.directory,
+    limiter: connectionState.eventLimiter,
     presence,
   });
 

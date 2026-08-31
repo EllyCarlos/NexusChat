@@ -10,11 +10,11 @@ import {
   assertPinAccessible,
 } from "../../services/authorization.service.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
+import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
   parseSocketPayload,
   SOCKET_EVENT_LIMITS,
-  type SocketEventRateLimiter,
 } from "../socket-security.js";
 import type {
   PinLimitReachedRealtimePayload,
@@ -25,7 +25,7 @@ import type { ChatInteractionRealtimePort } from "../realtime/contracts/interact
 type PinHandlerDependencies = {
   socket: Socket;
   userId: string;
-  limiter: SocketEventRateLimiter;
+  limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
 };
 
@@ -39,22 +39,22 @@ export const registerPinHandlers = ({
     const parsedPayload = parseSocketPayload(socket, Events.PIN_MESSAGE, pinMessageEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { chatId, messageId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.PIN_MESSAGE,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.PIN_MESSAGE,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.pinMessage],
         keyParts: [userId, authorizedMessage.id],
-      })) return;
+      }))) return;
 
       const pinnedMessages = await prisma.pinnedMessages.findMany({
         where: { chatId },
@@ -179,22 +179,22 @@ export const registerPinHandlers = ({
     const parsedPayload = parseSocketPayload(socket, Events.UNPIN_MESSAGE, unpinMessageEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { pinId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.UNPIN_MESSAGE,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const authorizedPin = await assertPinAccessible(userId, pinId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.UNPIN_MESSAGE,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.pinMessage],
         keyParts: [userId, authorizedPin.messageId],
-      })) return;
+      }))) return;
 
       const deletedPinnedMessage = await prisma.pinnedMessages.delete({
         where: {

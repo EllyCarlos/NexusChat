@@ -20,17 +20,17 @@ import type {
   UnreadMessageRealtimePayload,
 } from "../realtime/contracts/chat-realtime.types.js";
 import type { MessageRealtimePort } from "../realtime/contracts/message-realtime.port.js";
+import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
   parseSocketPayload,
   SOCKET_EVENT_LIMITS,
-  type SocketEventRateLimiter,
 } from "../socket-security.js";
 
 type RegisterMessageHandlersInput = {
   socket: Socket;
   userId: string;
-  limiter: SocketEventRateLimiter;
+  limiter: SocketEventRateLimitPort;
   realtime: MessageRealtimePort;
 };
 
@@ -44,13 +44,13 @@ export const registerMessageHandlers = ({
     const parsedPayload = parseSocketPayload(socket, Events.MESSAGE, messageEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { chatId, isPollMessage, pollData, textMessageContent, url, encryptedAudio, audio, replyToMessageId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.MESSAGE,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.messageActorBurst],
       keyParts: [userId],
-    })) return;
+    }))) return;
 
     try {
 
@@ -60,13 +60,13 @@ export const registerMessageHandlers = ({
         await assertMessageAccessible(userId, chatId, replyToMessageId);
       }
 
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.MESSAGE,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.messageChatBurst, SOCKET_EVENT_LIMITS.messageChatWindow],
         keyParts: [userId, chatId],
-      })) return;
+      }))) return;
 
       let newMessage: Partial<Prisma.MessageCreateInput>;
 

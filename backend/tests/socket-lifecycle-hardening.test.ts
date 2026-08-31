@@ -44,6 +44,7 @@ import {
   socketConnectionRegistry,
 } from "../src/socket/connection-registry.js";
 import { createLocalSocketConnectionDirectory } from "../src/socket/local-connection-directory.adapter.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import { SOCKET_EVENT_LIMITS, SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import { emitEvent, getMemberSockets } from "../src/utils/socket.util.js";
@@ -76,7 +77,7 @@ const createRuntime = (registry = new SocketConnectionRegistry()) => {
 
   registerSocketHandlers(io as unknown as Server, {
     registry,
-    limiter: new SocketEventRateLimiter(),
+    limiter: new LocalSocketEventRateLimitAdapter(),
     presenceWriteQueue: new SocketPresenceWriteQueue(),
   });
 

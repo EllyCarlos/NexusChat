@@ -89,9 +89,14 @@ const createFakeConnectionState = ({
   let ready = false;
   let operational = false;
   const directory = createFakeDirectory();
+  const eventLimiter = {
+    consume: vi.fn(async () => true),
+    consumeAll: vi.fn(async () => true),
+  };
   const runtime: SocketConnectionStateRuntime = {
     mode,
     directory,
+    eventLimiter,
     maintenance: undefined,
     get isReady() {
       return ready;
@@ -120,6 +125,7 @@ const createFakeConnectionState = ({
 
   return {
     directory,
+    eventLimiter,
     runtime,
     setReady(nextReady: boolean) {
       ready = nextReady;
@@ -238,6 +244,7 @@ describe("backend server construction", () => {
     expect(useSpy).toHaveBeenCalledWith(mocks.socketAuthenticator);
     expect(mocks.registerSocketHandlers).toHaveBeenCalledWith(runtime.io, {
       directory: state.directory,
+      limiter: state.eventLimiter,
       presence: runtime.presence,
     });
     expect(runtime.socketLifecycle).toBe(socketLifecycle);

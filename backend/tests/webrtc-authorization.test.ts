@@ -21,7 +21,7 @@ import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import { MAX_SOCKET_ICE_CANDIDATE_LENGTH, MAX_SOCKET_SDP_LENGTH } from "../src/schemas/socket.schema.js";
 import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
-import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 
@@ -97,7 +97,7 @@ const createHarness = (actorUserId: string) => {
 
   registerWebRtcHandlers(socket as unknown as Socket, io as unknown as Server, {
     directory,
-    limiter: new SocketEventRateLimiter(),
+    limiter: new LocalSocketEventRateLimitAdapter(),
   });
 
   return {

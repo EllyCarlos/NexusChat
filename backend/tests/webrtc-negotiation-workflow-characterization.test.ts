@@ -36,10 +36,8 @@ vi.mock("../src/utils/safe-logger.utils.js", () => ({
 
 import { Events } from "../src/enums/event/event.enum.js";
 import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
-import {
-  SOCKET_EVENT_LIMITS,
-  type SocketEventRateLimiter,
-} from "../src/socket/socket-security.js";
+import type { SocketEventRateLimitPort } from "../src/socket/socket-event-rate-limit.port.js";
+import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { CustomError } from "../src/utils/error.utils.js";
 
@@ -117,12 +115,18 @@ const createLimiter = (
   implementation: (
     policies: readonly unknown[],
     keyParts: readonly string[],
-  ) => boolean = () => true,
+  ) => boolean | Promise<boolean> = () => true,
 ) => {
-  const consumeAll = vi.fn(implementation);
+  const consumeAll = vi.fn(async (
+    policies: readonly unknown[],
+    keyParts: readonly string[],
+  ) => implementation(policies, keyParts));
   return {
     consumeAll,
-    limiter: { consumeAll } as unknown as SocketEventRateLimiter,
+    limiter: {
+      consume: vi.fn(async () => true),
+      consumeAll,
+    } satisfies SocketEventRateLimitPort,
   };
 };
 
@@ -137,7 +141,7 @@ const createHarness = ({
   actorId?: string;
   directory?: TestConnectionDirectory;
   ioRelayEmit?: ReturnType<typeof vi.fn>;
-  limiter?: SocketEventRateLimiter;
+  limiter?: SocketEventRateLimitPort;
   socketEmit?: ReturnType<typeof vi.fn>;
   socketRelayEmit?: ReturnType<typeof vi.fn>;
 } = {}) => {
@@ -290,6 +294,33 @@ describe("WebRTC negotiation parsing and guard order", () => {
     expect(mocks.assertCallParticipant).not.toHaveBeenCalled();
     expect(harness.getLatestSocket).not.toHaveBeenCalled();
     expect(mocks.logServerError).not.toHaveBeenCalled();
+    expectNoPersistenceOrTargetDelivery(harness);
+  });
+
+  it("fails ICE admission closed when the limiter provider rejects", async () => {
+    const providerFailure = new Error("private Redis provider detail");
+    const { consumeAll, limiter } = createLimiter(async () => {
+      throw providerFailure;
+    });
+    const harness = createHarness({ actorId: CALLER_ID, limiter });
+
+    await harness.trigger(Events.ICE_CANDIDATE, icePayload());
+
+    expect(consumeAll).toHaveBeenCalledOnce();
+    expect(consumeAll).toHaveBeenCalledWith(
+      [SOCKET_EVENT_LIMITS.iceActor],
+      [CALLER_ID],
+    );
+    expect(harness.socketEmit).toHaveBeenCalledWith(Events.SECURITY_ERROR, {
+      category: "RATE_LIMITED",
+      event: Events.ICE_CANDIDATE,
+    });
+    expect(mocks.logServerError).toHaveBeenCalledWith(
+      "Socket rate-limit evaluation failed.",
+      providerFailure,
+    );
+    expect(mocks.assertCallParticipant).not.toHaveBeenCalled();
+    expect(harness.getLatestSocket).not.toHaveBeenCalled();
     expectNoPersistenceOrTargetDelivery(harness);
   });
 

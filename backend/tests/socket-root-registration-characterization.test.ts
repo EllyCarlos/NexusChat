@@ -51,8 +51,8 @@ import {
   SocketPresenceWriteQueue,
 } from "../src/socket/connection-registry.js";
 import { createLocalSocketConnectionDirectory } from "../src/socket/local-connection-directory.adapter.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
-import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 
 const USER_ID = "cm40000000000000000000001";
@@ -128,7 +128,7 @@ const makeRuntime = () => {
   };
   const registry = new SocketConnectionRegistry();
   const directory = createLocalSocketConnectionDirectory(registry);
-  const limiter = new SocketEventRateLimiter();
+  const limiter = new LocalSocketEventRateLimitAdapter();
   const presenceWriteQueue = new SocketPresenceWriteQueue();
 
   registerSocketHandlers(io as unknown as Server, {

@@ -7,6 +7,8 @@ import type {
   SocketConnectionStateMaintenance,
 } from "../../socket/connection-state-maintenance.js";
 import { createLocalSocketConnectionDirectory } from "../../socket/local-connection-directory.adapter.js";
+import { createLocalSocketEventRateLimitProvider } from "../../socket/local-socket-event-rate-limit.adapter.js";
+import type { SocketEventRateLimitPort } from "../../socket/socket-event-rate-limit.port.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
 import {
   createRedisClient,
@@ -22,6 +24,7 @@ import {
   createRedisSocketConnectionDirectory,
   type RedisScriptExecutor,
 } from "./redis-socket-connection-directory.js";
+import { createRedisSocketEventRateLimitProvider } from "./redis-socket-event-rate-limit.js";
 import type { SocketTransportMode } from "./socket-io-redis-adapter.js";
 
 export const SOCKET_CONNECTION_MAINTENANCE_INTERVAL_MS = 30_000;
@@ -39,6 +42,7 @@ export type SocketConnectionMaintenanceCallbacks = {
 export interface SocketConnectionStateRuntime {
   readonly mode: SocketTransportMode["kind"];
   readonly directory: SocketConnectionDirectory;
+  readonly eventLimiter: SocketEventRateLimitPort;
   readonly maintenance?: SocketConnectionStateMaintenance;
   readonly isReady: boolean;
   readonly isOperational: boolean;
@@ -64,6 +68,9 @@ type StateRuntimeDependencies = {
   createDirectory?: (
     executor: RedisScriptExecutor,
   ) => SocketConnectionDirectory & SocketConnectionStateMaintenance;
+  createEventLimiter?: (options: {
+    executor: RedisLifecycleClient & RedisScriptExecutor;
+  }) => SocketEventRateLimitPort;
   scheduleRecurring?: (
     callback: () => void,
     intervalMilliseconds: number,
@@ -90,6 +97,7 @@ const createLocalStateRuntime = (
   registry: SocketConnectionRegistry,
 ): SocketConnectionStateRuntime => {
   const directory = createLocalSocketConnectionDirectory(registry);
+  const eventLimiter = createLocalSocketEventRateLimitProvider();
   let started = false;
   let draining = false;
   const closePromise = Promise.resolve();
@@ -97,6 +105,7 @@ const createLocalStateRuntime = (
   return Object.freeze({
     mode: "local" as const,
     directory,
+    eventLimiter,
     maintenance: undefined,
     get isReady() {
       return started && !draining;
@@ -118,10 +127,12 @@ const createLocalStateRuntime = (
 const createDistributedStateRuntime = ({
   commandRuntime,
   directory,
+  eventLimiter,
   scheduleRecurring,
 }: {
   commandRuntime: RedisRuntime;
   directory: SocketConnectionDirectory & SocketConnectionStateMaintenance;
+  eventLimiter: SocketEventRateLimitPort;
   scheduleRecurring: NonNullable<StateRuntimeDependencies["scheduleRecurring"]>;
 }): SocketConnectionStateRuntime => {
   let started = false;
@@ -185,6 +196,7 @@ const createDistributedStateRuntime = ({
   return Object.freeze({
     mode: "distributed" as const,
     directory,
+    eventLimiter,
     maintenance: directory,
     get isReady() {
       return commandRuntime.isReady && started && operational && !draining;
@@ -284,15 +296,19 @@ export const createSocketConnectionStateRuntime = ({
   const createDirectory = dependencies.createDirectory
     ?? ((executor: RedisScriptExecutor) =>
       createRedisSocketConnectionDirectory({ executor }));
+  const createEventLimiter = dependencies.createEventLimiter
+    ?? createRedisSocketEventRateLimitProvider;
   const scheduleRecurring = dependencies.scheduleRecurring ?? scheduleRecurringTask;
 
   const commandClient = createCommandClient({ url: mode.redisUrl });
   const commandRuntime = createCommandRuntime(commandClient);
   const directory = createDirectory(commandClient);
+  const eventLimiter = createEventLimiter({ executor: commandClient });
 
   return createDistributedStateRuntime({
     commandRuntime,
     directory,
+    eventLimiter,
     scheduleRecurring,
   });
 };

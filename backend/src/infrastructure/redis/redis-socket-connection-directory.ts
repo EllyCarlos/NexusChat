@@ -27,6 +27,12 @@ import {
   RENEW_SOCKET_LEASES_SCRIPT,
   SOCKET_CONNECTION_REDIS_KEYS,
 } from "./socket-connection-scripts.js";
+import type { RedisScriptExecutor } from "./redis-script-executor.js";
+
+export type {
+  RedisEvalOptions,
+  RedisScriptExecutor,
+} from "./redis-script-executor.js";
 
 export const SOCKET_CONNECTION_LEASE_TTL_MS = 90_000;
 export const SOCKET_CONNECTION_RENEWAL_BATCH_SIZE = 100;
@@ -35,15 +41,6 @@ export const SOCKET_ONLINE_USER_REAP_MAX_PASSES = 8;
 export const SOCKET_PRESENCE_PENDING_BATCH_SIZE = 100;
 export const SOCKET_PRESENCE_TRUTH_RETENTION_MS = 300_000;
 export const SOCKET_PRESENCE_CLEANUP_BATCH_SIZE = 100;
-
-export type RedisEvalOptions = {
-  keys: string[];
-  arguments: string[];
-};
-
-export interface RedisScriptExecutor {
-  eval(script: string, options: RedisEvalOptions): Promise<unknown>;
-}
 
 type RedisDirectoryOptions = {
   executor: RedisScriptExecutor;
