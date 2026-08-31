@@ -8,12 +8,12 @@ import type {
 } from "./chat.types.js";
 
 export interface ChatRealtimePort {
-  joinMembers(memberIds: string[], chatId: string): void;
+  joinMembers(memberIds: string[], chatId: string): Promise<void>;
   emitNewChatToRoom(chatId: string, payload: CreatedGroupChatPayload): void;
-  emitNewChatToMembers(memberIds: string[], payload: AddedMembersChatPayload): void;
-  emitMembersAdded(memberIds: string[], payload: AddedMembersPayload): void;
-  disconnectMembers(memberIds: string[], chatId: string): void;
-  emitDeleteChat(memberIds: string[], payload: DeletedChatPayload): void;
-  emitMembersRemoved(memberIds: string[], payload: RemovedMembersPayload): void;
+  emitNewChatToMembers(memberIds: string[], payload: AddedMembersChatPayload): Promise<void>;
+  emitMembersAdded(memberIds: string[], payload: AddedMembersPayload): Promise<void>;
+  disconnectMembers(memberIds: string[], chatId: string): Promise<void>;
+  emitDeleteChat(memberIds: string[], payload: DeletedChatPayload): Promise<void>;
+  emitMembersRemoved(memberIds: string[], payload: RemovedMembersPayload): Promise<void>;
   emitGroupChatUpdate(chatId: string, payload: GroupChatUpdatePayload): void;
 }

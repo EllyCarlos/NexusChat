@@ -85,7 +85,7 @@ export const createGroupChatCreator = ({
       typingUsers: [],
     } as CreatedGroupChatPayload;
 
-    realtime.joinMembers(memberIds, newChat.id);
+    await realtime.joinMembers(memberIds, newChat.id);
     realtime.emitNewChatToRoom(newChat.id, payload);
 
     return payload;

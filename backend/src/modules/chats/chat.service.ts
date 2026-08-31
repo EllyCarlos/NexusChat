@@ -17,10 +17,12 @@ import { createCloudinaryChatAvatarMediaAdapter } from "./infrastructure/cloudin
 import { prismaChatRepository } from "./infrastructure/prisma-chat.repository.js";
 import {
   createSocketChatRealtimeAdapter,
+  type SocketConnectionDirectoryResolver,
   type SocketServerResolver,
 } from "./infrastructure/socket-chat-realtime.adapter.js";
 
 type ChatMutationComposition = {
+  resolveConnectionDirectory: SocketConnectionDirectoryResolver;
   resolveSocketServer: SocketServerResolver;
 };
 
@@ -29,11 +31,12 @@ type ChatAvatarMutationComposition = ChatMutationComposition & {
 };
 
 export const createGroupChatOperation = ({
+  resolveConnectionDirectory,
   resolveSocketServer,
   avatarFile,
 }: ChatAvatarMutationComposition) => createGroupChatCreator({
   repository: prismaChatRepository,
-  realtime: createSocketChatRealtimeAdapter(resolveSocketServer),
+  realtime: createSocketChatRealtimeAdapter(resolveSocketServer, resolveConnectionDirectory),
   defaultAvatar: DEFAULT_AVATAR,
   ...(avatarFile
     ? { avatarMedia: createCloudinaryChatAvatarMediaAdapter(avatarFile) }
@@ -41,9 +44,10 @@ export const createGroupChatOperation = ({
 });
 
 export const createAddChatMembersOperation = ({
+  resolveConnectionDirectory,
   resolveSocketServer,
 }: ChatMutationComposition) => {
-  const realtime = createSocketChatRealtimeAdapter(resolveSocketServer);
+  const realtime = createSocketChatRealtimeAdapter(resolveSocketServer, resolveConnectionDirectory);
   const addMembers = createChatMemberAdder({
     repository: prismaChatRepository,
     realtime,
@@ -53,9 +57,10 @@ export const createAddChatMembersOperation = ({
 };
 
 export const createRemoveChatMembersOperation = ({
+  resolveConnectionDirectory,
   resolveSocketServer,
 }: ChatMutationComposition) => {
-  const realtime = createSocketChatRealtimeAdapter(resolveSocketServer);
+  const realtime = createSocketChatRealtimeAdapter(resolveSocketServer, resolveConnectionDirectory);
   const removeMembers = createChatMemberRemover({
     repository: prismaChatRepository,
     realtime,
@@ -65,11 +70,12 @@ export const createRemoveChatMembersOperation = ({
 };
 
 export const createUpdateGroupChatOperation = ({
+  resolveConnectionDirectory,
   resolveSocketServer,
   avatarFile,
 }: ChatAvatarMutationComposition) => createGroupChatUpdater({
   repository: prismaChatRepository,
-  realtime: createSocketChatRealtimeAdapter(resolveSocketServer),
+  realtime: createSocketChatRealtimeAdapter(resolveSocketServer, resolveConnectionDirectory),
   ...(avatarFile
     ? { avatarMedia: createCloudinaryChatAvatarMediaAdapter(avatarFile) }
     : {}),

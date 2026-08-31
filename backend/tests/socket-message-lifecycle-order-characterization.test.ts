@@ -50,11 +50,9 @@ vi.mock("../src/socket/webrtc/socket.js", () => ({ default: vi.fn() }));
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
-import {
-  SOCKET_EVENT_LIMITS,
-  SocketEventRateLimiter,
-} from "../src/socket/socket-security.js";
+import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import { deleteFilesFromCloudinary } from "../src/utils/auth.util.js";
 
 const ACTOR_ID = "cm13000000000000000000001";
@@ -135,12 +133,19 @@ const createHarness = async () => {
     }),
     to: ioTo,
   };
-  const limiter = new SocketEventRateLimiter();
-  const limitSpy = vi.spyOn(limiter, "consumeAll").mockReturnValue(true);
+  const limiter = new LocalSocketEventRateLimitAdapter();
+  const limitSpy = vi.spyOn(limiter, "consumeAll").mockResolvedValue(true);
+  const presence = {
+    reconcileTransition: vi.fn(async () => undefined),
+    reconcileUser: vi.fn(async () => undefined),
+    reconcilePending: vi.fn(async () => 0),
+    drain: vi.fn(async () => undefined),
+  };
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
     limiter,
+    presence,
   });
   expect(connectionHandler).toBeDefined();
   await connectionHandler!(socket as unknown as Socket);
@@ -268,7 +273,7 @@ describe("Socket message lifecycle security ordering", () => {
     actorPolicy,
   }) => {
     const harness = await createHarness();
-    harness.limitSpy.mockReturnValueOnce(false);
+    harness.limitSpy.mockResolvedValueOnce(false);
 
     await harness.trigger(event, payload);
 
@@ -311,7 +316,7 @@ describe("Socket message lifecycle security ordering", () => {
     resourceKey,
   }) => {
     const harness = await createHarness();
-    harness.limitSpy.mockReturnValueOnce(true).mockReturnValueOnce(false);
+    harness.limitSpy.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
     await harness.trigger(event, payload);
 

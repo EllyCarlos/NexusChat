@@ -22,53 +22,48 @@ import {
 } from "../../services/authorization.service.js";
 import { CustomError } from "../../utils/error.utils.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
-import {
-  socketConnectionRegistry,
-  type SocketConnectionRegistry,
-} from "../connection-registry.js";
+import type { SocketConnectionDirectory } from "../connection-directory.js";
+import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
   parseSocketPayload,
   SOCKET_EVENT_LIMITS,
-  socketEventRateLimiter,
-  type SocketEventRateLimiter,
 } from "../socket-security.js";
 
 type WebRtcHandlerDependencies = {
-  registry?: SocketConnectionRegistry;
-  limiter?: SocketEventRateLimiter;
+  directory: SocketConnectionDirectory;
+  limiter: SocketEventRateLimitPort;
 };
 
 const registerWebRtcHandlers = (
   socket: Socket,
   io: Server,
-  dependencies: WebRtcHandlerDependencies = {},
+  dependencies: WebRtcHandlerDependencies,
 ) => {
-  const registry = dependencies.registry ?? socketConnectionRegistry;
-  const limiter = dependencies.limiter ?? socketEventRateLimiter;
+  const { directory, limiter } = dependencies;
   const userId = socket.user.id;
-  const calls = createSocketCallSignalingService({ io, socket, registry });
+  const calls = createSocketCallSignalingService({ io, socket, directory });
 
   socket.on(Events.CALL_USER, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.CALL_USER, callUserEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { calleeId, offer } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.CALL_USER,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const callee = await assertCanCallUser(userId, calleeId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.CALL_USER,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.callInitiation],
         keyParts: [userId, callee.id],
-      })) return;
+      }))) return;
       await calls.callUser({
         actor: {
           id: socket.user.id,
@@ -91,13 +86,13 @@ const registerWebRtcHandlers = (
     const parsedPayload = parseSocketPayload(socket, Events.CALL_ACCEPTED, callAcceptedEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { answer, callerId, callHistoryId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.CALL_ACCEPTED,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const call = await assertCallCallee(userId, callHistoryId);
       assertRingingCall(call);
@@ -105,13 +100,13 @@ const registerWebRtcHandlers = (
         throw new CustomError("Call participant mismatch", 403);
       }
 
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.CALL_ACCEPTED,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.callState],
         keyParts: [userId, call.id],
-      })) return;
+      }))) return;
       await calls.acceptCall({
         actorId: socket.user.id,
         call,
@@ -126,23 +121,23 @@ const registerWebRtcHandlers = (
     const parsedPayload = parseSocketPayload(socket, Events.CALL_REJECTED, callStateEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { callHistoryId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.CALL_REJECTED,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const call = await assertCallCallee(userId, callHistoryId);
       assertRingingCall(call);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.CALL_REJECTED,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.callState],
         keyParts: [userId, call.id],
-      })) return;
+      }))) return;
       await calls.rejectCall({ call });
     } catch (error) {
       logServerError("CALL_REJECTED event failed.", error);
@@ -153,24 +148,24 @@ const registerWebRtcHandlers = (
     const parsedPayload = parseSocketPayload(socket, Events.CALL_END, callStateEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { callHistoryId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.CALL_END,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const call = await assertCallParticipant(userId, callHistoryId);
       assertTerminableCall(call);
 
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.CALL_END,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.callState],
         keyParts: [userId, call.id],
-      })) return;
+      }))) return;
       await calls.endCall({ call });
     } catch (error) {
       logServerError("CALL_END event failed.", error);
@@ -181,23 +176,23 @@ const registerWebRtcHandlers = (
     const parsedPayload = parseSocketPayload(socket, Events.CALLEE_BUSY, callStateEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { callHistoryId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.CALLEE_BUSY,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const call = await assertCallCallee(userId, callHistoryId);
       assertRingingCall(call);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.CALLEE_BUSY,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.callState],
         keyParts: [userId, call.id],
-      })) return;
+      }))) return;
       await calls.markCalleeBusy({ call });
     } catch (error) {
       logServerError("CALLEE_BUSY event failed.", error);
@@ -208,24 +203,24 @@ const registerWebRtcHandlers = (
     const parsedPayload = parseSocketPayload(socket, Events.ICE_CANDIDATE, iceCandidateEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { candidate, calleeId, callHistoryId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.ICE_CANDIDATE,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.iceActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const call = await assertCallParticipant(userId, callHistoryId);
       assertActiveCall(call);
       const targetUserId = assertOtherParticipant(call, userId, calleeId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.ICE_CANDIDATE,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.iceCall],
         keyParts: [userId, call.id],
-      })) return;
+      }))) return;
       await calls.relayIceCandidate({
         actorId: socket.user.id,
         call,
@@ -241,24 +236,24 @@ const registerWebRtcHandlers = (
     const parsedPayload = parseSocketPayload(socket, Events.NEGO_NEEDED, negoNeededEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { offer, calleeId, callHistoryId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.NEGO_NEEDED,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.negotiationActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const call = await assertCallParticipant(userId, callHistoryId);
       assertActiveCall(call);
       const targetUserId = assertOtherParticipant(call, userId, calleeId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.NEGO_NEEDED,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.negotiationCall],
         keyParts: [userId, call.id],
-      })) return;
+      }))) return;
       await calls.relayNegotiationNeeded({
         actorId: socket.user.id,
         call,
@@ -274,24 +269,24 @@ const registerWebRtcHandlers = (
     const parsedPayload = parseSocketPayload(socket, Events.NEGO_DONE, negoDoneEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { answer, callerId, callHistoryId } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.NEGO_DONE,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.negotiationActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
     try {
       const call = await assertCallParticipant(userId, callHistoryId);
       assertActiveCall(call);
       const targetUserId = assertOtherParticipant(call, userId, callerId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.NEGO_DONE,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.negotiationCall],
         keyParts: [userId, call.id],
-      })) return;
+      }))) return;
       await calls.relayNegotiationDone({
         actorId: socket.user.id,
         call,

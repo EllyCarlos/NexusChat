@@ -59,8 +59,8 @@ vi.mock("../src/socket/webrtc/socket.js", () => ({
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
-import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import {
   deleteFilesFromCloudinary,
   uploadAudioToCloudinary,
@@ -171,7 +171,7 @@ const connectSocket = async () => {
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
-    limiter: new SocketEventRateLimiter(),
+    limiter: new LocalSocketEventRateLimitAdapter(),
   });
   expect(connectionHandler).toBeDefined();
   await connectionHandler!(socket as unknown as Socket);

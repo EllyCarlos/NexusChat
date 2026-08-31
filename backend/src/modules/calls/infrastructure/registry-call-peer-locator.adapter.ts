@@ -1,11 +1,10 @@
+import type { SocketConnectionDirectory } from "../../../socket/connection-directory.js";
 import type { CallPeerLocatorPort } from "../contracts/call-peer-locator.port.js";
 
-type LatestSocketRegistry = {
-  getLatestSocket(userId: string): string | undefined;
-};
+type LatestSocketDirectory = Pick<SocketConnectionDirectory, "getLatestSocket">;
 
 export const createRegistryCallPeerLocator = (
-  registry: LatestSocketRegistry,
+  directory: LatestSocketDirectory,
 ): CallPeerLocatorPort => ({
-  getLatestSocketId: (userId) => registry.getLatestSocket(userId),
+  getLatestSocketId: (userId) => directory.getLatestSocket(userId),
 });

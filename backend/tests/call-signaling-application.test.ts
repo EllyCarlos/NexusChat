@@ -226,7 +226,7 @@ describe("call signaling application workflows", () => {
 
   it("creates an online call before CALL_ID and INCOMING_CALL without reading the clock", async () => {
     const { service, history, peers, realtime, notifyMissedCall, clock } = createHarness();
-    vi.mocked(peers.getLatestSocketId).mockReturnValue(CALLEE_SOCKET_ID);
+    vi.mocked(peers.getLatestSocketId).mockResolvedValue(CALLEE_SOCKET_ID);
 
     await service.callUser({ actor, callee, offer });
 
@@ -255,7 +255,7 @@ describe("call signaling application workflows", () => {
   it("retains a created call and cuts off INCOMING_CALL when CALL_ID delivery throws", async () => {
     const { service, history, peers, realtime } = createHarness();
     const deliveryFailure = new Error("CALL_ID delivery failed");
-    vi.mocked(peers.getLatestSocketId).mockReturnValue(CALLEE_SOCKET_ID);
+    vi.mocked(peers.getLatestSocketId).mockResolvedValue(CALLEE_SOCKET_ID);
     vi.mocked(realtime.emitCallIdToActor).mockImplementation(() => {
       throw deliveryFailure;
     });
@@ -268,7 +268,7 @@ describe("call signaling application workflows", () => {
 
   it("accepts online only after the strict status-only write", async () => {
     const { service, history, peers, realtime, clock } = createHarness();
-    vi.mocked(peers.getLatestSocketId).mockReturnValue(CALLER_SOCKET_ID);
+    vi.mocked(peers.getLatestSocketId).mockResolvedValue(CALLER_SOCKET_ID);
     const call = callRecord();
 
     await service.acceptCall({ actorId: CALLEE_ID, call, answer });
@@ -317,7 +317,7 @@ describe("call signaling application workflows", () => {
 
   it("rejects with one terminal write then peer REJECTED, peer END, and actor END", async () => {
     const { service, history, peers, realtime, clock } = createHarness();
-    vi.mocked(peers.getLatestSocketId).mockReturnValue(CALLER_SOCKET_ID);
+    vi.mocked(peers.getLatestSocketId).mockResolvedValue(CALLER_SOCKET_ID);
 
     await service.rejectCall({ call: callRecord() });
 
@@ -339,8 +339,8 @@ describe("call signaling application workflows", () => {
   it("ends an active call before ordered caller/callee server delivery", async () => {
     const { service, history, peers, realtime, clock } = createHarness();
     vi.mocked(peers.getLatestSocketId)
-      .mockReturnValueOnce(CALLER_SOCKET_ID)
-      .mockReturnValueOnce(CALLEE_SOCKET_ID);
+      .mockResolvedValueOnce(CALLER_SOCKET_ID)
+      .mockResolvedValueOnce(CALLEE_SOCKET_ID);
 
     await service.endCall({ call: callRecord({ status: "COMPLETED" }) });
 
@@ -372,8 +372,8 @@ describe("call signaling application workflows", () => {
     const { service, history, peers, realtime } = createHarness();
     const deliveryFailure = new Error("caller END delivery failed");
     vi.mocked(peers.getLatestSocketId)
-      .mockReturnValueOnce(CALLER_SOCKET_ID)
-      .mockReturnValueOnce(CALLEE_SOCKET_ID);
+      .mockResolvedValueOnce(CALLER_SOCKET_ID)
+      .mockResolvedValueOnce(CALLEE_SOCKET_ID);
     vi.mocked(realtime.emitCallEndToPeerViaServer).mockImplementation(() => {
       throw deliveryFailure;
     });
@@ -387,7 +387,7 @@ describe("call signaling application workflows", () => {
 
   it("marks a busy callee missed before CALLEE_BUSY and peer END", async () => {
     const { service, history, peers, realtime } = createHarness();
-    vi.mocked(peers.getLatestSocketId).mockReturnValue(CALLER_SOCKET_ID);
+    vi.mocked(peers.getLatestSocketId).mockResolvedValue(CALLER_SOCKET_ID);
 
     await service.markCalleeBusy({ call: callRecord() });
 
@@ -408,8 +408,8 @@ describe("call signaling application workflows", () => {
   it("silently drops offline ICE and relays the exact online candidate without persistence", async () => {
     const { service, history, peers, realtime } = createHarness();
     vi.mocked(peers.getLatestSocketId)
-      .mockReturnValueOnce(undefined)
-      .mockReturnValueOnce(CALLEE_SOCKET_ID);
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(CALLEE_SOCKET_ID);
     const call = callRecord({ status: "COMPLETED" });
     const input = { actorId: CALLER_ID, call, targetUserId: CALLEE_ID, candidate };
 
@@ -480,8 +480,8 @@ describe("call signaling application workflows", () => {
   it("relays both online negotiation directions with their asymmetric payload names", async () => {
     const { service, history, peers, realtime, clock } = createHarness();
     vi.mocked(peers.getLatestSocketId)
-      .mockReturnValueOnce(CALLEE_SOCKET_ID)
-      .mockReturnValueOnce(CALLER_SOCKET_ID);
+      .mockResolvedValueOnce(CALLEE_SOCKET_ID)
+      .mockResolvedValueOnce(CALLER_SOCKET_ID);
     const call = callRecord({ status: "COMPLETED" });
 
     await service.relayNegotiationNeeded({

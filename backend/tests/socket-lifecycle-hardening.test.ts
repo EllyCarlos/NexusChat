@@ -43,6 +43,8 @@ import {
   SocketPresenceWriteQueue,
   socketConnectionRegistry,
 } from "../src/socket/connection-registry.js";
+import { createLocalSocketConnectionDirectory } from "../src/socket/local-connection-directory.adapter.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import { SOCKET_EVENT_LIMITS, SocketEventRateLimiter } from "../src/socket/socket-security.js";
 import { emitEvent, getMemberSockets } from "../src/utils/socket.util.js";
@@ -55,6 +57,7 @@ type RegisteredHandler = (payload?: unknown) => Promise<void> | void;
 const createRuntime = (registry = new SocketConnectionRegistry()) => {
   let connectionHandler: ((socket: Socket) => Promise<void>) | undefined;
   const directEmit = vi.fn();
+  const broadcastBySocket = new Map<string, ReturnType<typeof vi.fn>>();
   const io = {
     on: vi.fn((event: string, handler: (socket: Socket) => Promise<void>) => {
       expect(event).toBe("connection");
@@ -62,11 +65,19 @@ const createRuntime = (registry = new SocketConnectionRegistry()) => {
       return io;
     }),
     to: vi.fn(() => ({ emit: directEmit })),
+    emit: vi.fn(),
+    except: vi.fn((socketId: string) => ({
+      emit: (...arguments_: unknown[]) => broadcastBySocket.get(socketId)?.(...arguments_),
+    })),
+    local: {
+      disconnectSockets: vi.fn(),
+      in: vi.fn(() => ({ disconnectSockets: vi.fn() })),
+    },
   };
 
   registerSocketHandlers(io as unknown as Server, {
     registry,
-    limiter: new SocketEventRateLimiter(),
+    limiter: new LocalSocketEventRateLimitAdapter(),
     presenceWriteQueue: new SocketPresenceWriteQueue(),
   });
 
@@ -88,6 +99,7 @@ const createRuntime = (registry = new SocketConnectionRegistry()) => {
         to: vi.fn(() => ({ emit: vi.fn() })),
       },
     };
+    broadcastBySocket.set(socketId, broadcastEmit);
     return {
       handlers,
       socket,
@@ -246,14 +258,24 @@ describe("authenticated connection cap", () => {
 });
 
 describe("multi-socket direct delivery", () => {
-  it("resolves all sockets for ordinary direct-user events", () => {
+  it("resolves all sockets for ordinary direct-user events", async () => {
     socketConnectionRegistry.add(USER_A, "socket-a1");
     socketConnectionRegistry.add(USER_A, "socket-a2");
+    const directory = createLocalSocketConnectionDirectory(socketConnectionRegistry);
     const emit = vi.fn();
     const io = { to: vi.fn(() => ({ emit })) } as unknown as Server;
 
-    expect(getMemberSockets([USER_A])).toEqual(["socket-a1", "socket-a2"]);
-    emitEvent({ io, event: Events.NEW_CHAT, users: [USER_A], data: { id: "chat" } });
+    await expect(getMemberSockets([USER_A], directory)).resolves.toEqual([
+      "socket-a1",
+      "socket-a2",
+    ]);
+    await emitEvent({
+      io,
+      directory,
+      event: Events.NEW_CHAT,
+      users: [USER_A],
+      data: { id: "chat" },
+    });
     expect(io.to).toHaveBeenCalledWith(["socket-a1", "socket-a2"]);
   });
 });

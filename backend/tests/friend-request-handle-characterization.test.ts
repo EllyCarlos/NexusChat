@@ -365,6 +365,7 @@ describe("friend-request handle pre-extraction characterization", () => {
       body: "actor has accepted your friend request 😃",
     });
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
+      directory: io,
       io,
       memberIds: [SENDER_ID, ACTOR_ID],
       roomToJoin: CHAT_ID,
@@ -415,6 +416,7 @@ describe("friend-request handle pre-extraction characterization", () => {
 
     expect(sendPushNotification).not.toHaveBeenCalled();
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
+      directory: io,
       io,
       memberIds: [SENDER_ID, ACTOR_ID],
       roomToJoin: CHAT_ID,
@@ -485,6 +487,7 @@ describe("friend-request handle pre-extraction characterization", () => {
       body: "actor has accepted your friend request 😃",
     });
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
+      directory: io,
       io,
       memberIds: [SENDER_ID, ACTOR_ID],
       roomToJoin: CHAT_ID,

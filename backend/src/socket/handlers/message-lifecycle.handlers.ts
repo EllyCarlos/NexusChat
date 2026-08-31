@@ -15,17 +15,17 @@ import type {
     MessageSeenRealtimePayload,
 } from "../realtime/contracts/chat-realtime.types.js";
 import type { MessageRealtimePort } from "../realtime/contracts/message-realtime.port.js";
+import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
     enforceSocketEventLimits,
     parseSocketPayload,
     SOCKET_EVENT_LIMITS,
-    type SocketEventRateLimiter,
 } from "../socket-security.js";
 
 type RegisterMessageLifecycleHandlersArgs = {
     socket: Socket;
     userId: string;
-    limiter: SocketEventRateLimiter;
+    limiter: SocketEventRateLimitPort;
     realtime: MessageRealtimePort;
 };
 
@@ -39,23 +39,23 @@ export const registerMessageLifecycleHandlers = ({
         const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_SEEN, messageSeenEventSchema, rawPayload);
         if (!parsedPayload) return;
         const { chatId } = parsedPayload;
-        if (!enforceSocketEventLimits({
+        if (!(await enforceSocketEventLimits({
             socket,
             event: Events.MESSAGE_SEEN,
             limiter,
             policies: [SOCKET_EVENT_LIMITS.seenActor],
             keyParts: [userId],
-        })) return;
+        }))) return;
 
         try {
             await assertChatMember(userId, chatId);
-            if (!enforceSocketEventLimits({
+            if (!(await enforceSocketEventLimits({
                 socket,
                 event: Events.MESSAGE_SEEN,
                 limiter,
                 policies: [SOCKET_EVENT_LIMITS.seenChat],
                 keyParts: [userId, chatId],
-            })) return;
+            }))) return;
 
             const doesUnreadMessageExists = await prisma.unreadMessages.findUnique({
                 where: {
@@ -99,22 +99,22 @@ export const registerMessageLifecycleHandlers = ({
         const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_EDIT, messageEditEventSchema, rawPayload);
         if (!parsedPayload) return;
         const { chatId, messageId, updatedTextContent } = parsedPayload;
-        if (!enforceSocketEventLimits({
+        if (!(await enforceSocketEventLimits({
             socket,
             event: Events.MESSAGE_EDIT,
             limiter,
             policies: [SOCKET_EVENT_LIMITS.mutationActor],
             keyParts: [userId],
-        })) return;
+        }))) return;
         try {
             const authorizedMessage = await assertMessageOwner(userId, chatId, messageId);
-            if (!enforceSocketEventLimits({
+            if (!(await enforceSocketEventLimits({
                 socket,
                 event: Events.MESSAGE_EDIT,
                 limiter,
                 policies: [SOCKET_EVENT_LIMITS.editMessage],
                 keyParts: [userId, authorizedMessage.id],
-            })) return;
+            }))) return;
 
             const message = await prisma.message.update({
                 where: {
@@ -142,23 +142,23 @@ export const registerMessageLifecycleHandlers = ({
         const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_DELETE, messageDeleteEventSchema, rawPayload);
         if (!parsedPayload) return;
         const { chatId, messageId } = parsedPayload;
-        if (!enforceSocketEventLimits({
+        if (!(await enforceSocketEventLimits({
             socket,
             event: Events.MESSAGE_DELETE,
             limiter,
             policies: [SOCKET_EVENT_LIMITS.mutationActor],
             keyParts: [userId],
-        })) return;
+        }))) return;
 
         try {
             const messageToBeDeleted = await assertMessageOwner(userId, chatId, messageId);
-            if (!enforceSocketEventLimits({
+            if (!(await enforceSocketEventLimits({
                 socket,
                 event: Events.MESSAGE_DELETE,
                 limiter,
                 policies: [SOCKET_EVENT_LIMITS.deleteMessage],
                 keyParts: [userId, messageToBeDeleted.id],
-            })) return;
+            }))) return;
 
             await prisma.pinnedMessages.deleteMany({ where: { messageId: messageToBeDeleted.id } });
 

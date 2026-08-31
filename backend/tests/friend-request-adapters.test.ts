@@ -22,6 +22,7 @@ import type {
 import { pushFriendRequestNotificationAdapter } from "../src/modules/friend-requests/infrastructure/push-friend-request-notification.adapter.js";
 import { createSocketFriendRequestRealtimeAdapter } from "../src/modules/friend-requests/infrastructure/socket-friend-request-realtime.adapter.js";
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
+import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
 import { joinMembersInChatRoom } from "../src/utils/chat.util.js";
 import { emitEvent, emitEventToRoom } from "../src/utils/socket.util.js";
 
@@ -34,10 +35,15 @@ describe("Socket friend-request realtime adapter", () => {
     vi.clearAllMocks();
   });
 
-  it("resolves Socket.IO lazily, caches it once, and maps all effects exactly in call order", () => {
+  it("resolves dependencies lazily, caches them once, and maps all effects exactly in call order", async () => {
     const io = { marker: "socket-server" } as unknown as Server;
+    const directory = { marker: "directory" } as unknown as SocketConnectionDirectory;
     const resolveSocketServer = vi.fn(() => io);
-    const adapter = createSocketFriendRequestRealtimeAdapter(resolveSocketServer);
+    const resolveConnectionDirectory = vi.fn(() => directory);
+    const adapter = createSocketFriendRequestRealtimeAdapter(
+      resolveSocketServer,
+      resolveConnectionDirectory,
+    );
     const createdRequest = {
       id: "request-1",
       status: "pending",
@@ -53,20 +59,24 @@ describe("Socket friend-request realtime adapter", () => {
     } as unknown as AcceptedPrivateChatView;
 
     expect(resolveSocketServer).not.toHaveBeenCalled();
+    expect(resolveConnectionDirectory).not.toHaveBeenCalled();
 
-    adapter.emitNewFriendRequest(RECEIVER_ID, createdRequest);
-    adapter.joinMembersInChat([SENDER_ID, RECEIVER_ID], CHAT_ID);
+    await adapter.emitNewFriendRequest(RECEIVER_ID, createdRequest);
+    await adapter.joinMembersInChat([SENDER_ID, RECEIVER_ID], CHAT_ID);
     adapter.emitNewChat(CHAT_ID, acceptedChat);
 
     expect(resolveSocketServer).toHaveBeenCalledTimes(1);
+    expect(resolveConnectionDirectory).toHaveBeenCalledTimes(1);
     expect(emitEvent).toHaveBeenCalledWith({
       io,
+      directory,
       event: Events.NEW_FRIEND_REQUEST,
       data: createdRequest,
       users: [RECEIVER_ID],
     });
     expect(joinMembersInChatRoom).toHaveBeenCalledWith({
       io,
+      directory,
       memberIds: [SENDER_ID, RECEIVER_ID],
       roomToJoin: CHAT_ID,
     });
@@ -85,12 +95,19 @@ describe("Socket friend-request realtime adapter", () => {
     );
   });
 
-  it("does not resolve Socket.IO merely by importing or constructing the adapter", () => {
+  it("does not resolve Socket.IO or the directory merely by constructing the adapter", () => {
     const resolveSocketServer = vi.fn(() => ({}) as Server);
+    const resolveConnectionDirectory = vi.fn(
+      () => ({}) as SocketConnectionDirectory,
+    );
 
-    createSocketFriendRequestRealtimeAdapter(resolveSocketServer);
+    createSocketFriendRequestRealtimeAdapter(
+      resolveSocketServer,
+      resolveConnectionDirectory,
+    );
 
     expect(resolveSocketServer).not.toHaveBeenCalled();
+    expect(resolveConnectionDirectory).not.toHaveBeenCalled();
     expect(emitEvent).not.toHaveBeenCalled();
     expect(joinMembersInChatRoom).not.toHaveBeenCalled();
     expect(emitEventToRoom).not.toHaveBeenCalled();

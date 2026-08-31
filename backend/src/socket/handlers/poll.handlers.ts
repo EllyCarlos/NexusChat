@@ -4,11 +4,11 @@ import { prisma } from "../../lib/prisma.lib.js";
 import { voteEventSchema } from "../../schemas/socket.schema.js";
 import { assertMessageAccessible } from "../../services/authorization.service.js";
 import { logServerError } from "../../utils/safe-logger.utils.js";
+import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
   parseSocketPayload,
   SOCKET_EVENT_LIMITS,
-  type SocketEventRateLimiter,
 } from "../socket-security.js";
 import type {
   VoteInRealtimePayload,
@@ -19,7 +19,7 @@ import type { ChatInteractionRealtimePort } from "../realtime/contracts/interact
 type PollHandlerDependencies = {
   socket: Socket;
   userId: string;
-  limiter: SocketEventRateLimiter;
+  limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
 };
 
@@ -33,23 +33,23 @@ export const registerPollHandlers = ({
     const parsedPayload = parseSocketPayload(socket, Events.VOTE_IN, voteEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { chatId, messageId, optionIndex } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.VOTE_IN,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
 
     try {
       const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.VOTE_IN,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.voteMessage],
         keyParts: [userId, authorizedMessage.id],
-      })) return;
+      }))) return;
 
       if (!authorizedMessage.pollId) return;
 
@@ -81,23 +81,23 @@ export const registerPollHandlers = ({
     const parsedPayload = parseSocketPayload(socket, Events.VOTE_OUT, voteEventSchema, rawPayload);
     if (!parsedPayload) return;
     const { chatId, messageId, optionIndex } = parsedPayload;
-    if (!enforceSocketEventLimits({
+    if (!(await enforceSocketEventLimits({
       socket,
       event: Events.VOTE_OUT,
       limiter,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
-    })) return;
+    }))) return;
 
     try {
       const authorizedMessage = await assertMessageAccessible(userId, chatId, messageId);
-      if (!enforceSocketEventLimits({
+      if (!(await enforceSocketEventLimits({
         socket,
         event: Events.VOTE_OUT,
         limiter,
         policies: [SOCKET_EVENT_LIMITS.voteMessage],
         keyParts: [userId, authorizedMessage.id],
-      })) return;
+      }))) return;
 
       if (!authorizedMessage.pollId) return;
 

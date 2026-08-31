@@ -49,6 +49,7 @@ export const createRequest = asyncErrorHandler(async (
 
   await preparedRequest.execute(createFriendRequestRealtime(
     () => req.app.get("io"),
+    () => req.app.get("connectionDirectory"),
   ));
   return res.status(201).json({});
 });
@@ -78,7 +79,10 @@ export const handleRequest = asyncErrorHandler(async (
   })) return;
 
   const handledRequestId = await preparedRequest.execute(
-    createFriendRequestRealtime(() => req.app.get("io")),
+    createFriendRequestRealtime(
+      () => req.app.get("io"),
+      () => req.app.get("connectionDirectory"),
+    ),
   );
   return res.status(200).json({ id: handledRequestId });
 });

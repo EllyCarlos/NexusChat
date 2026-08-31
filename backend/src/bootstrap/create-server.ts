@@ -5,6 +5,8 @@ import { createApp } from "../app.js";
 import { config } from "../config/env.config.js";
 import { initializeProviders } from "../config/providers.config.js";
 import { socketAuthenticatorMiddleware } from "../middlewares/socket-auth.middleware.js";
+import { createSocketConnectionStateRuntime } from "../infrastructure/redis/socket-connection-state.runtime.js";
+import type { SocketConnectionStateRuntime } from "../infrastructure/redis/socket-connection-state.runtime.js";
 import attachmentRoutes from "../routes/attachment.router.js";
 import authRoutes from "../routes/auth.router.js";
 import chatRoutes from "../routes/chat.router.js";
@@ -15,15 +17,37 @@ import {
   createOriginPolicy,
   createSocketAllowRequest,
 } from "../security/origin-policy.js";
-import registerSocketHandlers from "../socket/socket.js";
+import { prismaSocketPresencePersistence } from "../socket/prisma-socket-presence.persistence.js";
+import registerSocketHandlers, {
+  type SocketHandlerLifecycle,
+} from "../socket/socket.js";
+import {
+  createDistributedSocketPresenceCoordinator,
+  createLocalSocketPresenceCoordinator,
+  type SocketPresenceCoordinator,
+} from "../socket/socket-presence.coordinator.js";
+import { createSocketPresencePublisher } from "../socket/socket-presence.publisher.js";
 
 export type BackendServer = {
   app: ReturnType<typeof createApp>;
   httpServer: HttpServer;
   io: SocketServer;
+  connectionState: SocketConnectionStateRuntime;
+  presence: SocketPresenceCoordinator;
+  socketLifecycle: SocketHandlerLifecycle;
 };
 
-export const createBackendServer = (): BackendServer => {
+export type CreateBackendServerOptions = {
+  connectionState?: SocketConnectionStateRuntime;
+  readiness?: () => boolean;
+};
+
+export const createBackendServer = ({
+  connectionState = createSocketConnectionStateRuntime({
+    mode: { kind: "local" },
+  }),
+  readiness,
+}: CreateBackendServerOptions = {}): BackendServer => {
   initializeProviders(config);
   const originPolicy = createOriginPolicy({
     environment: config.app.environment,
@@ -33,6 +57,7 @@ export const createBackendServer = (): BackendServer => {
   const app = createApp({
     originPolicy,
     environment: config.app.environment,
+    readiness,
     routes: [
       { path: "/api/v1/auth", router: authRoutes },
       { path: "/api/v1/chat", router: chatRoutes },
@@ -54,8 +79,31 @@ export const createBackendServer = (): BackendServer => {
   });
 
   app.set("io", io);
+  app.set("connectionDirectory", connectionState.directory);
   io.use(socketAuthenticatorMiddleware);
-  registerSocketHandlers(io);
+  const publisher = createSocketPresencePublisher(io);
+  const presence = connectionState.maintenance
+    ? createDistributedSocketPresenceCoordinator({
+      maintenance: connectionState.maintenance,
+      persistence: prismaSocketPresencePersistence,
+      publisher,
+    })
+    : createLocalSocketPresenceCoordinator({
+      directory: connectionState.directory,
+      publisher,
+    });
+  const socketLifecycle = registerSocketHandlers(io, {
+    directory: connectionState.directory,
+    limiter: connectionState.eventLimiter,
+    presence,
+  });
 
-  return { app, httpServer, io };
+  return {
+    app,
+    httpServer,
+    io,
+    connectionState,
+    presence,
+    socketLifecycle,
+  };
 };

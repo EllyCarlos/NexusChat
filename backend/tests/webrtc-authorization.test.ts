@@ -20,8 +20,8 @@ vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import { MAX_SOCKET_ICE_CANDIDATE_LENGTH, MAX_SOCKET_SDP_LENGTH } from "../src/schemas/socket.schema.js";
-import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
-import { SocketEventRateLimiter } from "../src/socket/socket-security.js";
+import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 
@@ -31,7 +31,16 @@ const CALL_ID = "cm10000000000000000000003";
 const FOREIGN_ID = "cm10000000000000000000004";
 const FOREIGN_CALL_ID = "cm10000000000000000000005";
 const startedAt = new Date(Date.now() - 5_000);
-const registry = new SocketConnectionRegistry();
+const socketIdsByUser = new Map<string, string[]>();
+const getLatestSocket = vi.fn(async (userId: string) => {
+  const socketIds = socketIdsByUser.get(userId);
+  return socketIds?.[socketIds.length - 1];
+});
+const directory = { getLatestSocket } as unknown as SocketConnectionDirectory;
+
+const addSocket = (userId: string, socketId: string) => {
+  socketIdsByUser.set(userId, [...(socketIdsByUser.get(userId) ?? []), socketId]);
+};
 
 const userFindUnique = vi.mocked(prisma.user.findUnique);
 const friendFindFirst = vi.mocked(prisma.friends.findFirst);
@@ -87,8 +96,8 @@ const createHarness = (actorUserId: string) => {
   };
 
   registerWebRtcHandlers(socket as unknown as Socket, io as unknown as Server, {
-    registry,
-    limiter: new SocketEventRateLimiter(),
+    directory,
+    limiter: new LocalSocketEventRateLimitAdapter(),
   });
 
   return {
@@ -124,7 +133,7 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  registry.clear();
+  socketIdsByUser.clear();
 });
 
 describe("WebRTC call authorization failures", () => {
@@ -377,7 +386,7 @@ describe("WebRTC authorized call operations", () => {
     } as never);
     friendFindFirst.mockResolvedValue({ id: "friendship-1" } as never);
     callCreate.mockResolvedValue({ id: CALL_ID } as never);
-    registry.add(CALLEE_ID, "callee-socket");
+    addSocket(CALLEE_ID, "callee-socket");
     const harness = createHarness(CALLER_ID);
 
     await harness.trigger(Events.CALL_USER, {
@@ -399,7 +408,7 @@ describe("WebRTC authorized call operations", () => {
   it("allows the recorded callee to accept and transitions the call before relay", async () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({} as never);
-    registry.add(CALLER_ID, "caller-socket");
+    addSocket(CALLER_ID, "caller-socket");
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.CALL_ACCEPTED, {
@@ -423,7 +432,7 @@ describe("WebRTC authorized call operations", () => {
   it("allows the recorded callee to reject", async () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({} as never);
-    registry.add(CALLER_ID, "caller-socket");
+    addSocket(CALLER_ID, "caller-socket");
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.CALL_REJECTED, { callHistoryId: CALL_ID });
@@ -437,8 +446,8 @@ describe("WebRTC authorized call operations", () => {
   it.each([CALLER_ID, CALLEE_ID])("allows participant %s to end an accepted call", async (actorId) => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
     callUpdate.mockResolvedValue({} as never);
-    registry.add(CALLER_ID, "caller-socket");
-    registry.add(CALLEE_ID, "callee-socket");
+    addSocket(CALLER_ID, "caller-socket");
+    addSocket(CALLEE_ID, "callee-socket");
     const harness = createHarness(actorId);
 
     await harness.trigger(Events.CALL_END, {
@@ -454,7 +463,7 @@ describe("WebRTC authorized call operations", () => {
   it("allows the recorded callee to report busy for the bound call", async () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({} as never);
-    registry.add(CALLER_ID, "caller-socket");
+    addSocket(CALLER_ID, "caller-socket");
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.CALLEE_BUSY, { callHistoryId: CALL_ID });
@@ -470,7 +479,7 @@ describe("WebRTC authorized call operations", () => {
     [CALLEE_ID, CALLER_ID],
   ])("allows ICE relay from participant %s to participant %s", async (actorId, targetId) => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
-    registry.add(targetId, "target-socket");
+    addSocket(targetId, "target-socket");
     const harness = createHarness(actorId);
 
     await harness.trigger(Events.ICE_CANDIDATE, {
@@ -488,7 +497,7 @@ describe("WebRTC authorized call operations", () => {
 
   it("allows a valid negotiation request", async () => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
-    registry.add(CALLEE_ID, "callee-socket");
+    addSocket(CALLEE_ID, "callee-socket");
     const harness = createHarness(CALLER_ID);
 
     await harness.trigger(Events.NEGO_NEEDED, {
@@ -506,7 +515,7 @@ describe("WebRTC authorized call operations", () => {
 
   it("allows a valid negotiation response", async () => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
-    registry.add(CALLER_ID, "caller-socket");
+    addSocket(CALLER_ID, "caller-socket");
     const harness = createHarness(CALLEE_ID);
 
     await harness.trigger(Events.NEGO_DONE, {
@@ -562,7 +571,7 @@ describe("WebRTC payload and abuse controls", () => {
     } as never);
     friendFindFirst.mockResolvedValue({ id: "friendship" } as never);
     callCreate.mockResolvedValue({ id: CALL_ID } as never);
-    registry.add(CALLEE_ID, "callee-socket");
+    addSocket(CALLEE_ID, "callee-socket");
     const harness = createHarness(CALLER_ID);
 
     for (let index = 0; index < 4; index += 1) {
@@ -581,7 +590,7 @@ describe("WebRTC payload and abuse controls", () => {
 
   it("permits a legitimate ICE burst and throttles an extreme flood", async () => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
-    registry.add(CALLEE_ID, "callee-socket");
+    addSocket(CALLEE_ID, "callee-socket");
     const harness = createHarness(CALLER_ID);
     const payload = {
       callHistoryId: CALL_ID,
@@ -602,7 +611,7 @@ describe("WebRTC payload and abuse controls", () => {
 
   it("throttles negotiation floods separately from ICE", async () => {
     callFindFirst.mockResolvedValue(callRecord({ status: "COMPLETED" }) as never);
-    registry.add(CALLEE_ID, "callee-socket");
+    addSocket(CALLEE_ID, "callee-socket");
     const harness = createHarness(CALLER_ID);
     const payload = {
       callHistoryId: CALL_ID,
@@ -629,8 +638,8 @@ describe("WebRTC payload and abuse controls", () => {
     } as never);
     friendFindFirst.mockResolvedValue({ id: "friendship" } as never);
     callCreate.mockResolvedValue({ id: CALL_ID } as never);
-    registry.add(CALLEE_ID, "older-callee-socket");
-    registry.add(CALLEE_ID, "newer-callee-socket");
+    addSocket(CALLEE_ID, "older-callee-socket");
+    addSocket(CALLEE_ID, "newer-callee-socket");
     const harness = createHarness(CALLER_ID);
 
     await harness.trigger(Events.CALL_USER, {

@@ -23,11 +23,9 @@ vi.mock("../src/utils/safe-logger.utils.js", () => ({
 
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
-import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
-import {
-  SOCKET_EVENT_LIMITS,
-  type SocketEventRateLimiter,
-} from "../src/socket/socket-security.js";
+import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
+import type { SocketEventRateLimitPort } from "../src/socket/socket-event-rate-limit.port.js";
+import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { logServerError } from "../src/utils/safe-logger.utils.js";
 
@@ -67,7 +65,7 @@ const callRecord = ({
 
 const createHarness = ({
   actorUserId,
-  consumeAll = vi.fn(() => true),
+  consumeAll = vi.fn(async () => true),
   getLatestSocket = vi.fn(),
   socketRelayEmit = vi.fn(),
   ioRelayEmit = vi.fn(),
@@ -97,13 +95,18 @@ const createHarness = ({
     disconnect: vi.fn(),
   };
   const io = { to: ioTo };
-  const registry = { getLatestSocket } as unknown as SocketConnectionRegistry;
-  const limiter = { consumeAll } as unknown as SocketEventRateLimiter;
+  const directory = {
+    getLatestSocket: async (userId: string) => getLatestSocket(userId),
+  } as unknown as SocketConnectionDirectory;
+  const limiter = {
+    consume: vi.fn(async () => true),
+    consumeAll,
+  } as SocketEventRateLimitPort;
 
   registerWebRtcHandlers(
     socket as unknown as Socket,
     io as unknown as Server,
-    { registry, limiter },
+    { directory, limiter },
   );
 
   return {
@@ -185,7 +188,7 @@ describe("CALL_END and CALLEE_BUSY transport cutoffs", () => {
   it.each([Events.CALL_END, Events.CALLEE_BUSY])(
     "%s stops at the actor limit before authorization",
     async (event) => {
-      const consumeAll = vi.fn(() => false);
+      const consumeAll = vi.fn(async () => false);
       const harness = createHarness({ actorUserId: CALLEE_ID, consumeAll });
 
       await harness.trigger(event, { callHistoryId: REQUESTED_CALL_ID });
@@ -331,7 +334,7 @@ describe("CALL_END characterization", () => {
     },
   );
 
-  it("stops before registry lookup when persistence fails and logs the exact boundary", async () => {
+  it("stops before directory lookup when persistence fails and logs the exact boundary", async () => {
     const persistenceError = new Error("call end update failed");
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockRejectedValueOnce(persistenceError);

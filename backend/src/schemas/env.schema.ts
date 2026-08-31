@@ -4,6 +4,21 @@ import { ApplicationError } from "../errors/application-error.js";
 
 const nodeEnvironmentSchema = z.enum(["development", "production", "test"]);
 
+const redisUrlValueSchema = z.string().url().refine((value) => {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "redis:" || protocol === "rediss:";
+  } catch {
+    return false;
+  }
+}, "REDIS_URL must use redis:// or rediss://");
+
+const optionalRedisUrlSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : undefined;
+}, redisUrlValueSchema.optional());
+
 const environmentSchema = z.object({
   NODE_ENV: nodeEnvironmentSchema,
   PORT: z.string({ required_error: "PORT is required" })
@@ -28,6 +43,7 @@ const environmentSchema = z.object({
   }),
   DATABASE_URL: z.string({ required_error: "DATABASE_URL is required" }),
   DIRECT_URL: z.string({ required_error: "DIRECT_URL is required" }),
+  REDIS_URL: optionalRedisUrlSchema,
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),

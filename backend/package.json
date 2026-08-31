@@ -16,6 +16,7 @@
     "build:production": "npm run build && npm prune --omit=dev --omit=optional --ignore-scripts",
     "postinstall": "prisma generate",
     "test": "vitest run",
+    "test:live:redis": "vitest run --config vitest.live.config.ts",
     "test:security": "vitest run tests/token-purpose.test.ts tests/rest-authorization.test.ts tests/socket-authorization.test.ts tests/webrtc-authorization.test.ts tests/socket-lifecycle-hardening.test.ts tests/socket-event-hardening.test.ts"
   },
   "keywords": [],
@@ -23,6 +24,7 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "6.12.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.1.0",
     "cookie-parser": "^1.4.6",
@@ -38,6 +40,7 @@
     "nodemailer": "9.0.5",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "redis": "^6.2.1",
     "socket.io": "^4.7.5",
     "zod": "^3.22.4"
   },

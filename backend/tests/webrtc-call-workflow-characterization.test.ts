@@ -23,11 +23,9 @@ vi.mock("../src/utils/safe-logger.utils.js", () => ({
 
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
-import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
-import {
-  SOCKET_EVENT_LIMITS,
-  SocketEventRateLimiter,
-} from "../src/socket/socket-security.js";
+import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
+import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 import { logServerError } from "../src/utils/safe-logger.utils.js";
@@ -94,9 +92,16 @@ const authorizeCallInitiation = ({
 
 const createHarness = (actorUserId: string) => {
   const handlers = new Map<string, EventHandler>();
-  const registry = new SocketConnectionRegistry();
-  const registryLookup = vi.spyOn(registry, "getLatestSocket");
-  const limiter = new SocketEventRateLimiter();
+  const socketIdsByUser = new Map<string, string[]>();
+  const registryLookup = vi.fn(async (userId: string) => {
+    const socketIds = socketIdsByUser.get(userId);
+    return socketIds?.[socketIds.length - 1];
+  });
+  const directory = { getLatestSocket: registryLookup } as unknown as SocketConnectionDirectory;
+  const addSocket = (userId: string, socketId: string) => {
+    socketIdsByUser.set(userId, [...(socketIdsByUser.get(userId) ?? []), socketId]);
+  };
+  const limiter = new LocalSocketEventRateLimitAdapter();
   const limit = vi.spyOn(limiter, "consumeAll");
   const socketEmit = vi.fn();
   const socketRelayEmit = vi.fn();
@@ -121,7 +126,7 @@ const createHarness = (actorUserId: string) => {
   const io = { to: ioTo };
 
   registerWebRtcHandlers(socket as unknown as Socket, io as unknown as Server, {
-    registry,
+    directory,
     limiter,
   });
 
@@ -129,7 +134,7 @@ const createHarness = (actorUserId: string) => {
     ioRelayEmit,
     ioTo,
     limit,
-    registry,
+    addSocket,
     registryLookup,
     socketEmit,
     socketRelayEmit,
@@ -268,7 +273,7 @@ describe("CALL_USER workflow characterization", () => {
     authorizeCallInitiation();
     callCreate.mockResolvedValue({ id: CALL_ID } as never);
     const harness = createHarness(CALLER_ID);
-    harness.registry.add(CALLEE_ID, CALLEE_SOCKET_ID);
+    harness.addSocket(CALLEE_ID, CALLEE_SOCKET_ID);
 
     await harness.trigger(Events.CALL_USER, {
       calleeId: CALLEE_ID,
@@ -319,7 +324,7 @@ describe("CALL_USER workflow characterization", () => {
     callCreate.mockResolvedValue({ id: CALL_ID } as never);
     const deliveryError = new Error("call-id delivery failed");
     const harness = createHarness(CALLER_ID);
-    harness.registry.add(CALLEE_ID, CALLEE_SOCKET_ID);
+    harness.addSocket(CALLEE_ID, CALLEE_SOCKET_ID);
     harness.socketEmit.mockImplementationOnce(() => {
       throw deliveryError;
     });
@@ -431,7 +436,7 @@ describe("CALL_ACCEPTED and CALL_REJECTED shared transport/state characterizatio
   ) => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     const harness = createHarness(CALLEE_ID);
-    harness.limit.mockReturnValueOnce(true).mockReturnValueOnce(false);
+    harness.limit.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
     await harness.trigger(event, payload);
 
@@ -510,7 +515,7 @@ describe("CALL_ACCEPTED workflow characterization", () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({ id: CALL_ID } as never);
     const harness = createHarness(CALLEE_ID);
-    harness.registry.add(CALLER_ID, CALLER_SOCKET_ID);
+    harness.addSocket(CALLER_ID, CALLER_SOCKET_ID);
 
     await harness.trigger(Events.CALL_ACCEPTED, {
       callerId: CALLER_ID,
@@ -568,7 +573,7 @@ describe("CALL_REJECTED workflow characterization", () => {
     callFindFirst.mockResolvedValue(callRecord() as never);
     callUpdate.mockResolvedValue({ id: CALL_ID } as never);
     const harness = createHarness(CALLEE_ID);
-    harness.registry.add(CALLER_ID, CALLER_SOCKET_ID);
+    harness.addSocket(CALLER_ID, CALLER_SOCKET_ID);
 
     await harness.trigger(Events.CALL_REJECTED, { callHistoryId: CALL_ID });
 
@@ -635,7 +640,7 @@ describe("CALL_REJECTED workflow characterization", () => {
     callUpdate.mockResolvedValue({ id: CALL_ID } as never);
     const deliveryError = new Error("peer rejected delivery failed");
     const harness = createHarness(CALLEE_ID);
-    harness.registry.add(CALLER_ID, CALLER_SOCKET_ID);
+    harness.addSocket(CALLER_ID, CALLER_SOCKET_ID);
     harness.socketRelayEmit.mockImplementationOnce(() => {
       throw deliveryError;
     });
@@ -654,7 +659,7 @@ describe("CALL_REJECTED workflow characterization", () => {
     callUpdate.mockResolvedValue({ id: CALL_ID } as never);
     const deliveryError = new Error("peer call-end delivery failed");
     const harness = createHarness(CALLEE_ID);
-    harness.registry.add(CALLER_ID, CALLER_SOCKET_ID);
+    harness.addSocket(CALLER_ID, CALLER_SOCKET_ID);
     harness.socketRelayEmit
       .mockImplementationOnce(() => undefined)
       .mockImplementationOnce(() => {

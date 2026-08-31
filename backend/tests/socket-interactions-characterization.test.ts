@@ -46,11 +46,9 @@ vi.mock("../src/socket/webrtc/socket.js", () => ({ default: vi.fn() }));
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
-import {
-  SOCKET_EVENT_LIMITS,
-  SocketEventRateLimiter,
-} from "../src/socket/socket-security.js";
+import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 
 const USER_ID = "cm50000000000000000000001";
 const CHAT_ID = "cm50000000000000000000002";
@@ -268,10 +266,16 @@ const createHarness = async (limiter?: LimiterDouble) => {
     }),
     to: vi.fn(() => ({ emit: roomEmit })),
   };
+  const selectedLimiter = limiter
+    ? {
+        consume: vi.fn(async () => true),
+        consumeAll: limiter.consumeAll,
+      }
+    : new LocalSocketEventRateLimitAdapter();
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
-    limiter: (limiter ?? new SocketEventRateLimiter()) as SocketEventRateLimiter,
+    limiter: selectedLimiter,
   });
   expect(connectionHandler).toBeDefined();
   await connectionHandler!(socket as unknown as Socket);
@@ -400,7 +404,7 @@ describe("Socket interaction parse and limiter ordering", () => {
     event,
     invalidPayload,
   }) => {
-    const consumeAll = vi.fn().mockReturnValue(true);
+    const consumeAll = vi.fn().mockResolvedValue(true);
     const harness = await createHarness({ consumeAll });
 
     await harness.trigger(event, invalidPayload);
@@ -423,7 +427,7 @@ describe("Socket interaction parse and limiter ordering", () => {
     event,
     payload,
   }) => {
-    const consumeAll = vi.fn().mockReturnValue(false);
+    const consumeAll = vi.fn().mockResolvedValue(false);
     const harness = await createHarness({ consumeAll });
 
     await harness.trigger(event, payload);
@@ -449,8 +453,8 @@ describe("Socket interaction parse and limiter ordering", () => {
     resourcePolicy,
   }) => {
     const consumeAll = vi.fn()
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(false);
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
     const harness = await createHarness({ consumeAll });
 
     await harness.trigger(event, payload);
@@ -747,7 +751,7 @@ describe("Socket poll-vote characterization", () => {
   });
 
   it("checks both limits but returns before VOTE_IN persistence when the message has no poll", async () => {
-    const consumeAll = vi.fn().mockReturnValue(true);
+    const consumeAll = vi.fn().mockResolvedValue(true);
     const harness = await createHarness({ consumeAll });
 
     await harness.trigger(Events.VOTE_IN, {

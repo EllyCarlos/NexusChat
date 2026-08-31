@@ -78,12 +78,12 @@ export const createChatMemberRemover = ({
 
   await repository.deleteMembers(chatId, memberIds);
 
-  realtime.disconnectMembers(memberIds, chatId);
+  await realtime.disconnectMembers(memberIds, chatId);
 
   const deletedChatPayload: DeletedChatPayload = {
     chatId,
   };
-  realtime.emitDeleteChat(memberIds, deletedChatPayload);
+  await realtime.emitDeleteChat(memberIds, deletedChatPayload);
 
   const remainingMemberIds = existingMemberIds.filter(
     (memberId) => !memberIds.includes(memberId),
@@ -92,7 +92,7 @@ export const createChatMemberRemover = ({
     chatId,
     membersId: memberIds,
   };
-  realtime.emitMembersRemoved(remainingMemberIds, payload);
+  await realtime.emitMembersRemoved(remainingMemberIds, payload);
 
   return payload;
 };
