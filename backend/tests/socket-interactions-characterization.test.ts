@@ -49,6 +49,7 @@ import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const USER_ID = "cm50000000000000000000001";
 const CHAT_ID = "cm50000000000000000000002";
@@ -272,10 +273,12 @@ const createHarness = async (limiter?: LimiterDouble) => {
         consumeAll: limiter.consumeAll,
       }
     : new LocalSocketEventRateLimitAdapter();
+  const logger = createCapturingLogger("socket");
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
     limiter: selectedLimiter,
+    logger,
   });
   expect(connectionHandler).toBeDefined();
   await connectionHandler!(socket as unknown as Socket);
@@ -285,6 +288,7 @@ const createHarness = async (limiter?: LimiterDouble) => {
     broadcastRoomEmit,
     handlers,
     io,
+    logger,
     roomEmit,
     socket,
     trigger: async (event: Events, payload: unknown) => {
@@ -304,7 +308,7 @@ const interactionCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.reactionMessage,
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
-    log: "Socket reaction addition failed.",
+    log: "socket.reaction_addition.failed",
   },
   {
     event: Events.DELETE_REACTION,
@@ -314,7 +318,7 @@ const interactionCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.reactionMessage,
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
-    log: "Socket reaction deletion failed.",
+    log: "socket.reaction_deletion.failed",
   },
   {
     event: Events.USER_TYPING,
@@ -324,7 +328,7 @@ const interactionCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.typingChat,
     authorization: () => vi.mocked(prisma.chat.findFirst),
     resourceKey: CHAT_ID,
-    log: "Socket typing event failed.",
+    log: "socket.typing.failed",
   },
   {
     event: Events.VOTE_IN,
@@ -334,7 +338,7 @@ const interactionCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.voteMessage,
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
-    log: "Socket poll vote failed.",
+    log: "socket.poll_vote.failed",
   },
   {
     event: Events.VOTE_OUT,
@@ -344,7 +348,7 @@ const interactionCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.voteMessage,
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
-    log: "Socket poll vote removal failed.",
+    log: "socket.poll_vote_removal.failed",
   },
   {
     event: Events.PIN_MESSAGE,
@@ -354,7 +358,7 @@ const interactionCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.pinMessage,
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
-    log: "Socket message pin failed.",
+    log: "socket.message_pin.failed",
   },
   {
     event: Events.UNPIN_MESSAGE,
@@ -364,7 +368,7 @@ const interactionCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.pinMessage,
     authorization: () => vi.mocked(prisma.pinnedMessages.findFirst),
     resourceKey: MESSAGE_ID,
-    log: "Socket message unpin failed.",
+    log: "socket.message_unpin.failed",
   },
 ] as const;
 
@@ -487,14 +491,18 @@ describe("Socket interaction error boundaries", () => {
     payload,
   }) => {
     const privateFailure = new Error(`private-${event}-database-detail`);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
     authorization().mockRejectedValueOnce(privateFailure as never);
 
     await harness.trigger(event, payload);
 
-    expect(errorSpy).toHaveBeenCalledWith(log, { errorType: "Error" });
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: log,
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
     expectNoInteractionPersistence();
     expect(harness.roomEmit).not.toHaveBeenCalled();
@@ -507,14 +515,14 @@ describe("Socket interaction error boundaries", () => {
       payload: { chatId: CHAT_ID, messageId: MESSAGE_ID, reaction: "like" },
       prepare: () => undefined,
       completedWrite: () => vi.mocked(prisma.reactions.create),
-      log: "Socket reaction addition failed.",
+      log: "socket.reaction_addition.failed",
     },
     {
       event: Events.DELETE_REACTION,
       payload: { chatId: CHAT_ID, messageId: MESSAGE_ID },
       prepare: () => undefined,
       completedWrite: () => vi.mocked(prisma.reactions.deleteMany),
-      log: "Socket reaction deletion failed.",
+      log: "socket.reaction_deletion.failed",
     },
     {
       event: Events.VOTE_IN,
@@ -523,7 +531,7 @@ describe("Socket interaction error boundaries", () => {
         vi.mocked(prisma.message.findFirst).mockResolvedValue(authorizedMessage(POLL_ID) as never);
       },
       completedWrite: () => vi.mocked(prisma.vote.create),
-      log: "Socket poll vote failed.",
+      log: "socket.poll_vote.failed",
     },
     {
       event: Events.VOTE_OUT,
@@ -532,21 +540,21 @@ describe("Socket interaction error boundaries", () => {
         vi.mocked(prisma.message.findFirst).mockResolvedValue(authorizedMessage(POLL_ID) as never);
       },
       completedWrite: () => vi.mocked(prisma.vote.deleteMany),
-      log: "Socket poll vote removal failed.",
+      log: "socket.poll_vote_removal.failed",
     },
     {
       event: Events.PIN_MESSAGE,
       payload: { chatId: CHAT_ID, messageId: MESSAGE_ID },
       prepare: () => undefined,
       completedWrite: () => vi.mocked(prisma.message.update),
-      log: "Socket message pin failed.",
+      log: "socket.message_pin.failed",
     },
     {
       event: Events.UNPIN_MESSAGE,
       payload: { pinId: PIN_ID },
       prepare: () => undefined,
       completedWrite: () => vi.mocked(prisma.message.update),
-      log: "Socket message unpin failed.",
+      log: "socket.message_unpin.failed",
     },
   ] as const;
 
@@ -554,7 +562,6 @@ describe("Socket interaction error boundaries", () => {
     "preserves completed persistence and safe-logs a thrown $event room delivery",
     async ({ completedWrite, event, log, payload, prepare }) => {
       const privateFailure = new Error(`private-${event}-delivery-detail`);
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
       prepare();
       const harness = await createHarness();
       harness.roomEmit.mockImplementationOnce(() => {
@@ -566,15 +573,19 @@ describe("Socket interaction error boundaries", () => {
       expect(completedWrite()).toHaveBeenCalled();
       expect(harness.io.to).toHaveBeenCalled();
       expect(harness.roomEmit).toHaveBeenCalledOnce();
-      expect(errorSpy).toHaveBeenCalledWith(log, { errorType: "Error" });
-      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+      expect(harness.logger.events).toContainEqual({
+        level: "error",
+        component: "socket",
+        event: log,
+        fields: { errorType: "Error" },
+      });
+      expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
       expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
     },
   );
 
   it("safe-logs a thrown typing broadcast while retaining sender exclusion", async () => {
     const privateFailure = new Error("private-typing-delivery-detail");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
     harness.broadcastRoomEmit.mockImplementationOnce(() => {
       throw privateFailure;
@@ -588,8 +599,13 @@ describe("Socket interaction error boundaries", () => {
       chatId: CHAT_ID,
     });
     expect(harness.io.to).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith("Socket typing event failed.", { errorType: "Error" });
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      level: "error",
+      component: "socket",
+      event: "socket.typing.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
   });
 
@@ -601,7 +617,6 @@ describe("Socket interaction error boundaries", () => {
     ] as never);
     vi.mocked(prisma.message.update).mockResolvedValueOnce({ id: OLD_MESSAGE_ID } as never);
     const privateFailure = new Error("private-pin-limit-delivery-detail");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
     harness.roomEmit.mockImplementationOnce(() => {
       throw privateFailure;
@@ -625,8 +640,11 @@ describe("Socket interaction error boundaries", () => {
     });
     expect(prisma.pinnedMessages.create).not.toHaveBeenCalled();
     expect(prisma.message.update).toHaveBeenCalledOnce();
-    expect(errorSpy).toHaveBeenCalledWith("Socket message pin failed.", { errorType: "Error" });
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      event: "socket.message_pin.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
   });
 });
@@ -924,7 +942,6 @@ describe("Socket pin characterization", () => {
       { id: "third-pin", messageId: "third-message" },
     ] as never);
     vi.mocked(prisma.message.update).mockRejectedValueOnce(new Error("old flag failure"));
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
 
     await harness.trigger(Events.PIN_MESSAGE, {
@@ -935,7 +952,7 @@ describe("Socket pin characterization", () => {
     expect(prisma.pinnedMessages.delete).toHaveBeenCalledWith({ where: { id: OLD_PIN_ID } });
     expect(prisma.pinnedMessages.create).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith("Socket message pin failed.", { errorType: "Error" });
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_pin.failed" });
   });
 
   it("keeps the completed eviction and limit event when creating the replacement fails", async () => {
@@ -946,7 +963,6 @@ describe("Socket pin characterization", () => {
     ] as never);
     vi.mocked(prisma.message.update).mockResolvedValueOnce({ id: OLD_MESSAGE_ID } as never);
     vi.mocked(prisma.pinnedMessages.create).mockRejectedValueOnce(new Error("replacement failure"));
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
 
     await harness.trigger(Events.PIN_MESSAGE, {
@@ -961,12 +977,11 @@ describe("Socket pin characterization", () => {
     });
     expect(prisma.message.update).toHaveBeenCalledTimes(1);
     expect(harness.roomEmit).not.toHaveBeenCalledWith(Events.PIN_MESSAGE, expect.anything());
-    expect(errorSpy).toHaveBeenCalledWith("Socket message pin failed.", { errorType: "Error" });
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_pin.failed" });
   });
 
   it("leaves the created pin row when marking the new message pinned fails", async () => {
     vi.mocked(prisma.message.update).mockRejectedValueOnce(new Error("new flag failure"));
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
 
     await harness.trigger(Events.PIN_MESSAGE, {
@@ -976,7 +991,7 @@ describe("Socket pin characterization", () => {
 
     expect(prisma.pinnedMessages.create).toHaveBeenCalledWith(pinCreateQuery);
     expect(harness.roomEmit).not.toHaveBeenCalledWith(Events.PIN_MESSAGE, expect.anything());
-    expect(errorSpy).toHaveBeenCalledWith("Socket message pin failed.", { errorType: "Error" });
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_pin.failed" });
   });
 });
 
@@ -1019,7 +1034,6 @@ describe("Socket unpin characterization", () => {
 
   it("keeps the pin deletion committed and emits nothing when clearing the message flag fails", async () => {
     vi.mocked(prisma.message.update).mockRejectedValueOnce(new Error("unpin flag failure"));
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
 
     await harness.trigger(Events.UNPIN_MESSAGE, { pinId: PIN_ID });
@@ -1027,6 +1041,6 @@ describe("Socket unpin characterization", () => {
     expect(prisma.pinnedMessages.delete).toHaveBeenCalledTimes(1);
     expect(prisma.message.update).toHaveBeenCalledTimes(1);
     expect(harness.roomEmit).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith("Socket message unpin failed.", { errorType: "Error" });
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_unpin.failed" });
   });
 });

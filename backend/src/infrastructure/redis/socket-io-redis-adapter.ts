@@ -2,8 +2,10 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import type { Server as SocketServer } from "socket.io";
 
 import { ApplicationError } from "../../errors/application-error.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import type { NodeEnvironment } from "../../schemas/env.schema.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
 import {
   createRedisClient,
   duplicateRedisClient,
@@ -45,6 +47,7 @@ type PrepareSocketTransportOptions = {
   io: SocketServer;
   mode: SocketTransportMode;
   dependencies?: SocketRedisAdapterDependencies;
+  logger?: LoggerPort;
 };
 
 export const resolveSocketTransportMode = ({
@@ -81,6 +84,7 @@ const createLocalSocketTransportRuntime = (): SocketTransportRuntime => {
 const closeRedisAdapterClients = async (
   subscriberRuntime: RedisRuntime | undefined,
   publisherRuntime: RedisRuntime | undefined,
+  logger: LoggerPort,
 ): Promise<void> => {
   const failures: unknown[] = [];
 
@@ -93,7 +97,11 @@ const closeRedisAdapterClients = async (
       await runtime.close();
     } catch (error) {
       failures.push(error);
-      logServerError(context, error);
+      logSafeError(logger, "redis.socket_transport_shutdown.failed", error, {
+        stage: context.startsWith("Socket.IO Redis subscriber")
+          ? "subscriber"
+          : "publisher",
+      });
     }
   }
 
@@ -105,9 +113,11 @@ const closeRedisAdapterClients = async (
 const createDistributedSocketTransportRuntime = ({
   publisherRuntime,
   subscriberRuntime,
+  logger,
 }: {
   publisherRuntime: RedisRuntime;
   subscriberRuntime: RedisRuntime;
+  logger: LoggerPort;
 }): SocketTransportRuntime => {
   let closePromise: Promise<void> | undefined;
 
@@ -117,7 +127,11 @@ const createDistributedSocketTransportRuntime = ({
       return publisherRuntime.isReady && subscriberRuntime.isReady;
     },
     close: () => {
-      closePromise ??= closeRedisAdapterClients(subscriberRuntime, publisherRuntime);
+      closePromise ??= closeRedisAdapterClients(
+        subscriberRuntime,
+        publisherRuntime,
+        logger,
+      );
       return closePromise;
     },
   });
@@ -127,16 +141,17 @@ export const prepareSocketTransport = async ({
   io,
   mode,
   dependencies = {},
+  logger = noopLogger.forComponent("redis"),
 }: PrepareSocketTransportOptions): Promise<SocketTransportRuntime> => {
   if (mode.kind === "local") {
     return createLocalSocketTransportRuntime();
   }
 
   const createPublisher = dependencies.createPublisher
-    ?? ((configuration: RedisConnectionConfiguration) => createRedisClient(configuration));
+    ?? ((configuration: RedisConnectionConfiguration) => createRedisClient(configuration, logger));
   const duplicateSubscriber = dependencies.duplicateSubscriber
     ?? ((publisher: AdapterRedisClient) =>
-      duplicateRedisClient(publisher as NodeRedisClient));
+      duplicateRedisClient(publisher as NodeRedisClient, logger));
   const createRuntime = dependencies.createRuntime
     ?? ((client: AdapterRedisClient) => createRedisRuntime(client));
   const createSocketAdapter = dependencies.createAdapter ?? createAdapter;
@@ -168,10 +183,11 @@ export const prepareSocketTransport = async ({
     return createDistributedSocketTransportRuntime({
       publisherRuntime,
       subscriberRuntime,
+      logger,
     });
   } catch (error) {
     try {
-      await closeRedisAdapterClients(subscriberRuntime, publisherRuntime);
+      await closeRedisAdapterClients(subscriberRuntime, publisherRuntime, logger);
     } catch {
       // Client-specific failures were already sanitized and logged.
     }

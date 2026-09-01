@@ -7,8 +7,10 @@ import {
     messageSeenEventSchema,
 } from "../../schemas/socket.schema.js";
 import { assertChatMember, assertMessageOwner } from "../../services/authorization.service.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import { deleteFilesFromCloudinary } from "../../utils/auth.util.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
 import type {
     MessageDeleteRealtimePayload,
     MessageEditRealtimePayload,
@@ -27,6 +29,7 @@ type RegisterMessageLifecycleHandlersArgs = {
     userId: string;
     limiter: SocketEventRateLimitPort;
     realtime: MessageRealtimePort;
+    logger?: LoggerPort;
 };
 
 export const registerMessageLifecycleHandlers = ({
@@ -34,6 +37,7 @@ export const registerMessageLifecycleHandlers = ({
     userId,
     limiter,
     realtime,
+    logger = noopLogger.forComponent("socket"),
 }: RegisterMessageLifecycleHandlersArgs): void => {
     socket.on(Events.MESSAGE_SEEN, async (rawPayload: unknown) => {
         const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_SEEN, messageSeenEventSchema, rawPayload);
@@ -91,7 +95,7 @@ export const registerMessageLifecycleHandlers = ({
             realtime.emitMessageSeen(chatId, payload)
 
         } catch (error) {
-            logServerError('Socket mark-as-seen failed.', error)
+            logSafeError(logger, "socket.message_seen.failed", error)
         }
     })
 
@@ -134,7 +138,7 @@ export const registerMessageLifecycleHandlers = ({
 
             realtime.emitMessageEdit(chatId, payload)
         } catch (error) {
-            logServerError('Socket message edit failed.', error);
+            logSafeError(logger, "socket.message_edit.failed", error);
         }
     })
 
@@ -210,7 +214,7 @@ export const registerMessageLifecycleHandlers = ({
                 realtime.emitMessageDelete(chatId, payload)
             }
         } catch (error) {
-            logServerError('Socket message deletion failed.', error);
+            logSafeError(logger, "socket.message_delete.failed", error);
         }
     })
 };

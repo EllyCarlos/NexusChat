@@ -9,7 +9,9 @@ import { getMessaging, type Messaging } from "firebase-admin/messaging";
 import { createRequire } from "node:module";
 import { ApplicationError } from "../errors/application-error.js";
 import type { RuntimeConfig } from "../interfaces/config/config.interface.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 
 interface ServiceAccountCredentials {
   project_id: string;
@@ -19,7 +21,7 @@ interface ServiceAccountCredentials {
 
 let messaging: Messaging | undefined;
 
-const loadDevelopmentServiceAccount = (): ServiceAccount => {
+const loadDevelopmentServiceAccount = (logger: LoggerPort): ServiceAccount => {
   try {
     const require = createRequire(import.meta.url);
     const credentials = require("../../firebase-admin-cred.json") as ServiceAccountCredentials;
@@ -29,7 +31,7 @@ const loadDevelopmentServiceAccount = (): ServiceAccount => {
       clientEmail: credentials.client_email,
     };
   } catch (error) {
-    logServerError("Firebase credentials loading failed.", error);
+    logSafeError(logger, "provider.firebase_credentials.failed", error);
     throw new ApplicationError({
       code: "FIREBASE_CONFIGURATION_UNAVAILABLE",
       message: "Firebase credentials unavailable.",
@@ -58,6 +60,7 @@ const loadProductionServiceAccount = (
 
 export const initializeFirebaseAdmin = (
   configuration: Pick<RuntimeConfig, "app" | "firebase">,
+  logger: LoggerPort = noopLogger.forComponent("provider"),
 ): Messaging => {
   if (messaging) {
     return messaging;
@@ -65,7 +68,7 @@ export const initializeFirebaseAdmin = (
 
   const serviceAccount = configuration.app.environment === "production"
     ? loadProductionServiceAccount(configuration.firebase)
-    : loadDevelopmentServiceAccount();
+    : loadDevelopmentServiceAccount(logger);
   const firebaseApp = getApps().length > 0
     ? getApp()
     : initializeApp({ credential: cert(serviceAccount) });

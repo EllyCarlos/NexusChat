@@ -16,14 +16,12 @@ const listTypeScriptFiles = async (directory: string): Promise<string[]> => {
 describe("structured logging dependency boundary", () => {
   it("isolates the Pino import to the infrastructure adapter", async () => {
     const sourceFiles = await listTypeScriptFiles(sourceRoot);
-    const imports: string[] = [];
-
-    for (const path of sourceFiles) {
+    const imports = (await Promise.all(sourceFiles.map(async (path) => {
       const source = await readFile(path, "utf8");
-      if (/from ["']pino["']|require\(["']pino["']\)/.test(source)) {
-        imports.push(relative(sourceRoot, path).replaceAll("\\", "/"));
-      }
-    }
+      return /from ["']pino["']|require\(["']pino["']\)/.test(source)
+        ? relative(sourceRoot, path).replaceAll("\\", "/")
+        : undefined;
+    }))).filter((path): path is string => path !== undefined);
 
     expect(imports).toEqual([
       "infrastructure/logging/pino-logger.adapter.ts",

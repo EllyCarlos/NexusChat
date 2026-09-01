@@ -53,6 +53,7 @@ import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 import { deleteFilesFromCloudinary } from "../src/utils/auth.util.js";
 
 const ACTOR_ID = "cm13000000000000000000001";
@@ -141,11 +142,13 @@ const createHarness = async () => {
     reconcilePending: vi.fn(async () => 0),
     drain: vi.fn(async () => undefined),
   };
+  const logger = createCapturingLogger("socket");
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
     limiter,
     presence,
+    logger,
   });
   expect(connectionHandler).toBeDefined();
   await connectionHandler!(socket as unknown as Socket);
@@ -154,6 +157,7 @@ const createHarness = async () => {
   return {
     ioTo,
     limitSpy,
+    logger,
     roomEmit,
     socket,
     trigger: async (event: Events, payload: unknown) => {
@@ -173,7 +177,7 @@ const lifecycleCases = [
     actorPolicy: SOCKET_EVENT_LIMITS.seenActor,
     resourcePolicy: SOCKET_EVENT_LIMITS.seenChat,
     resourceKey: CHAT_ID,
-    logContext: "Socket mark-as-seen failed.",
+    logContext: "socket.message_seen.failed",
   },
   {
     label: "MESSAGE_EDIT",
@@ -192,7 +196,7 @@ const lifecycleCases = [
     actorPolicy: SOCKET_EVENT_LIMITS.mutationActor,
     resourcePolicy: SOCKET_EVENT_LIMITS.editMessage,
     resourceKey: MESSAGE_ID,
-    logContext: "Socket message edit failed.",
+    logContext: "socket.message_edit.failed",
   },
   {
     label: "MESSAGE_DELETE",
@@ -202,7 +206,7 @@ const lifecycleCases = [
     actorPolicy: SOCKET_EVENT_LIMITS.mutationActor,
     resourcePolicy: SOCKET_EVENT_LIMITS.deleteMessage,
     resourceKey: MESSAGE_ID,
-    logContext: "Socket message deletion failed.",
+    logContext: "socket.message_delete.failed",
   },
 ] as const;
 
@@ -225,7 +229,6 @@ const expectNoLifecycleMutation = () => {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.spyOn(console, "error").mockImplementation(() => undefined);
   vi.mocked(prisma.user.update).mockResolvedValue({} as never);
   vi.mocked(prisma.chatMembers.findMany).mockResolvedValue([]);
   chatFindFirst.mockResolvedValue(memberChat() as never);
@@ -304,8 +307,11 @@ describe("Socket message lifecycle security ordering", () => {
     expect(authorizationMock).toHaveBeenCalledTimes(1);
     expectNoLifecycleMutation();
     expect(harness.roomEmit).not.toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalledExactlyOnceWith(logContext, { errorType: "Error" });
-    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("private authorization detail");
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      event: logContext,
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain("private authorization detail");
   });
 
   it.each(lifecycleCases)("applies the $label resource limit after authorization and before mutation", async ({
@@ -417,10 +423,10 @@ describe("MESSAGE_SEEN characterization", () => {
     await harness.trigger(Events.MESSAGE_SEEN, { chatId: CHAT_ID });
 
     expect(harness.roomEmit).not.toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalledExactlyOnceWith(
-      "Socket mark-as-seen failed.",
-      { errorType: "Error" },
-    );
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      event: "socket.message_seen.failed",
+      fields: { errorType: "Error" },
+    });
   });
 
   it("keeps the persisted seen update when delivery throws and reaches the event-local safe log", async () => {
@@ -446,11 +452,8 @@ describe("MESSAGE_SEEN characterization", () => {
       chatId: CHAT_ID,
       readAt: persistedReadTime,
     });
-    expect(console.error).toHaveBeenCalledExactlyOnceWith(
-      "Socket mark-as-seen failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_seen.failed" });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(
       "private seen delivery failure",
     );
   });
@@ -513,10 +516,7 @@ describe("MESSAGE_EDIT characterization", () => {
     });
 
     expect(harness.roomEmit).not.toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalledExactlyOnceWith(
-      "Socket message edit failed.",
-      { errorType: "Error" },
-    );
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_edit.failed" });
   });
 
   it("keeps the persisted edit when delivery throws and reaches the event-local safe log", async () => {
@@ -540,11 +540,8 @@ describe("MESSAGE_EDIT characterization", () => {
       chatId: CHAT_ID,
       messageId: MESSAGE_ID,
     });
-    expect(console.error).toHaveBeenCalledExactlyOnceWith(
-      "Socket message edit failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_edit.failed" });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(
       "private edit delivery failure",
     );
   });
@@ -712,11 +709,8 @@ describe("MESSAGE_DELETE destructive lifecycle characterization", () => {
       messageId: DELETED_MESSAGE_ID,
       chatId: CHAT_ID,
     });
-    expect(console.error).toHaveBeenCalledExactlyOnceWith(
-      "Socket message deletion failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_delete.failed" });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(
       "private delete delivery failure",
     );
   });
@@ -739,10 +733,7 @@ describe("MESSAGE_DELETE destructive lifecycle characterization", () => {
     expect(trace).toEqual(DELETE_STEPS.slice(0, failedIndex + 1));
     expect(harness.ioTo).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalledExactlyOnceWith(
-      "Socket message deletion failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(`private ${failAt} failure`);
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_delete.failed" });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(`private ${failAt} failure`);
   });
 });

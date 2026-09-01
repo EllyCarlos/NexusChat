@@ -62,6 +62,7 @@ import type {
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import type { SocketPresenceCoordinator } from "../src/socket/socket-presence.coordinator.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const USER_ID = "cm2d300000000000000000001";
 const REMOTE_USER_ID = "cm2d300000000000000000002";
@@ -150,6 +151,7 @@ const createHarness = ({
   presence?: SocketPresenceCoordinator;
   registry?: SocketConnectionRegistry;
 } = {}) => {
+  const logger = createCapturingLogger("socket");
   let connectionHandler: ((socket: Socket) => Promise<unknown>) | undefined;
   const localRoomDisconnect = vi.fn();
   const globalRoomDisconnect = vi.fn();
@@ -173,6 +175,7 @@ const createHarness = ({
   const lifecycle = registerSocketHandlers(io as unknown as Server, {
     directory,
     presence,
+    logger,
     ...(registry ? { registry } : {}),
   });
 
@@ -200,6 +203,7 @@ const createHarness = ({
     handlers,
     io,
     lifecycle,
+    logger,
     localRoomDisconnect,
     presence,
     runConnection: () => {
@@ -308,7 +312,6 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
   it("safe-logs directory admission failure and fails closed", async () => {
     const privateFailure = new Error("redis://user:private-admission-secret@example.test");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const directory = createDirectory({
       add: vi.fn(async () => Promise.reject(privateFailure)),
     });
@@ -316,11 +319,13 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
     await harness.runConnection();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket connection registration failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: "socket.connection_registration.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
     expect(directory.onlineUserIds).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
@@ -399,7 +404,6 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
   it("safe-logs removal failure without falling back to the process-local registry", async () => {
     const privateFailure = new Error("private distributed removal detail");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const localRegistry = new SocketConnectionRegistry();
     const localRemove = vi.spyOn(localRegistry, "remove");
     const directory = createDirectory({
@@ -411,11 +415,13 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
     await harness.handlers.get("disconnect")!();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket connection removal failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: "socket.connection_removal.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(directory.remove).toHaveBeenCalledOnce();
     expect(localRemove).not.toHaveBeenCalled();
     expect(presence.reconcileTransition).not.toHaveBeenCalled();
@@ -423,7 +429,6 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
   it("removes and disconnects when the global online-user lookup fails", async () => {
     const privateFailure = new Error("private global-list detail");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const directory = createDirectory({
       onlineUserIds: vi.fn(async () => Promise.reject(privateFailure)),
       remove: vi.fn(async () => removal(true, false)),
@@ -432,11 +437,13 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
     await harness.runConnection();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket online users lookup failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: "socket.online_users_lookup.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(directory.remove).toHaveBeenCalledWith(USER_ID, SOCKET_ID);
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
     expect(harness.socket.emit).not.toHaveBeenCalledWith(

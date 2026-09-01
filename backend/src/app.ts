@@ -3,6 +3,8 @@ import cors from "cors";
 import express, { type Request, type Response, type Router } from "express";
 import helmet from "helmet";
 import passport from "passport";
+import type { LoggerPort } from "./observability/logger.port.js";
+import { noopLogger } from "./observability/noop-logger.js";
 import { errorMiddleware, notFoundMiddleware } from "./middlewares/error.middleware.js";
 import { createRequestLogger } from "./middlewares/request-logger.middleware.js";
 import {
@@ -22,6 +24,7 @@ type CreateAppOptions = {
   routes?: AppRoute[];
   requestLogger?: ReturnType<typeof createRequestLogger>;
   readiness?: () => boolean;
+  logger?: LoggerPort;
 };
 
 export const createApp = ({
@@ -30,8 +33,11 @@ export const createApp = ({
   routes = [],
   requestLogger = createRequestLogger(),
   readiness = () => true,
+  logger = noopLogger,
 }: CreateAppOptions) => {
   const app = express();
+
+  app.set("logger", logger);
 
   app.disable("x-powered-by");
   app.use(helmet({

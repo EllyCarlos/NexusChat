@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const redisMocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -116,9 +117,9 @@ describe("Redis client creation", () => {
     const fake = createFakeClient();
     const sensitiveUrl = "rediss://redis-user:obvious-fake-password@redis.example.test:6380";
     redisMocks.createClient.mockReturnValue(fake.client);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("redis");
 
-    const client = createRedisClient({ url: sensitiveUrl });
+    const client = createRedisClient({ url: sensitiveUrl }, logger);
     const runtime = createRedisRuntime(client);
     await runtime.connect();
 
@@ -128,12 +129,11 @@ describe("Redis client creation", () => {
     expect(fake.errorListeners).toHaveLength(1);
     fake.errorListeners[0](new Error(`Connection failed for ${sensitiveUrl}`));
 
-    const output = JSON.stringify(errorSpy.mock.calls);
-    expect(output).toContain("Redis client error.");
+    const output = JSON.stringify(logger.events);
+    expect(output).toContain("redis.client.failed");
     expect(output).toContain("errorType");
     expect(output).not.toContain(sensitiveUrl);
     expect(output).not.toContain("obvious-fake-password");
-    errorSpy.mockRestore();
   });
 });
 

@@ -1,6 +1,8 @@
 import type { Server as HttpServer } from "node:http";
 import type { Server as SocketServer } from "socket.io";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 
 type ShutdownOptions = {
   httpServer: HttpServer;
@@ -12,12 +14,14 @@ type ShutdownOptions = {
   closeDistributedRealtime?: () => Promise<void>;
   disconnectPrisma: () => Promise<void>;
   stageTimeoutMs?: number;
+  logger?: LoggerPort;
 };
 
 type ProcessHandlerOptions = {
   shutdown: () => Promise<void>;
   processTarget?: NodeJS.Process;
   exit?: (code: number) => void;
+  logger?: LoggerPort;
 };
 
 const closeSocketServer = async (io: SocketServer) => {
@@ -71,6 +75,7 @@ export const createShutdownCoordinator = ({
   closeDistributedRealtime = async () => undefined,
   disconnectPrisma,
   stageTimeoutMs = SHUTDOWN_STAGE_TIMEOUT_MS,
+  logger = noopLogger.forComponent("bootstrap"),
 }: ShutdownOptions) => {
   let shutdownPromise: Promise<void> | undefined;
 
@@ -80,7 +85,7 @@ export const createShutdownCoordinator = ({
     }
 
     shutdownPromise = (async () => {
-      console.log("Closing backend runtime resources...");
+      logger.info("bootstrap.shutdown.started", { result: "started" });
       let failureCount = 0;
       const awaitResource = async (
         context: string,
@@ -102,7 +107,12 @@ export const createShutdownCoordinator = ({
 
         if (!result.succeeded) {
           failureCount += 1;
-          logServerError(context, result.error);
+          logSafeError(logger, "bootstrap.shutdown_stage.failed", result.error, {
+            stage: context
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_|_$/g, ""),
+          });
         }
       };
       const closeResource = async (
@@ -142,7 +152,7 @@ export const createShutdownCoordinator = ({
       if (failureCount > 0) {
         throw new Error("Backend shutdown failed");
       }
-      console.log("Backend runtime resources closed successfully");
+      logger.info("bootstrap.shutdown.completed", { result: "completed" });
     })();
 
     return shutdownPromise;
@@ -153,6 +163,7 @@ export const registerProcessHandlers = ({
   shutdown,
   processTarget = process,
   exit = (code) => process.exit(code),
+  logger = noopLogger.forComponent("bootstrap"),
 }: ProcessHandlerOptions) => {
   let terminationStarted = false;
 
@@ -170,11 +181,11 @@ export const registerProcessHandlers = ({
   const handleSigterm = () => terminate(0);
   const handleSigint = () => terminate(0);
   const handleUncaughtException = (error: Error) => {
-    logServerError("Uncaught exception.", error);
+    logSafeError(logger, "bootstrap.uncaught_exception.failed", error);
     terminate(1);
   };
   const handleUnhandledRejection = (reason: unknown) => {
-    logServerError("Unhandled promise rejection.", reason);
+    logSafeError(logger, "bootstrap.unhandled_rejection.failed", reason);
     terminate(1);
   };
 

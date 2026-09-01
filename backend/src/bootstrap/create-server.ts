@@ -4,7 +4,9 @@ import { Server as SocketServer } from "socket.io";
 import { createApp } from "../app.js";
 import { config } from "../config/env.config.js";
 import { initializeProviders } from "../config/providers.config.js";
-import { socketAuthenticatorMiddleware } from "../middlewares/socket-auth.middleware.js";
+import { createSocketAuthenticatorMiddleware } from "../middlewares/socket-auth.middleware.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
 import { createSocketConnectionStateRuntime } from "../infrastructure/redis/socket-connection-state.runtime.js";
 import type { SocketConnectionStateRuntime } from "../infrastructure/redis/socket-connection-state.runtime.js";
 import attachmentRoutes from "../routes/attachment.router.js";
@@ -40,6 +42,7 @@ export type BackendServer = {
 export type CreateBackendServerOptions = {
   connectionState?: SocketConnectionStateRuntime;
   readiness?: () => boolean;
+  logger?: LoggerPort;
 };
 
 export const createBackendServer = ({
@@ -47,17 +50,26 @@ export const createBackendServer = ({
     mode: { kind: "local" },
   }),
   readiness,
+  logger = noopLogger,
 }: CreateBackendServerOptions = {}): BackendServer => {
-  initializeProviders(config);
+  initializeProviders(config, logger.forComponent("provider"));
+  const httpLogger = logger.forComponent("http");
+  const socketLogger = logger.forComponent("socket");
+  const presenceLogger = logger.forComponent("presence");
   const originPolicy = createOriginPolicy({
     environment: config.app.environment,
     frontendOrigin: config.app.clientUrl,
     vercelUrl: config.app.vercelUrl,
+    onInvalidConfiguredOrigin: () => httpLogger.warn(
+      "http.origin_configuration.ignored",
+      { result: "rejected" },
+    ),
   });
   const app = createApp({
     originPolicy,
     environment: config.app.environment,
     readiness,
+    logger,
     routes: [
       { path: "/api/v1/auth", router: authRoutes },
       { path: "/api/v1/chat", router: chatRoutes },
@@ -80,7 +92,7 @@ export const createBackendServer = ({
 
   app.set("io", io);
   app.set("connectionDirectory", connectionState.directory);
-  io.use(socketAuthenticatorMiddleware);
+  io.use(createSocketAuthenticatorMiddleware(undefined, logger.forComponent("auth")));
   const publisher = createSocketPresencePublisher(io);
   const presence = connectionState.maintenance
     ? createDistributedSocketPresenceCoordinator({
@@ -91,11 +103,13 @@ export const createBackendServer = ({
     : createLocalSocketPresenceCoordinator({
       directory: connectionState.directory,
       publisher,
+      logger: presenceLogger,
     });
   const socketLifecycle = registerSocketHandlers(io, {
     directory: connectionState.directory,
     limiter: connectionState.eventLimiter,
     presence,
+    logger: socketLogger,
   });
 
   return {

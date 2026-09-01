@@ -121,12 +121,13 @@ describe("REST browser-origin policy", () => {
   });
 
   it("ignores malformed configured origins without broadening access or logging their values", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const onInvalidConfiguredOrigin = vi.fn();
     const malformed = "javascript:alert(document.cookie)";
     const policy = createOriginPolicy({
       environment: "production",
       frontendOrigin: malformed,
       vercelUrl: "not-a-vercel-host.example.com",
+      onInvalidConfiguredOrigin,
     });
     const { app } = createOriginTestApp(policy);
 
@@ -136,8 +137,8 @@ describe("REST browser-origin policy", () => {
 
     expect(policy.origins).toEqual([]);
     expect(response.status).toBe(403);
-    expect(warnSpy).toHaveBeenCalled();
-    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(malformed);
+    expect(onInvalidConfiguredOrigin).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(onInvalidConfiguredOrigin.mock.calls)).not.toContain(malformed);
   });
 
   it("normalizes a hostname-only VERCEL_URL to one exact HTTPS origin", () => {

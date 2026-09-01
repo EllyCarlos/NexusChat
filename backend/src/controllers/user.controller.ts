@@ -4,7 +4,8 @@ import { updateUserAvatar } from "../modules/users/profile.service.js";
 import { sendMail } from "../utils/email.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { signPasswordResetToken } from "../modules/auth/token/session-token.service.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import { getRequestLogger } from "../observability/request-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 
 const getBaseUrl = () => {
@@ -103,7 +104,11 @@ export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {
         });
 
     } catch (error) {
-        logServerError('Email sending failed.', error);
+        logSafeError(
+            getRequestLogger(req, "notification"),
+            "notification.email_send.failed",
+            error,
+        );
         return next(new CustomError(`Failed to send ${emailType} email`, 500));
     }
 });

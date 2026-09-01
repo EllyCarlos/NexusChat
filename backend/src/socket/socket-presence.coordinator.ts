@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../lib/prisma.lib.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 import type {
   SocketConnectionDirectory,
   SocketPresenceTransition,
@@ -37,6 +39,7 @@ type LocalPresenceCoordinatorOptions = {
   queue?: SocketPresenceWriteQueue;
   store?: LocalPresenceStore;
   clock?: () => Date;
+  logger?: LoggerPort;
 };
 
 const prismaLocalPresenceStore: LocalPresenceStore = {
@@ -61,6 +64,7 @@ export const createLocalSocketPresenceCoordinator = ({
   queue = socketPresenceWriteQueue,
   store = prismaLocalPresenceStore,
   clock = () => new Date(),
+  logger = noopLogger.forComponent("presence"),
 }: LocalPresenceCoordinatorOptions): SocketPresenceCoordinator => {
   const reconcileTransition = async (transition: SocketPresenceTransition) => {
     try {
@@ -72,10 +76,11 @@ export const createLocalSocketPresenceCoordinator = ({
         await store.setOffline(transition.userId, clock());
       });
     } catch (error) {
-      logServerError(
+      logSafeError(
+        logger,
         transition.state === "online"
-          ? "Socket online presence update failed."
-          : "Socket offline presence update failed.",
+          ? "presence.online_update.failed"
+          : "presence.offline_update.failed",
         error,
       );
     }

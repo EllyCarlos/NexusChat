@@ -4,7 +4,9 @@ import { CustomError } from "../utils/error.utils.js";
 import { isSessionAuthenticationError } from "../modules/auth/application/authenticate-session.js";
 import { authenticateSession } from "../modules/auth/session-auth.service.js";
 import type { AuthenticatedIdentity } from "../modules/auth/contracts/auth-identity.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 
 export const MAX_SOCKET_TOKEN_LENGTH = 4_096;
 
@@ -21,6 +23,7 @@ type AuthenticateSessionOperation = (input: {
 
 export const createSocketAuthenticatorMiddleware = (
   authenticate: AuthenticateSessionOperation = authenticateSession,
+  logger: LoggerPort = noopLogger.forComponent("auth"),
 ) => async (socket: Socket, next: NextFunction) => {
   const token = socket.handshake.query.token;
   if (token === undefined) {
@@ -51,7 +54,7 @@ export const createSocketAuthenticatorMiddleware = (
       }
     }
 
-    logServerError("Socket authentication failed.", error);
+    logSafeError(logger, "auth.socket_authentication.failed", error);
     return next(new CustomError("Invalid Token, please login again", 401));
   }
 };

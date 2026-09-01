@@ -9,6 +9,7 @@ import {
   type RecurringTask,
 } from "../src/infrastructure/redis/socket-connection-state.runtime.js";
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const createDistributedHarness = () => {
   const commandClient = {
@@ -71,6 +72,7 @@ const createDistributedHarness = () => {
     consumeAll: vi.fn(async () => true),
   };
   const createEventLimiter = vi.fn(() => eventLimiter);
+  const logger = createCapturingLogger("redis");
 
   const runtime = createSocketConnectionStateRuntime({
     mode: { kind: "distributed", redisUrl: "redis://example.test" },
@@ -81,6 +83,7 @@ const createDistributedHarness = () => {
       createEventLimiter,
       scheduleRecurring,
     },
+    logger,
   });
 
   return {
@@ -95,6 +98,7 @@ const createDistributedHarness = () => {
     createEventLimiter,
     scheduleRecurring,
     recurringTask,
+    logger,
     getScheduledCallback: () => scheduledCallback,
   };
 };
@@ -316,7 +320,6 @@ describe("Socket connection-state runtime", () => {
         throw failure;
       }
     });
-    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await harness.runtime.connect();
     await harness.runtime.start({
       reconcilePresence,
@@ -345,17 +348,16 @@ describe("Socket connection-state runtime", () => {
       expect(harness.runtime.isReady).toBe(false);
     });
     expect(reconcilePresence.mock.calls).toEqual([["user-a"], ["user-b"]]);
-    expect(logError).toHaveBeenCalledWith(
-      "Socket connection maintenance failed.",
-      { errorType: "Error" },
-    );
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      event: "redis.connection_maintenance.failed",
+      fields: { errorType: "Error" },
+    });
 
     harness.getScheduledCallback()?.();
     await vi.waitFor(() => {
       expect(harness.directory.cleanupSettledPresence).toHaveBeenCalledTimes(3);
       expect(harness.runtime.isReady).toBe(true);
     });
-    logError.mockRestore();
   });
 
   it("stays unready when initial maintenance fails and does not schedule", async () => {

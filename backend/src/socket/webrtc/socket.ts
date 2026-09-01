@@ -20,8 +20,10 @@ import {
   assertCallParticipant,
   assertCanCallUser,
 } from "../../services/authorization.service.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import { CustomError } from "../../utils/error.utils.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
 import type { SocketConnectionDirectory } from "../connection-directory.js";
 import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
@@ -33,6 +35,7 @@ import {
 type WebRtcHandlerDependencies = {
   directory: SocketConnectionDirectory;
   limiter: SocketEventRateLimitPort;
+  logger?: LoggerPort;
 };
 
 const registerWebRtcHandlers = (
@@ -40,7 +43,11 @@ const registerWebRtcHandlers = (
   io: Server,
   dependencies: WebRtcHandlerDependencies,
 ) => {
-  const { directory, limiter } = dependencies;
+  const {
+    directory,
+    limiter,
+    logger = noopLogger.forComponent("socket"),
+  } = dependencies;
   const userId = socket.user.id;
   const calls = createSocketCallSignalingService({ io, socket, directory });
 
@@ -78,7 +85,7 @@ const registerWebRtcHandlers = (
         offer,
       });
     } catch (error) {
-      logServerError("CALL_USER event failed.", error);
+      logSafeError(logger, "socket.call_user.failed", error);
     }
   });
 
@@ -113,7 +120,7 @@ const registerWebRtcHandlers = (
         answer,
       });
     } catch (error) {
-      logServerError("CALL_ACCEPTED event failed.", error);
+      logSafeError(logger, "socket.call_acceptance.failed", error);
     }
   });
 
@@ -140,7 +147,7 @@ const registerWebRtcHandlers = (
       }))) return;
       await calls.rejectCall({ call });
     } catch (error) {
-      logServerError("CALL_REJECTED event failed.", error);
+      logSafeError(logger, "socket.call_rejection.failed", error);
     }
   });
 
@@ -168,7 +175,7 @@ const registerWebRtcHandlers = (
       }))) return;
       await calls.endCall({ call });
     } catch (error) {
-      logServerError("CALL_END event failed.", error);
+      logSafeError(logger, "socket.call_end.failed", error);
     }
   });
 
@@ -195,7 +202,7 @@ const registerWebRtcHandlers = (
       }))) return;
       await calls.markCalleeBusy({ call });
     } catch (error) {
-      logServerError("CALLEE_BUSY event failed.", error);
+      logSafeError(logger, "socket.callee_busy.failed", error);
     }
   });
 
@@ -228,7 +235,7 @@ const registerWebRtcHandlers = (
         candidate,
       });
     } catch (error) {
-      logServerError("ICE_CANDIDATE event failed.", error);
+      logSafeError(logger, "socket.ice_candidate.failed", error);
     }
   });
 
@@ -261,7 +268,7 @@ const registerWebRtcHandlers = (
         offer,
       });
     } catch (error) {
-      logServerError("NEGO_NEEDED event failed.", error);
+      logSafeError(logger, "socket.negotiation_needed.failed", error);
     }
   });
 
@@ -294,7 +301,7 @@ const registerWebRtcHandlers = (
         answer,
       });
     } catch (error) {
-      logServerError("NEGO_DONE event failed.", error);
+      logSafeError(logger, "socket.negotiation_done.failed", error);
     }
   });
 };

@@ -6,7 +6,9 @@ import {
   newReactionEventSchema,
 } from "../../schemas/socket.schema.js";
 import { assertMessageAccessible } from "../../services/authorization.service.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
@@ -24,6 +26,7 @@ type ReactionHandlerDependencies = {
   userId: string;
   limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
+  logger?: LoggerPort;
 };
 
 export const registerReactionHandlers = ({
@@ -31,6 +34,7 @@ export const registerReactionHandlers = ({
   userId,
   limiter,
   realtime,
+  logger = noopLogger.forComponent("socket"),
 }: ReactionHandlerDependencies): void => {
   socket.on(Events.NEW_REACTION, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.NEW_REACTION, newReactionEventSchema, rawPayload);
@@ -83,7 +87,7 @@ export const registerReactionHandlers = ({
 
       realtime.emitNewReaction(chatId, payload);
     } catch (error) {
-      logServerError("Socket reaction addition failed.", error);
+      logSafeError(logger, "socket.reaction_addition.failed", error);
     }
   });
 
@@ -121,7 +125,7 @@ export const registerReactionHandlers = ({
       };
       realtime.emitDeleteReaction(chatId, payload);
     } catch (error) {
-      logServerError("Socket reaction deletion failed.", error);
+      logSafeError(logger, "socket.reaction_deletion.failed", error);
     }
   });
 };

@@ -2,7 +2,9 @@ import type { Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
 import { userTypingEventSchema } from "../../schemas/socket.schema.js";
 import { assertChatMember } from "../../services/authorization.service.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
@@ -17,6 +19,7 @@ type TypingHandlerDependencies = {
   userId: string;
   limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
+  logger?: LoggerPort;
 };
 
 export const registerTypingHandlers = ({
@@ -24,6 +27,7 @@ export const registerTypingHandlers = ({
   userId,
   limiter,
   realtime,
+  logger = noopLogger.forComponent("socket"),
 }: TypingHandlerDependencies): void => {
   socket.on(Events.USER_TYPING, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.USER_TYPING, userTypingEventSchema, rawPayload);
@@ -57,7 +61,7 @@ export const registerTypingHandlers = ({
 
       realtime.broadcastTypingToOthers(chatId, payload);
     } catch (error) {
-      logServerError("Socket typing event failed.", error);
+      logSafeError(logger, "socket.typing.failed", error);
     }
   });
 };

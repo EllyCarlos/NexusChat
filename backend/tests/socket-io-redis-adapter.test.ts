@@ -1,5 +1,6 @@
 import type { Server as SocketServer } from "socket.io";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 import { ApplicationError } from "../src/errors/application-error.js";
 import {
@@ -265,11 +266,12 @@ describe("Socket.IO Redis adapter runtime", () => {
     const harness = createHarness({
       subscriberCloseError: new Error(`subscriber close leaked ${REDIS_URL}`),
     });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("redis");
     const runtime = await prepareSocketTransport({
       io: harness.io as unknown as SocketServer,
       mode: { kind: "distributed", redisUrl: REDIS_URL },
       dependencies: harness.dependencies,
+      logger,
     });
 
     const firstClose = runtime.close();
@@ -279,8 +281,9 @@ describe("Socket.IO Redis adapter runtime", () => {
     await expect(firstClose).rejects.toThrow("Socket.IO Redis adapter shutdown failed");
     expect(harness.subscriberRuntime.close).toHaveBeenCalledOnce();
     expect(harness.publisherRuntime.close).toHaveBeenCalledOnce();
-    const output = JSON.stringify(errorSpy.mock.calls);
-    expect(output).toContain("Socket.IO Redis subscriber shutdown failed.");
+    const output = JSON.stringify(logger.events);
+    expect(output).toContain("redis.socket_transport_shutdown.failed");
+    expect(output).toContain("subscriber");
     expect(output).not.toContain(REDIS_URL);
     expect(output).not.toContain("obvious-fake-secret");
   });
@@ -389,17 +392,18 @@ describe("Socket.IO Redis adapter runtime", () => {
       publisherCloseError: new Error(`publisher close leaked ${REDIS_URL}`),
       subscriberCloseError: new Error(`subscriber close leaked ${REDIS_URL}`),
     });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("redis");
 
     await expect(prepareSocketTransport({
       io: harness.io as unknown as SocketServer,
       mode: { kind: "distributed", redisUrl: REDIS_URL },
       dependencies: harness.dependencies,
+      logger,
     })).rejects.toBe(startupFailure);
 
-    const output = JSON.stringify(errorSpy.mock.calls);
-    expect(output).toContain("Socket.IO Redis subscriber shutdown failed.");
-    expect(output).toContain("Socket.IO Redis publisher shutdown failed.");
+    const output = JSON.stringify(logger.events);
+    expect(output).toContain("subscriber");
+    expect(output).toContain("publisher");
     expect(output).not.toContain(REDIS_URL);
     expect(output).not.toContain("obvious-fake-secret");
   });

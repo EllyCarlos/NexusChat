@@ -32,6 +32,7 @@ import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import { uploadAudioToCloudinary, uploadEncryptedAudioToCloudinary } from "../src/utils/auth.util.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const USER_ID = "cm30000000000000000000001";
 const CHAT_ID = "cm30000000000000000000002";
@@ -57,6 +58,7 @@ const accessibleMessage = ({ pollId = null }: { pollId?: string | null } = {}) =
 });
 
 const createHarness = async () => {
+  const logger = createCapturingLogger("socket");
   const handlers = new Map<string, EventHandler>();
   let connectionHandler: ((socket: Socket) => Promise<void>) | undefined;
   const roomEmit = vi.fn();
@@ -88,12 +90,14 @@ const createHarness = async () => {
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
     limiter: new LocalSocketEventRateLimitAdapter(),
+    logger,
   });
   await connectionHandler!(socket as unknown as Socket);
   vi.mocked(socket.emit).mockClear();
 
   return {
     broadcastRoomEmit,
+    logger,
     roomEmit,
     socket,
     trigger: async (event: Events, payload: unknown) => {
@@ -383,16 +387,21 @@ describe("authorization remains authoritative", () => {
       statusCode: 403,
     });
     vi.mocked(prisma.chat.findFirst).mockRejectedValue(applicationError);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
     vi.mocked(harness.socket.emit).mockClear();
 
     await harness.trigger(Events.USER_TYPING, { chatId: CHAT_ID });
 
     const clientOutput = JSON.stringify(vi.mocked(harness.socket.emit).mock.calls);
-    const logOutput = JSON.stringify(errorSpy.mock.calls);
+    const logOutput = JSON.stringify(harness.logger.events);
     expect(clientOutput).not.toContain(applicationError.message);
     expect(clientOutput).not.toContain(applicationError.code);
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: "socket.typing.failed",
+      fields: { errorType: "ApplicationError", applicationCode: "FORBIDDEN" },
+    });
     expect(logOutput).toContain("FORBIDDEN");
     expect(logOutput).not.toContain(applicationError.message);
   });

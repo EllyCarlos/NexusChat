@@ -2,11 +2,15 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import type { RuntimeConfig } from "../interfaces/config/config.interface.js";
 import { provisionGoogleAccount } from "../modules/auth/google-account.service.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 
 let isRegistered = false;
 
 export const registerGoogleStrategy = (
   configuration: Pick<RuntimeConfig, "oauth">,
+  logger: LoggerPort = noopLogger.forComponent("auth"),
 ): void => {
   if (isRegistered) {
     return;
@@ -30,8 +34,8 @@ export const registerGoogleStrategy = (
         return;
       }
       throw new Error("Some Error occured");
-    } catch {
-      console.error("Google OAuth profile processing failed.");
+    } catch (error) {
+      logSafeError(logger, "auth.oauth_profile.failed", error);
       done(null, false);
     }
   }));

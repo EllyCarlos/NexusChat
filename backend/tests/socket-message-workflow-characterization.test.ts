@@ -73,6 +73,7 @@ import {
 } from "../src/utils/auth.util.js";
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 import { logServerError } from "../src/utils/safe-logger.utils.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const ACTOR_ID = "cm41000000000000000000001";
 const CHAT_ID = "cm41000000000000000000002";
@@ -163,17 +164,20 @@ const createHarness = async ({
     reconcilePending: vi.fn(async () => 0),
     drain: vi.fn(async () => undefined),
   };
+  const logger = createCapturingLogger("socket");
 
   registerSocketHandlers(io as unknown as Server, {
     registry: new SocketConnectionRegistry(),
     limiter,
     presence,
+    logger,
   });
   await connectionHandler!(socket as unknown as Socket);
   vi.mocked(socket.emit).mockClear();
 
   return {
     io,
+    logger,
     roomEmit,
     socket,
     triggerMessage: async (payload: unknown) => {
@@ -412,7 +416,10 @@ describe("Socket MESSAGE pre-extraction security and rate-limit characterization
 
     expect(consumeAll).toHaveBeenCalledOnce();
     expect(prisma.message.create).not.toHaveBeenCalled();
-    expect(logServerError).toHaveBeenCalledWith("Socket message send failed.", replyError);
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      event: "socket.message_send.failed",
+      fields: { errorType: "Error" },
+    });
     expect(harness.socket.emit).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();
   });
@@ -636,7 +643,6 @@ describe("Socket MESSAGE variant persistence characterization", () => {
     expectedError,
   ) => {
     vi.mocked(upload).mockResolvedValue(undefined);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
 
     await harness.triggerMessage({
@@ -646,12 +652,12 @@ describe("Socket MESSAGE variant persistence characterization", () => {
       audioMimeType: "audio/webm",
     });
 
-    expect(errorSpy).toHaveBeenCalledWith(expectedError);
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: expectedError.includes("Encrypted")
+      ? "socket.encrypted_audio_upload.failed"
+      : "socket.audio_upload.failed" });
     expect(prisma.message.create).not.toHaveBeenCalled();
     expect(prisma.chat.update).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();
-    expect(logServerError).not.toHaveBeenCalled();
-    errorSpy.mockRestore();
   });
 
   it.each([
@@ -682,7 +688,10 @@ describe("Socket MESSAGE variant persistence characterization", () => {
       publicIds: [publicId],
       resourceType: "raw",
     });
-    expect(logServerError).toHaveBeenCalledWith("Socket message send failed.", persistenceError);
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      event: "socket.message_send.failed",
+      fields: { errorType: "Error" },
+    });
     expect(prisma.chat.update).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();
   });
@@ -705,8 +714,11 @@ describe("Socket MESSAGE variant persistence characterization", () => {
       audioMimeType: "audio/webm",
     });
 
-    expect(logServerError).toHaveBeenCalledWith("Socket message send failed.", rollbackError);
-    expect(logServerError).not.toHaveBeenCalledWith("Socket message send failed.", persistenceError);
+    expect(harness.logger.events).toHaveLength(1);
+    expect(harness.logger.events[0]).toMatchObject({
+      event: "socket.message_send.failed",
+      fields: { errorType: "Error" },
+    });
     expect(harness.socket.emit).not.toHaveBeenCalled();
   });
 
@@ -744,7 +756,7 @@ describe("Socket MESSAGE variant persistence characterization", () => {
     });
     expect(prisma.chat.update).not.toHaveBeenCalled();
     expect(deleteFilesFromCloudinary).not.toHaveBeenCalled();
-    expect(logServerError).toHaveBeenCalledWith("Socket message send failed.", persistenceError);
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_send.failed" });
     expect(harness.roomEmit).not.toHaveBeenCalled();
   });
 });
@@ -948,7 +960,7 @@ describe("Socket MESSAGE projection, notification, and unread characterization",
       },
     });
     expect(harness.roomEmit).toHaveBeenCalledTimes(1);
-    expect(logServerError).toHaveBeenCalledWith("Socket message send failed.", unreadError);
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_send.failed" });
     expect(deleteFilesFromCloudinary).not.toHaveBeenCalled();
   });
 });
@@ -956,7 +968,6 @@ describe("Socket MESSAGE projection, notification, and unread characterization",
 describe("Socket MESSAGE committed-state failure cutoffs", () => {
   it("keeps the created message and latest pointer when populated read returns null, then returns silently", async () => {
     vi.mocked(prisma.message.findUnique).mockResolvedValue(null);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = await createHarness();
 
     await harness.triggerMessage({
@@ -967,11 +978,12 @@ describe("Socket MESSAGE committed-state failure cutoffs", () => {
 
     expect(prisma.message.create).toHaveBeenCalledOnce();
     expect(prisma.chat.update).toHaveBeenCalledOnce();
-    expect(errorSpy).toHaveBeenCalledWith("Failed to retrieve new message after creation.");
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      event: "socket.message_retrieval.failed",
+      fields: { result: "failed" },
+    });
     expect(harness.roomEmit).not.toHaveBeenCalled();
     expect(prisma.unreadMessages.findUnique).not.toHaveBeenCalled();
-    expect(logServerError).not.toHaveBeenCalled();
-    errorSpy.mockRestore();
   });
 
   it("stops after latest-message update failure and uses the event-local safe log", async () => {
@@ -988,7 +1000,7 @@ describe("Socket MESSAGE committed-state failure cutoffs", () => {
     expect(prisma.message.create).toHaveBeenCalledOnce();
     expect(prisma.message.findUnique).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();
-    expect(logServerError).toHaveBeenCalledWith("Socket message send failed.", updateError);
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_send.failed" });
     expect(harness.socket.emit).not.toHaveBeenCalled();
   });
 
@@ -1021,7 +1033,7 @@ describe("Socket MESSAGE committed-state failure cutoffs", () => {
     expect(roomEmit).toHaveBeenCalledWith(Events.MESSAGE, { ...populatedMessage, isNew: true });
     expect(sendPushNotification).not.toHaveBeenCalled();
     expect(prisma.unreadMessages.findUnique).not.toHaveBeenCalled();
-    expect(logServerError).toHaveBeenCalledWith("Socket message send failed.", deliveryError);
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_send.failed" });
   });
 
   it("retains message and unread writes when UNREAD_MESSAGE delivery throws", async () => {
@@ -1051,7 +1063,7 @@ describe("Socket MESSAGE committed-state failure cutoffs", () => {
     expect(prisma.unreadMessages.create).toHaveBeenCalledOnce();
     expect(roomEmit).toHaveBeenNthCalledWith(1, Events.MESSAGE, { ...populatedMessage, isNew: true });
     expect(roomEmit).toHaveBeenNthCalledWith(2, Events.UNREAD_MESSAGE, expect.any(Object));
-    expect(logServerError).toHaveBeenCalledWith("Socket message send failed.", deliveryError);
+    expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_send.failed" });
     expect(deleteFilesFromCloudinary).not.toHaveBeenCalled();
     expect(harness.socket.emit).not.toHaveBeenCalled();
   });

@@ -1,7 +1,9 @@
 import type { Server, Socket } from "socket.io";
 import { Events } from "../enums/event/event.enum.js";
 import { prisma } from "../lib/prisma.lib.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 import type {
   SocketConnectionDirectory,
   SocketPresenceTransition,
@@ -45,6 +47,7 @@ type SocketHandlerDependencies = {
   presenceWriteQueue?: SocketPresenceWriteQueue;
   presence?: SocketPresenceCoordinator;
   operationTracker?: SocketOperationTracker;
+  logger?: LoggerPort;
 };
 
 export interface SocketHandlerLifecycle {
@@ -65,10 +68,12 @@ const registerSocketHandlers = (
     ?? createLocalSocketConnectionDirectory(registry);
   const limiter = dependencies.limiter ?? createLocalSocketEventRateLimitProvider();
   const presenceWriteQueue = dependencies.presenceWriteQueue ?? socketPresenceWriteQueue;
+  const logger = dependencies.logger ?? noopLogger.forComponent("socket");
   const presence = dependencies.presence ?? createLocalSocketPresenceCoordinator({
     directory,
     publisher: createSocketPresencePublisher(io),
     queue: presenceWriteQueue,
+    logger: logger.forComponent("presence"),
   });
   const operationTracker = dependencies.operationTracker
     ?? createSocketOperationTracker();
@@ -77,10 +82,11 @@ const registerSocketHandlers = (
     try {
       await presence.reconcileTransition(transition);
     } catch (error) {
-      logServerError(
+      logSafeError(
+        logger,
         transition.state === "online"
-          ? "Socket online presence update failed."
-          : "Socket offline presence update failed.",
+          ? "socket.online_presence_update.failed"
+          : "socket.offline_presence_update.failed",
         error,
       );
     }
@@ -113,7 +119,7 @@ const registerSocketHandlers = (
             await reconcileTransition(removal.presenceTransition);
           }
         } catch (error) {
-          logServerError("Socket connection removal failed.", error);
+          logSafeError(logger, "socket.connection_removal.failed", error);
         }
       })();
       return removalPromise;
@@ -129,7 +135,7 @@ const registerSocketHandlers = (
     try {
       registration = await directory.add(userId, socket.id);
     } catch (error) {
-      logServerError("Socket connection registration failed.", error);
+      logSafeError(logger, "socket.connection_registration.failed", error);
       socket.disconnect(true);
       return;
     }
@@ -163,7 +169,7 @@ const registerSocketHandlers = (
     try {
       onlineUserIds = await directory.onlineUserIds();
     } catch (error) {
-      logServerError("Socket online users lookup failed.", error);
+      logSafeError(logger, "socket.online_users_lookup.failed", error);
       await removeAcceptedConnection();
       socket.disconnect(true);
       return;
@@ -181,19 +187,19 @@ const registerSocketHandlers = (
       });
       socket.join(userChats.map(({ chatId }) => chatId));
     } catch (error) {
-      logServerError("Socket room initialization failed.", error);
+      logSafeError(logger, "socket.room_initialization.failed", error);
     }
     if (await stopIfNoLongerAdmitted()) return;
 
     const realtime = createSocketChatEventRealtimeAdapter({ io, socket });
 
-    registerMessageHandlers({ socket, userId, limiter, realtime });
-    registerMessageLifecycleHandlers({ socket, userId, limiter, realtime });
-    registerReactionHandlers({ socket, userId, limiter, realtime });
-    registerTypingHandlers({ socket, userId, limiter, realtime });
-    registerPollHandlers({ socket, userId, limiter, realtime });
-    registerPinHandlers({ socket, userId, limiter, realtime });
-    registerWebRtcHandlers(socket, io, { directory, limiter });
+    registerMessageHandlers({ socket, userId, limiter, realtime, logger });
+    registerMessageLifecycleHandlers({ socket, userId, limiter, realtime, logger });
+    registerReactionHandlers({ socket, userId, limiter, realtime, logger });
+    registerTypingHandlers({ socket, userId, limiter, realtime, logger });
+    registerPollHandlers({ socket, userId, limiter, realtime, logger });
+    registerPinHandlers({ socket, userId, limiter, realtime, logger });
+    registerWebRtcHandlers(socket, io, { directory, limiter, logger });
   })()));
 
   return Object.freeze({

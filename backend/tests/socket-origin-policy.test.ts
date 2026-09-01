@@ -91,7 +91,7 @@ describe("Socket.IO transport origin admission", () => {
 
     expect(source.indexOf("allowRequest: createSocketAllowRequest(originPolicy)")).toBeGreaterThan(-1);
     expect(source.indexOf("allowRequest: createSocketAllowRequest(originPolicy)")).toBeLessThan(
-      source.indexOf("io.use(socketAuthenticatorMiddleware)"),
+      source.indexOf("io.use(createSocketAuthenticatorMiddleware("),
     );
   });
 });

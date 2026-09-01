@@ -21,7 +21,6 @@ export const createPushNotificationSender = ({
   body,
 }: SendPushNotificationInput): void => {
   try {
-    console.log("Push notification requested.");
     const delivery = provider.deliver({
       recipientToken,
       title: title ? title : selectFallbackTitle(),

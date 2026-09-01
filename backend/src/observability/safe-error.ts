@@ -1,4 +1,6 @@
 import { ApplicationError } from "../errors/application-error.js";
+import type { LogEventFields, LogEventName } from "./log-event.types.js";
+import type { LoggerPort } from "./logger.port.js";
 
 export interface SafeErrorMetadata {
   readonly errorType: string;
@@ -32,5 +34,17 @@ export const getSafeErrorMetadata = (error: unknown): SafeErrorMetadata => {
 
   return Object.freeze({
     errorType: SAFE_ERROR_TYPES.has(error.name) ? error.name : "Error",
+  });
+};
+
+export const logSafeError = (
+  logger: LoggerPort,
+  event: LogEventName,
+  error: unknown,
+  fields?: Omit<LogEventFields, "errorType" | "applicationCode">,
+): void => {
+  logger.error(event, {
+    ...fields,
+    ...getSafeErrorMetadata(error),
   });
 };

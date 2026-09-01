@@ -48,6 +48,7 @@ import {
   createOAuthStateBinding,
   OAUTH_STATE_TTL_MS,
 } from "../src/modules/auth/oauth/oauth-state.service.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const RAW_EXCHANGE_TOKEN = "raw.oauth.exchange.jwt";
 
@@ -276,11 +277,11 @@ describe("OAuth state boundary", () => {
     );
     const response = createResponse();
     const next = vi.fn();
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("auth");
 
     try {
       authenticateGoogleOAuthCallback(
-        {} as Request,
+        { app: { get: () => logger } } as unknown as Request,
         response as unknown as Response,
         next,
       );
@@ -290,9 +291,13 @@ describe("OAuth state boundary", () => {
         303,
         "https://web.example/auth/oauth-redirect?error=oauth_provider_failed",
       );
-      expect(log.mock.calls.flat().join(" ")).not.toContain(rawProviderError);
+      expect(JSON.stringify(logger.events)).not.toContain(rawProviderError);
+      expect(logger.events.at(-1)).toMatchObject({
+        event: "auth.oauth_provider.failed",
+        fields: { errorType: "Error" },
+      });
     } finally {
-      log.mockRestore();
+      logger.reset();
     }
   });
 
@@ -351,7 +356,7 @@ describe("OAuth-sensitive logging", () => {
   it("does not write the raw exchange JWT to backend operational logs", async () => {
     const response = createResponse();
     const next = vi.fn();
-    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("auth");
 
     try {
       await redirectHandler(
@@ -361,20 +366,21 @@ describe("OAuth-sensitive logging", () => {
             email: "oauth@example.com",
             newUser: false,
           },
+          app: { get: () => logger },
         } as unknown as Request,
         response as unknown as Response,
         next,
       );
 
-      const loggedOutput = log.mock.calls.flat().join(" ");
-      expect(loggedOutput).toContain("OAuth redirect issued.");
+      const loggedOutput = JSON.stringify(logger.events);
+      expect(loggedOutput).toContain("auth.oauth_redirect.completed");
       expect(loggedOutput).not.toContain(RAW_EXCHANGE_TOKEN);
       expect(response.redirect).toHaveBeenCalledWith(
         307,
         `https://web.example/auth/oauth-redirect#token=${encodeURIComponent(RAW_EXCHANGE_TOKEN)}`,
       );
     } finally {
-      log.mockRestore();
+      logger.reset();
     }
   });
 

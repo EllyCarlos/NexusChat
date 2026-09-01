@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   registerSocketHandlers: vi.fn(),
   route: vi.fn((_request, _response, next) => next()),
   socketAuthenticator: vi.fn((_socket, next) => next()),
+  createSocketAuthenticatorMiddleware: vi.fn(),
   runtimeConfig: {
     app: {
       environment: "test",
@@ -28,7 +29,8 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
   prisma: { $disconnect: mocks.disconnectPrisma },
 }));
 vi.mock("../src/middlewares/socket-auth.middleware.js", () => ({
-  socketAuthenticatorMiddleware: mocks.socketAuthenticator,
+  createSocketAuthenticatorMiddleware: mocks.createSocketAuthenticatorMiddleware
+    .mockReturnValue(mocks.socketAuthenticator),
 }));
 vi.mock("../src/socket/socket.js", () => ({ default: mocks.registerSocketHandlers }));
 vi.mock("../src/routes/attachment.router.js", () => ({ default: mocks.route }));
@@ -238,15 +240,23 @@ describe("backend server construction", () => {
     expect(runtime.io).toBeDefined();
     expect(runtime.connectionState).toBe(state.runtime);
     expect(runtime.app.get("connectionDirectory")).toBe(state.directory);
-    expect(mocks.initializeProviders).toHaveBeenCalledWith(mocks.runtimeConfig);
+    expect(mocks.initializeProviders).toHaveBeenCalledWith(
+      mocks.runtimeConfig,
+      expect.objectContaining({ component: "provider" }),
+    );
     expect(mocks.initializeProviders.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.registerSocketHandlers.mock.invocationCallOrder[0],
+    );
+    expect(mocks.createSocketAuthenticatorMiddleware).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ component: "auth" }),
     );
     expect(useSpy).toHaveBeenCalledWith(mocks.socketAuthenticator);
     expect(mocks.registerSocketHandlers).toHaveBeenCalledWith(runtime.io, {
       directory: state.directory,
       limiter: state.eventLimiter,
       presence: runtime.presence,
+      logger: expect.objectContaining({ component: "socket" }),
     });
     expect(runtime.socketLifecycle).toBe(socketLifecycle);
     expect(state.runtime.connect).not.toHaveBeenCalled();
@@ -305,7 +315,10 @@ describe("backend startup", () => {
     });
     expect(started.logger).toBe(processLogger);
     expect(createConnectionState).toHaveBeenCalledOnce();
-    expect(createConnectionState).toHaveBeenCalledWith({ mode: { kind: "local" } });
+    expect(createConnectionState).toHaveBeenCalledWith({
+      mode: { kind: "local" },
+      logger: processLogger,
+    });
     expect(state.runtime.connect).toHaveBeenCalledOnce();
     expect(state.runtime.start).toHaveBeenCalledOnce();
     expect(state.runtime.start.mock.invocationCallOrder[0]).toBeLessThan(
@@ -369,6 +382,7 @@ describe("backend startup", () => {
 
     expect(prepareTransport).toHaveBeenCalledWith({
       io: fake.runtime.io,
+      logger: expect.objectContaining({ component: "bootstrap" }),
       mode: {
         kind: "distributed",
         redisUrl: "rediss://redis.example.test:6380",
@@ -563,7 +577,7 @@ describe("backend startup", () => {
     const closeTransport = vi.fn(async () => {
       throw new Error("rediss://redis-user:private-listen-cleanup@redis.example.test");
     });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("bootstrap");
 
     await expect(startServer({
       createConnectionState: vi.fn(() => state.runtime),
@@ -578,6 +592,7 @@ describe("backend startup", () => {
       disconnectPrisma,
       registerHandlers: vi.fn(() => unregisterHandlers),
       logStarted,
+      createLogger: vi.fn(() => logger),
     })).rejects.toBe(listenerError);
 
     expect(unregisterHandlers).toHaveBeenCalledOnce();
@@ -588,10 +603,9 @@ describe("backend startup", () => {
     expect(fake.httpServer.close).toHaveBeenCalledOnce();
     expect(disconnectPrisma).toHaveBeenCalledOnce();
     expect(logStarted).not.toHaveBeenCalled();
-    const output = JSON.stringify(errorSpy.mock.calls);
-    expect(output).toContain("Distributed realtime shutdown failed.");
+    const output = JSON.stringify(logger.events);
+    expect(output).toContain("distributed_realtime_shutdown_failed");
     expect(output).not.toContain("private-listen-cleanup");
-    errorSpy.mockRestore();
   });
 
   it("sanitizes startup failures and sets a non-zero process outcome", async () => {
@@ -759,7 +773,7 @@ describe("coordinated shutdown", () => {
       if (stalledStage === "state") {
         closeConnectionState.mockImplementation(() => neverSettles);
       }
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const logger = createCapturingLogger("bootstrap");
       const shutdown = createShutdownCoordinator({
         httpServer: fake.runtime.httpServer,
         io: fake.runtime.io,
@@ -768,6 +782,7 @@ describe("coordinated shutdown", () => {
         closeDistributedRealtime,
         disconnectPrisma,
         stageTimeoutMs: 10,
+        logger,
       });
 
       await expect(shutdown()).rejects.toThrow(/^Backend shutdown failed$/);
@@ -778,10 +793,11 @@ describe("coordinated shutdown", () => {
       expect(closeConnectionState).toHaveBeenCalledOnce();
       expect(closeDistributedRealtime).toHaveBeenCalledOnce();
       expect(disconnectPrisma).toHaveBeenCalledOnce();
-      const logged = JSON.stringify(errorSpy.mock.calls);
-      expect(logged).toContain(expectedContext);
+      const logged = JSON.stringify(logger.events);
+      expect(logged).toContain(
+        expectedContext.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""),
+      );
       expect(logged).not.toContain("Shutdown stage timed out.");
-      errorSpy.mockRestore();
     },
   );
 
@@ -798,7 +814,7 @@ describe("coordinated shutdown", () => {
       throw new Error("rediss://redis-user:private-transport-password@redis.example.test");
     });
     const disconnectPrisma = vi.fn(async () => { throw new Error("private-database-detail"); });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("bootstrap");
     fake.io.close.mockImplementationOnce(() => { throw new Error("private-socket-detail"); });
     fake.httpServer.close.mockImplementationOnce((callback: (error?: Error) => void) => {
       callback(new Error("private-http-detail"));
@@ -813,6 +829,7 @@ describe("coordinated shutdown", () => {
       closeConnectionState,
       closeDistributedRealtime,
       disconnectPrisma,
+      logger,
     });
 
     await expect(shutdown()).rejects.toThrow("Backend shutdown failed");
@@ -829,7 +846,7 @@ describe("coordinated shutdown", () => {
       expect(operation).toHaveBeenCalledOnce();
     }
     expect(drainSocketOperations).toHaveBeenCalledTimes(2);
-    const logged = JSON.stringify(errorSpy.mock.calls);
+    const logged = JSON.stringify(logger.events);
     for (const context of [
       "Socket admission drain failed.",
       "Local Socket disconnect failed.",
@@ -841,7 +858,9 @@ describe("coordinated shutdown", () => {
       "HTTP server shutdown failed.",
       "Prisma shutdown failed.",
     ]) {
-      expect(logged).toContain(context);
+      expect(logged).toContain(
+        context.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""),
+      );
     }
     for (const secret of [
       "private-admission-detail",
@@ -855,7 +874,6 @@ describe("coordinated shutdown", () => {
     ]) {
       expect(logged).not.toContain(secret);
     }
-    errorSpy.mockRestore();
   });
 
   it("handles repeated signals with one shutdown and one process exit", async () => {

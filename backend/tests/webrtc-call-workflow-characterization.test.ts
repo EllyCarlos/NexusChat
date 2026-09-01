@@ -17,10 +17,6 @@ vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
   sendPushNotification: vi.fn(),
 }));
 
-vi.mock("../src/utils/safe-logger.utils.js", () => ({
-  logServerError: vi.fn(),
-}));
-
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
@@ -28,7 +24,7 @@ import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-eve
 import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
-import { logServerError } from "../src/utils/safe-logger.utils.js";
+import type { LoggerPort } from "../src/observability/logger.port.js";
 
 const CALLER_ID = "cm51000000000000000000001";
 const CALLEE_ID = "cm51000000000000000000002";
@@ -44,7 +40,15 @@ const callFindFirst = vi.mocked(prisma.callHistory.findFirst);
 const callCreate = vi.mocked(prisma.callHistory.create);
 const callUpdate = vi.mocked(prisma.callHistory.update);
 const pushNotification = vi.mocked(sendPushNotification);
-const safeLog = vi.mocked(logServerError);
+const safeLog = vi.fn();
+const testLogger: LoggerPort = {
+  component: "socket",
+  forComponent: () => testLogger,
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: safeLog,
+};
 
 type EventHandler = (payload: unknown) => Promise<void> | void;
 type OrderedMock = { mock: { invocationCallOrder: number[] } };
@@ -128,6 +132,7 @@ const createHarness = (actorUserId: string) => {
   registerWebRtcHandlers(socket as unknown as Socket, io as unknown as Server, {
     directory,
     limiter,
+    logger: testLogger,
   });
 
   return {
@@ -247,7 +252,10 @@ describe("CALL_USER workflow characterization", () => {
     expect(harness.socketEmit.mock.calls).toEqual([[Events.CALLEE_OFFLINE]]);
     expect(callCreate).not.toHaveBeenCalled();
     expect(pushNotification).not.toHaveBeenCalled();
-    expect(safeLog).toHaveBeenCalledExactlyOnceWith("CALL_USER event failed.", deliveryError);
+    expect(safeLog).toHaveBeenCalledExactlyOnceWith(
+      "socket.call_user.failed",
+      { errorType: "Error" },
+    );
   });
 
   it("keeps both offline deliveries when missed persistence fails and cuts off notification", async () => {
@@ -266,7 +274,10 @@ describe("CALL_USER workflow characterization", () => {
       [Events.CALL_END],
     ]);
     expect(pushNotification).not.toHaveBeenCalled();
-    expect(safeLog).toHaveBeenCalledExactlyOnceWith("CALL_USER event failed.", persistenceError);
+    expect(safeLog).toHaveBeenCalledExactlyOnceWith(
+      "socket.call_user.failed",
+      { errorType: "Error" },
+    );
   });
 
   it("creates an online call before CALL_ID, then uses io.to for the exact INCOMING_CALL", async () => {
@@ -340,7 +351,10 @@ describe("CALL_USER workflow characterization", () => {
     ]);
     expect(harness.ioTo).not.toHaveBeenCalled();
     expect(harness.ioRelayEmit).not.toHaveBeenCalled();
-    expect(safeLog).toHaveBeenCalledExactlyOnceWith("CALL_USER event failed.", deliveryError);
+    expect(safeLog).toHaveBeenCalledExactlyOnceWith(
+      "socket.call_user.failed",
+      { errorType: "Error" },
+    );
   });
 });
 
@@ -416,11 +430,10 @@ describe("CALL_ACCEPTED and CALL_REJECTED shared transport/state characterizatio
     expect(harness.socketTo).not.toHaveBeenCalled();
     expect(harness.socketEmit).not.toHaveBeenCalled();
     expect(safeLog).toHaveBeenCalledWith(
-      logContext,
-      expect.objectContaining({
-        message: "Call is not awaiting an answer",
-        statusCode: 409,
-      }),
+      event === Events.CALL_ACCEPTED
+        ? "socket.call_acceptance.failed"
+        : "socket.call_rejection.failed",
+      { errorType: "CustomError", applicationCode: "LEGACY_CUSTOM_ERROR" },
     );
   });
 
@@ -562,7 +575,10 @@ describe("CALL_ACCEPTED workflow characterization", () => {
 
     expect(callUpdate).toHaveBeenCalledOnce();
     expect(harness.socketEmit.mock.calls).toEqual([[Events.CALL_END]]);
-    expect(safeLog).toHaveBeenCalledExactlyOnceWith("CALL_ACCEPTED event failed.", deliveryError);
+    expect(safeLog).toHaveBeenCalledExactlyOnceWith(
+      "socket.call_acceptance.failed",
+      { errorType: "Error" },
+    );
   });
 });
 
@@ -651,7 +667,10 @@ describe("CALL_REJECTED workflow characterization", () => {
     expect(harness.socketTo.mock.calls).toEqual([[CALLER_SOCKET_ID]]);
     expect(harness.socketRelayEmit.mock.calls).toEqual([[Events.CALL_REJECTED]]);
     expect(harness.socketEmit).not.toHaveBeenCalled();
-    expect(safeLog).toHaveBeenCalledExactlyOnceWith("CALL_REJECTED event failed.", deliveryError);
+    expect(safeLog).toHaveBeenCalledExactlyOnceWith(
+      "socket.call_rejection.failed",
+      { errorType: "Error" },
+    );
   });
 
   it("keeps peer REJECTED but cuts off actor END when peer CALL_END throws", async () => {
@@ -678,6 +697,9 @@ describe("CALL_REJECTED workflow characterization", () => {
       [Events.CALL_END],
     ]);
     expect(harness.socketEmit).not.toHaveBeenCalled();
-    expect(safeLog).toHaveBeenCalledExactlyOnceWith("CALL_REJECTED event failed.", deliveryError);
+    expect(safeLog).toHaveBeenCalledExactlyOnceWith(
+      "socket.call_rejection.failed",
+      { errorType: "Error" },
+    );
   });
 });

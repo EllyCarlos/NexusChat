@@ -9,7 +9,9 @@ import {
   assertMessageAccessible,
   assertPinAccessible,
 } from "../../services/authorization.service.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
@@ -27,6 +29,7 @@ type PinHandlerDependencies = {
   userId: string;
   limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
+  logger?: LoggerPort;
 };
 
 export const registerPinHandlers = ({
@@ -34,6 +37,7 @@ export const registerPinHandlers = ({
   userId,
   limiter,
   realtime,
+  logger = noopLogger.forComponent("socket"),
 }: PinHandlerDependencies): void => {
   socket.on(Events.PIN_MESSAGE, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.PIN_MESSAGE, pinMessageEventSchema, rawPayload);
@@ -171,7 +175,7 @@ export const registerPinHandlers = ({
 
       realtime.emitPinMessage(chatId, pinnedMessage);
     } catch (error) {
-      logServerError("Socket message pin failed.", error);
+      logSafeError(logger, "socket.message_pin.failed", error);
     }
   });
 
@@ -219,7 +223,7 @@ export const registerPinHandlers = ({
       };
       realtime.emitUnpinMessage(deletedPinnedMessage.chatId, payload);
     } catch (error) {
-      logServerError("Socket message unpin failed.", error);
+      logSafeError(logger, "socket.message_unpin.failed", error);
     }
   });
 };

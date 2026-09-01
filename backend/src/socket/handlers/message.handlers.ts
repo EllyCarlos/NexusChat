@@ -4,6 +4,9 @@ import type { Socket } from "socket.io";
 import { Events } from "../../enums/event/event.enum.js";
 import { prisma } from "../../lib/prisma.lib.js";
 import { sendPushNotification } from "../../modules/notifications/push-notification.service.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import { messageEventSchema } from "../../schemas/socket.schema.js";
 import {
   assertChatMember,
@@ -14,7 +17,6 @@ import {
   uploadAudioToCloudinary,
   uploadEncryptedAudioToCloudinary,
 } from "../../utils/auth.util.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
 import type {
   MessageRealtimePayload,
   UnreadMessageRealtimePayload,
@@ -32,6 +34,7 @@ type RegisterMessageHandlersInput = {
   userId: string;
   limiter: SocketEventRateLimitPort;
   realtime: MessageRealtimePort;
+  logger?: LoggerPort;
 };
 
 export const registerMessageHandlers = ({
@@ -39,6 +42,7 @@ export const registerMessageHandlers = ({
   userId,
   limiter,
   realtime,
+  logger = noopLogger.forComponent("socket"),
 }: RegisterMessageHandlersInput): void => {
   socket.on(Events.MESSAGE, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.MESSAGE, messageEventSchema, rawPayload);
@@ -73,7 +77,7 @@ export const registerMessageHandlers = ({
       if (audio) {
         const uploadResult = await uploadAudioToCloudinary({ buffer: audio }) as UploadApiResponse | undefined;
         if (!uploadResult) {
-          console.error("Audio upload failed.");
+          logger.error("socket.audio_upload.failed", { result: "failed" });
           return;
         }
         try {
@@ -100,7 +104,7 @@ export const registerMessageHandlers = ({
       else if (encryptedAudio) {
         const uploadResult = (await uploadEncryptedAudioToCloudinary({ buffer: encryptedAudio })) as UploadApiResponse | undefined;
         if (!uploadResult) {
-          console.error("Encrypted audio upload failed.");
+          logger.error("socket.encrypted_audio_upload.failed", { result: "failed" });
           return;
         }
 
@@ -274,7 +278,7 @@ export const registerMessageHandlers = ({
       // Depending on the Prisma query result, 'message' could be null if no record is found.
       // Add a check here if 'message' is critical for the next steps.
       if (!message) {
-        console.error("Failed to retrieve new message after creation.");
+        logger.error("socket.message_retrieval.failed", { result: "failed" });
         return;
       }
 
@@ -353,7 +357,7 @@ export const registerMessageHandlers = ({
       realtime.emitUnreadMessage(chatId, unreadMessagePayload)
 
     } catch (error) {
-      logServerError('Socket message send failed.', error);
+      logSafeError(logger, "socket.message_send.failed", error);
     }
   })
 };

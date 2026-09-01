@@ -53,6 +53,7 @@ import {
 import { createLocalSocketConnectionDirectory } from "../src/socket/local-connection-directory.adapter.js";
 import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 
 const USER_ID = "cm40000000000000000000001";
@@ -130,17 +131,20 @@ const makeRuntime = () => {
   const directory = createLocalSocketConnectionDirectory(registry);
   const limiter = new LocalSocketEventRateLimitAdapter();
   const presenceWriteQueue = new SocketPresenceWriteQueue();
+  const logger = createCapturingLogger("socket");
 
   registerSocketHandlers(io as unknown as Server, {
     directory,
     limiter,
     presenceWriteQueue,
+    logger,
   });
 
   return {
     io,
     directory,
     limiter,
+    logger,
     presenceWriteQueue,
     registry,
     runConnection: async (socket: Socket) => {
@@ -204,7 +208,7 @@ describe("Socket root connection admission and registration", () => {
     expect(registerWebRtcHandlers).toHaveBeenCalledWith(
       client.socket,
       runtime.io,
-      { directory: runtime.directory, limiter: runtime.limiter },
+      { directory: runtime.directory, limiter: runtime.limiter, logger: runtime.logger },
     );
 
     expect(client.socket.on.mock.invocationCallOrder[0]).toBeLessThan(
@@ -233,17 +237,16 @@ describe("Socket root connection admission and registration", () => {
   it("logs an online presence failure safely and continues root initialization", async () => {
     const privateFailure = new Error("private online database detail");
     vi.mocked(prisma.user.update).mockRejectedValueOnce(privateFailure);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const runtime = makeRuntime();
     const client = runtime.makeSocket();
 
     await runtime.runConnection(client.socket as unknown as Socket);
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket online presence update failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(runtime.logger.events.at(-1)).toMatchObject({
+      event: "presence.online_update.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(runtime.logger.events)).not.toContain(privateFailure.message);
     expect(client.broadcastEmit).toHaveBeenCalledWith(Events.ONLINE_USER, { userId: USER_ID });
     expect(client.socket.emit).toHaveBeenCalledWith(Events.ONLINE_USERS_LIST, {
       onlineUserIds: [USER_ID],
@@ -255,23 +258,22 @@ describe("Socket root connection admission and registration", () => {
   it("logs room lookup failure safely and still installs all event families and WebRTC", async () => {
     const privateFailure = new Error("private room database detail");
     vi.mocked(prisma.chatMembers.findMany).mockRejectedValueOnce(privateFailure);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const runtime = makeRuntime();
     const client = runtime.makeSocket();
 
     await runtime.runConnection(client.socket as unknown as Socket);
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket room initialization failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(runtime.logger.events.at(-1)).toMatchObject({
+      event: "socket.room_initialization.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(runtime.logger.events)).not.toContain(privateFailure.message);
     expect(client.socket.join).not.toHaveBeenCalled();
     expect(client.socket.on.mock.calls.map(([event]) => event)).toEqual(expectedRootRegistrations);
     expect(registerWebRtcHandlers).toHaveBeenCalledWith(
       client.socket,
       runtime.io,
-      { directory: runtime.directory, limiter: runtime.limiter },
+      { directory: runtime.directory, limiter: runtime.limiter, logger: runtime.logger },
     );
   });
 
@@ -279,7 +281,6 @@ describe("Socket root connection admission and registration", () => {
     vi.mocked(prisma.user.update)
       .mockResolvedValueOnce({} as never)
       .mockRejectedValueOnce(new Error("private offline database detail"));
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const runtime = makeRuntime();
     const client = runtime.makeSocket();
     await runtime.runConnection(client.socket as unknown as Socket);
@@ -292,10 +293,10 @@ describe("Socket root connection admission and registration", () => {
       where: { id: USER_ID },
       data: { isOnline: false, lastSeen: expect.any(Date) },
     });
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket offline presence update failed.",
-      { errorType: "Error" },
-    );
+    expect(runtime.logger.events.at(-1)).toMatchObject({
+      event: "presence.offline_update.failed",
+      fields: { errorType: "Error" },
+    });
     expect(client.broadcastEmit).toHaveBeenCalledWith(Events.OFFLINE_USER, { userId: USER_ID });
     expect(runtime.registry.isOnline(USER_ID)).toBe(false);
   });

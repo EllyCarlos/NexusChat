@@ -9,7 +9,9 @@ import type {
 import { createLocalSocketConnectionDirectory } from "../../socket/local-connection-directory.adapter.js";
 import { createLocalSocketEventRateLimitProvider } from "../../socket/local-socket-event-rate-limit.adapter.js";
 import type { SocketEventRateLimitPort } from "../../socket/socket-event-rate-limit.port.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import {
   createRedisClient,
   type NodeRedisClient,
@@ -80,6 +82,7 @@ type StateRuntimeDependencies = {
 type CreateStateRuntimeOptions = {
   mode: SocketTransportMode;
   dependencies?: StateRuntimeDependencies;
+  logger?: LoggerPort;
 };
 
 const scheduleRecurringTask = (
@@ -129,11 +132,13 @@ const createDistributedStateRuntime = ({
   directory,
   eventLimiter,
   scheduleRecurring,
+  logger,
 }: {
   commandRuntime: RedisRuntime;
   directory: SocketConnectionDirectory & SocketConnectionStateMaintenance;
   eventLimiter: SocketEventRateLimitPort;
   scheduleRecurring: NonNullable<StateRuntimeDependencies["scheduleRecurring"]>;
+  logger: LoggerPort;
 }): SocketConnectionStateRuntime => {
   let started = false;
   let operational = false;
@@ -189,7 +194,7 @@ const createDistributedStateRuntime = ({
   const runScheduledMaintenance = () => {
     void runMaintenance().catch((error) => {
       operational = false;
-      logServerError("Socket connection maintenance failed.", error);
+      logSafeError(logger, "redis.connection_maintenance.failed", error);
     });
   };
 
@@ -262,10 +267,7 @@ const createDistributedStateRuntime = ({
           try {
             commandRuntime.client.destroy();
           } catch (destroyError) {
-            logServerError(
-              "Failed to force-close distributed connection state.",
-              destroyError,
-            );
+            logSafeError(logger, "redis.connection_state_force_close.failed", destroyError);
           }
           throw error;
         })
@@ -280,6 +282,7 @@ const createDistributedStateRuntime = ({
 export const createSocketConnectionStateRuntime = ({
   mode,
   dependencies = {},
+  logger = noopLogger.forComponent("redis"),
 }: CreateStateRuntimeOptions): SocketConnectionStateRuntime => {
   if (mode.kind === "local") {
     return createLocalStateRuntime(
@@ -289,7 +292,7 @@ export const createSocketConnectionStateRuntime = ({
 
   const createCommandClient = dependencies.createCommandClient
     ?? ((configuration: RedisConnectionConfiguration) =>
-      createRedisClient(configuration) as NodeRedisClient);
+      createRedisClient(configuration, logger) as NodeRedisClient);
   const createCommandRuntime = dependencies.createRuntime
     ?? ((client: RedisLifecycleClient & RedisScriptExecutor) =>
       createRedisRuntime(client));
@@ -310,5 +313,6 @@ export const createSocketConnectionStateRuntime = ({
     directory,
     eventLimiter,
     scheduleRecurring,
+    logger: logger.forComponent("redis"),
   });
 };

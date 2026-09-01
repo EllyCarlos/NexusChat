@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const mocks = vi.hoisted(() => ({
   createTransport: vi.fn(),
@@ -67,21 +68,25 @@ describe("backend Nodemailer transport", () => {
   });
 
   it("sanitizes synchronous provider initialization failures", async () => {
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.createTransport.mockImplementationOnce(() => {
       throw new Error("obvious-fake-provider-secret-detail");
     });
     const { configureNodemailer } = await import("../src/config/nodemailer.config.js");
+    const logger = createCapturingLogger("provider");
 
     expect(() => configureNodemailer({
       sender: "sender@example.test",
       password: "obvious-fake-email-password",
-    })).toThrow("Email provider initialization failed.");
+    }, logger)).toThrow("Email provider initialization failed.");
 
-    const logged = JSON.stringify(errorLog.mock.calls);
-    expect(logged).toContain("Email transporter initialization failed.");
+    expect(logger.events).toEqual([{
+      level: "error",
+      component: "provider",
+      event: "provider.email_initialization.failed",
+      fields: { errorType: "Error" },
+    }]);
+    const logged = JSON.stringify(logger.events);
     expect(logged).not.toContain("obvious-fake-provider-secret-detail");
     expect(logged).not.toContain("obvious-fake-email-password");
-    errorLog.mockRestore();
   });
 });

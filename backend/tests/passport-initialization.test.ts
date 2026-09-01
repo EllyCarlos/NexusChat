@@ -1,5 +1,6 @@
 import type { RuntimeConfig } from "../src/interfaces/config/config.interface.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const mocks = vi.hoisted(() => ({
   createUser: vi.fn(),
@@ -39,9 +40,9 @@ describe("Google strategy initialization", () => {
     mocks.hash.mockResolvedValue("obvious-fake-password-hash");
   });
 
-  const registerAndGetVerifier = async () => {
+  const registerAndGetVerifier = async (logger = createCapturingLogger("auth")) => {
     const { registerGoogleStrategy } = await import("../src/passport/google.strategy.js");
-    registerGoogleStrategy(configuration);
+    registerGoogleStrategy(configuration, logger);
     return mocks.strategy.mock.calls[0]?.[1] as (
       accessToken: string,
       refreshToken: string,
@@ -207,8 +208,8 @@ describe("Google strategy initialization", () => {
     }],
   ])("normalizes %s failures to the existing Passport callback", async (_label, arrange) => {
     arrange();
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const verify = await registerAndGetVerifier();
+    const logger = createCapturingLogger("auth");
+    const verify = await registerAndGetVerifier(logger);
     const done = vi.fn();
 
     await verify("ignored-access", "ignored-refresh", {
@@ -219,9 +220,14 @@ describe("Google strategy initialization", () => {
     }, done);
 
     expect(done).toHaveBeenCalledWith(null, false);
-    expect(JSON.stringify(errorLog.mock.calls)).toBe(
-      JSON.stringify([["Google OAuth profile processing failed."]]),
-    );
-    errorLog.mockRestore();
+    expect(logger.events).toEqual([{
+      level: "error",
+      component: "auth",
+      event: "auth.oauth_profile.failed",
+      fields: {
+        errorType: "ApplicationError",
+        applicationCode: "GOOGLE_ACCOUNT_PROVISIONING_FAILED",
+      },
+    }]);
   });
 });
