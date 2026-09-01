@@ -48,6 +48,7 @@ import type {
 } from "../src/infrastructure/redis/socket-connection-state.runtime.js";
 import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
 import type { SocketHandlerLifecycle } from "../src/socket/socket.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const createDeferred = () => {
   let resolve!: () => void;
@@ -271,6 +272,8 @@ describe("backend startup", () => {
       close: vi.fn(async () => undefined),
     };
     const createConnectionState = vi.fn(() => state.runtime);
+    const processLogger = createCapturingLogger("bootstrap");
+    const createLogger = vi.fn(() => processLogger);
     const createServer = vi.fn((options?: CreateBackendServerOptions) => {
       readiness = options?.readiness;
       expect(options?.connectionState).toBe(state.runtime);
@@ -292,8 +295,15 @@ describe("backend startup", () => {
       registerHandlers: vi.fn(() => vi.fn()),
       logStarted: vi.fn(),
       disconnectPrisma: vi.fn(async () => undefined),
+      createLogger,
     });
 
+    expect(createLogger).toHaveBeenCalledOnce();
+    expect(createLogger).toHaveBeenCalledWith({
+      environment: "development",
+      runtimeMode: "local",
+    });
+    expect(started.logger).toBe(processLogger);
     expect(createConnectionState).toHaveBeenCalledOnce();
     expect(createConnectionState).toHaveBeenCalledWith({ mode: { kind: "local" } });
     expect(state.runtime.connect).toHaveBeenCalledOnce();

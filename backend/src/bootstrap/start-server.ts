@@ -22,6 +22,10 @@ import {
   createShutdownCoordinator,
   registerProcessHandlers,
 } from "./shutdown.js";
+import {
+  createProcessLogger,
+  type ProcessLoggerOptions,
+} from "./logger-composition.js";
 
 type StartServerOptions = {
   createServer?: (options?: CreateBackendServerOptions) => BackendServer;
@@ -38,6 +42,7 @@ type StartServerOptions = {
   disconnectPrisma?: () => Promise<void>;
   registerHandlers?: typeof registerProcessHandlers;
   logStarted?: (port: string | number) => void;
+  createLogger?: (options: ProcessLoggerOptions) => ReturnType<typeof createProcessLogger>;
 };
 
 const listen = (httpServer: HttpServer, port: string | number) => new Promise<void>((resolve, reject) => {
@@ -85,8 +90,10 @@ export const startServer = async ({
   disconnectPrisma = () => prisma.$disconnect(),
   registerHandlers = registerProcessHandlers,
   logStarted = logSuccessfulStartup,
+  createLogger = createProcessLogger,
 }: StartServerOptions = {}) => {
   const mode = resolveSocketTransportMode({ environment, redisUrl });
+  const logger = createLogger({ environment, runtimeMode: mode.kind });
   const connectionState = createConnectionState({ mode });
   let socketTransport: SocketTransportRuntime | undefined;
   let runtime: BackendServer | undefined;
@@ -160,5 +167,5 @@ export const startServer = async ({
   }
 
   logStarted(port);
-  return { ...runtime, connectionState, socketTransport, shutdown };
+  return { ...runtime, connectionState, socketTransport, logger, shutdown };
 };
