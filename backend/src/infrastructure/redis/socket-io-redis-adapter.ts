@@ -3,8 +3,11 @@ import type { Server as SocketServer } from "socket.io";
 
 import { ApplicationError } from "../../errors/application-error.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
+import {
+  emitLifecycleError,
+  selectLifecycleLoggerComponent,
+} from "../../observability/lifecycle-logger.js";
 import { noopLogger } from "../../observability/noop-logger.js";
-import { logSafeError } from "../../observability/safe-error.js";
 import type { NodeEnvironment } from "../../schemas/env.schema.js";
 import {
   createRedisClient,
@@ -97,8 +100,8 @@ const closeRedisAdapterClients = async (
       await runtime.close();
     } catch (error) {
       failures.push(error);
-      logSafeError(logger, "redis.socket_transport_shutdown.failed", error, {
-        stage: context.startsWith("Socket.IO Redis subscriber")
+      emitLifecycleError(logger, "redis.socket_transport_shutdown.failed", error, {
+        role: context.startsWith("Socket.IO Redis subscriber")
           ? "subscriber"
           : "publisher",
       });
@@ -147,11 +150,14 @@ export const prepareSocketTransport = async ({
     return createLocalSocketTransportRuntime();
   }
 
+  const redisLogger = selectLifecycleLoggerComponent(logger, "redis");
+
   const createPublisher = dependencies.createPublisher
-    ?? ((configuration: RedisConnectionConfiguration) => createRedisClient(configuration, logger));
+    ?? ((configuration: RedisConnectionConfiguration) =>
+      createRedisClient(configuration, redisLogger, "publisher"));
   const duplicateSubscriber = dependencies.duplicateSubscriber
     ?? ((publisher: AdapterRedisClient) =>
-      duplicateRedisClient(publisher as NodeRedisClient, logger));
+      duplicateRedisClient(publisher as NodeRedisClient, redisLogger, "subscriber"));
   const createRuntime = dependencies.createRuntime
     ?? ((client: AdapterRedisClient) => createRedisRuntime(client));
   const createSocketAdapter = dependencies.createAdapter ?? createAdapter;
@@ -183,11 +189,11 @@ export const prepareSocketTransport = async ({
     return createDistributedSocketTransportRuntime({
       publisherRuntime,
       subscriberRuntime,
-      logger,
+      logger: redisLogger,
     });
   } catch (error) {
     try {
-      await closeRedisAdapterClients(subscriberRuntime, publisherRuntime, logger);
+      await closeRedisAdapterClients(subscriberRuntime, publisherRuntime, redisLogger);
     } catch {
       // Client-specific failures were already sanitized and logged.
     }

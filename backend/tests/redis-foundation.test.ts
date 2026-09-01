@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { LogRedisRole } from "../src/observability/log-event.types.js";
+import type { LoggerPort } from "../src/observability/logger.port.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const redisMocks = vi.hoisted(() => ({
@@ -34,7 +36,7 @@ const createFakeClient = ({
 }: FakeClientOptions = {}) => {
   let isOpen = open;
   let isReady = ready;
-  const errorListeners: Array<(error: Error) => void> = [];
+  const listeners = new Map<string, Array<(value?: unknown) => void>>();
 
   const client = {
     get isOpen() {
@@ -43,10 +45,10 @@ const createFakeClient = ({
     get isReady() {
       return isReady;
     },
-    on: vi.fn((event: string, listener: (error: Error) => void) => {
-      if (event === "error") {
-        errorListeners.push(listener);
-      }
+    on: vi.fn((event: string, listener: (value?: unknown) => void) => {
+      const eventListeners = listeners.get(event) ?? [];
+      eventListeners.push(listener);
+      listeners.set(event, eventListeners);
       return client;
     }),
     connect: vi.fn(async () => {
@@ -73,7 +75,12 @@ const createFakeClient = ({
 
   return {
     client,
-    errorListeners,
+    get errorListeners() {
+      return listeners.get("error") ?? [];
+    },
+    emit(event: string, value?: unknown) {
+      for (const listener of listeners.get(event) ?? []) listener(value);
+    },
   };
 };
 
@@ -95,8 +102,11 @@ describe("Redis client creation", () => {
     expect(redisMocks.createClient).toHaveBeenCalledOnce();
     expect(redisMocks.createClient).toHaveBeenCalledWith({ url: configuration.url });
     expect(redisMocks.createClient.mock.calls[0][0]).not.toBe(configuration);
-    expect(fake.client.on).toHaveBeenCalledOnce();
+    expect(fake.client.on).toHaveBeenCalledTimes(4);
     expect(fake.client.on).toHaveBeenCalledWith("error", expect.any(Function));
+    expect(fake.client.on).toHaveBeenCalledWith("ready", expect.any(Function));
+    expect(fake.client.on).toHaveBeenCalledWith("reconnecting", expect.any(Function));
+    expect(fake.client.on).toHaveBeenCalledWith("end", expect.any(Function));
     expect(fake.client.connect).not.toHaveBeenCalled();
   });
 
@@ -130,10 +140,121 @@ describe("Redis client creation", () => {
     fake.errorListeners[0](new Error(`Connection failed for ${sensitiveUrl}`));
 
     const output = JSON.stringify(logger.events);
-    expect(output).toContain("redis.client.failed");
+    expect(output).toContain("redis.runtime.unavailable");
     expect(output).toContain("errorType");
     expect(output).not.toContain(sensitiveUrl);
     expect(output).not.toContain("obvious-fake-password");
+  });
+
+  it("distinguishes all three bounded Redis roles without creating extra clients", async () => {
+    const command = createFakeClient();
+    const publisher = createFakeClient();
+    const subscriber = createFakeClient();
+    publisher.client.duplicate.mockReturnValue(subscriber.client);
+    redisMocks.createClient
+      .mockReturnValueOnce(command.client)
+      .mockReturnValueOnce(publisher.client);
+    const logger = createCapturingLogger("redis");
+
+    const clients = [
+      createRedisClient({ url: "redis://command.invalid" }, logger, "command"),
+      createRedisClient({ url: "redis://publisher.invalid" }, logger, "publisher"),
+      duplicateRedisClient(publisher.client as unknown as NodeRedisClient, logger, "subscriber"),
+    ];
+    await Promise.all(clients.map((client) => createRedisRuntime(client).connect()));
+
+    expect(redisMocks.createClient).toHaveBeenCalledTimes(2);
+    expect(publisher.client.duplicate).toHaveBeenCalledOnce();
+    expect(logger.events.filter(({ event }) => event === "redis.runtime.ready")
+      .map(({ fields }) => fields.role)).toEqual([
+      "command",
+      "publisher",
+      "subscriber",
+    ]);
+  });
+
+  it.each(["publisher", "subscriber", "command"] as const)(
+    "suppresses repeated %s errors and distinguishes recovery from initial readiness",
+    async (role: LogRedisRole) => {
+      const fake = createFakeClient();
+      redisMocks.createClient.mockReturnValue(fake.client);
+      const logger = createCapturingLogger("redis");
+      const runtime = createRedisRuntime(createRedisClient(
+        { url: "rediss://private-user:private-password@redis.invalid" },
+        logger,
+        role,
+      ));
+
+      await runtime.connect();
+      fake.emit("error", new Error("private first outage detail"));
+      fake.emit("error", new Error("private repeated outage detail"));
+      fake.emit("reconnecting");
+      fake.emit("ready");
+      fake.emit("ready");
+      fake.emit("error", new Error("private second outage detail"));
+      await runtime.close();
+      fake.emit("error", new Error("private intentional close detail"));
+      fake.emit("ready");
+
+      expect(logger.events.map(({ event }) => event)).toEqual([
+        "redis.runtime.connecting",
+        "redis.runtime.ready",
+        "redis.runtime.unavailable",
+        "redis.runtime.recovered",
+        "redis.runtime.unavailable",
+        "redis.runtime.closed",
+      ]);
+      expect(logger.events.every(({ fields }) => fields.role === role)).toBe(true);
+      expect(JSON.stringify(logger.events)).not.toContain("private");
+    },
+  );
+
+  it("does not let a throwing lifecycle logger affect Redis transitions", async () => {
+    const fake = createFakeClient();
+    redisMocks.createClient.mockReturnValue(fake.client);
+    const throwingLogger: LoggerPort = {
+      component: "redis",
+      forComponent: () => throwingLogger,
+      debug: () => { throw new Error("private logger failure"); },
+      info: () => { throw new Error("private logger failure"); },
+      warn: () => { throw new Error("private logger failure"); },
+      error: () => { throw new Error("private logger failure"); },
+    };
+    const runtime = createRedisRuntime(createRedisClient(
+      { url: "redis://private.invalid" },
+      throwingLogger,
+      "command",
+    ));
+
+    await expect(runtime.connect()).resolves.toBeUndefined();
+    expect(() => fake.emit("error", new Error("private outage"))).not.toThrow();
+    expect(() => fake.emit("ready")).not.toThrow();
+    await expect(runtime.close()).resolves.toBeUndefined();
+  });
+
+  it("uses ready rather than recovered when the first readiness follows an initial error", async () => {
+    const fake = createFakeClient();
+    redisMocks.createClient.mockReturnValue(fake.client);
+    const logger = createCapturingLogger("redis");
+    fake.client.connect.mockImplementationOnce(async () => {
+      fake.emit("error", new Error("private initial connection error"));
+      return fake.client;
+    });
+    const runtime = createRedisRuntime(createRedisClient(
+      { url: "redis://private.invalid" },
+      logger,
+      "command",
+    ));
+
+    await runtime.connect();
+
+    expect(logger.events.map(({ event }) => event)).toEqual([
+      "redis.runtime.connecting",
+      "redis.runtime.unavailable",
+      "redis.runtime.ready",
+    ]);
+    expect(logger.events.some(({ event }) => event === "redis.runtime.recovered"))
+      .toBe(false);
   });
 });
 

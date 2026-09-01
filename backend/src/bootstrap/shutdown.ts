@@ -1,8 +1,18 @@
 import type { Server as HttpServer } from "node:http";
+import { performance } from "node:perf_hooks";
 import type { Server as SocketServer } from "socket.io";
+import type {
+  LogLifecycleStage,
+  LogShutdownReason,
+} from "../observability/log-event.types.js";
+import {
+  emitLifecycleError,
+  emitLifecycleLog,
+  monotonicDuration,
+  type MonotonicClock,
+} from "../observability/lifecycle-logger.js";
 import type { LoggerPort } from "../observability/logger.port.js";
 import { noopLogger } from "../observability/noop-logger.js";
-import { logSafeError } from "../observability/safe-error.js";
 
 type ShutdownOptions = {
   httpServer: HttpServer;
@@ -15,10 +25,11 @@ type ShutdownOptions = {
   disconnectPrisma: () => Promise<void>;
   stageTimeoutMs?: number;
   logger?: LoggerPort;
+  clock?: MonotonicClock;
 };
 
 type ProcessHandlerOptions = {
-  shutdown: () => Promise<void>;
+  shutdown: (reason?: LogShutdownReason) => Promise<void>;
   processTarget?: NodeJS.Process;
   exit?: (code: number) => void;
   logger?: LoggerPort;
@@ -32,7 +43,13 @@ export const SHUTDOWN_STAGE_TIMEOUT_MS = 15_000;
 
 type ShutdownStageOutcome =
   | { succeeded: true }
-  | { succeeded: false; error: unknown };
+  | { succeeded: false; error: unknown; timedOut?: boolean };
+
+type StartedShutdownStage = {
+  readonly stage: LogLifecycleStage;
+  readonly startedAt: number;
+  readonly outcome: Promise<ShutdownStageOutcome>;
+};
 
 const observeShutdownStage = (
   stage: () => Promise<void>,
@@ -76,21 +93,42 @@ export const createShutdownCoordinator = ({
   disconnectPrisma,
   stageTimeoutMs = SHUTDOWN_STAGE_TIMEOUT_MS,
   logger = noopLogger.forComponent("bootstrap"),
+  clock = performance.now.bind(performance),
 }: ShutdownOptions) => {
   let shutdownPromise: Promise<void> | undefined;
 
-  return () => {
+  return (reason: LogShutdownReason = "manual") => {
     if (shutdownPromise) {
       return shutdownPromise;
     }
 
     shutdownPromise = (async () => {
-      logger.info("bootstrap.shutdown.started", { result: "started" });
+      const shutdownStartedAt = clock();
+      emitLifecycleLog(logger, "info", "bootstrap.shutdown.started", {
+        result: "started",
+        reason,
+      });
       let failureCount = 0;
-      const awaitResource = async (
-        context: string,
-        outcome: Promise<ShutdownStageOutcome>,
-      ) => {
+      const beginStage = (
+        stage: LogLifecycleStage,
+        operation: () => Promise<void>,
+      ): StartedShutdownStage => {
+        const startedAt = clock();
+        emitLifecycleLog(logger, "info", "bootstrap.shutdown_stage.started", {
+          stage,
+          result: "started",
+        });
+        return {
+          stage,
+          startedAt,
+          outcome: observeShutdownStage(operation),
+        };
+      };
+      const awaitStage = async ({
+        stage,
+        startedAt,
+        outcome,
+      }: StartedShutdownStage) => {
         let timeout: NodeJS.Timeout | undefined;
         const result = await Promise.race([
           outcome,
@@ -99,6 +137,7 @@ export const createShutdownCoordinator = ({
               resolve({
                 succeeded: false,
                 error: new Error("Shutdown stage timed out."),
+                timedOut: true,
               });
             }, stageTimeoutMs);
           }),
@@ -107,52 +146,69 @@ export const createShutdownCoordinator = ({
 
         if (!result.succeeded) {
           failureCount += 1;
-          logSafeError(logger, "bootstrap.shutdown_stage.failed", result.error, {
-            stage: context
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "_")
-              .replace(/^_|_$/g, ""),
+          emitLifecycleError(logger, "bootstrap.shutdown_stage.failed", result.error, {
+            stage,
+            result: "failed",
+            durationMs: monotonicDuration(startedAt, clock),
+            ...(result.timedOut ? { errorCategory: "timeout" as const } : {}),
           });
+          return;
         }
+        emitLifecycleLog(logger, "info", "bootstrap.shutdown_stage.completed", {
+          stage,
+          result: "completed",
+          durationMs: monotonicDuration(startedAt, clock),
+        });
       };
-      const closeResource = async (
-        context: string,
+      const runStage = async (
+        stage: LogLifecycleStage,
         close: () => Promise<void>,
-      ) => awaitResource(context, observeShutdownStage(close));
+      ) => awaitStage(beginStage(stage, close));
 
-      await closeResource("Socket admission drain failed.", async () => {
+      await runStage("socket_admission_drain", async () => {
         beginSocketDrain();
       });
-      const httpCloseOutcome = observeShutdownStage(
+      const httpCloseStage = beginStage(
+        "http_server_shutdown",
         () => closeHttpServer(httpServer),
       );
-      await closeResource("Local Socket disconnect failed.", async () => {
+      await runStage("local_socket_disconnect", async () => {
         disconnectLocalSockets();
       });
-      await closeResource(
-        "Socket operation drain failed.",
+      await runStage(
+        "socket_operation_drain",
         drainSocketOperations,
       );
-      await awaitResource("HTTP server shutdown failed.", httpCloseOutcome);
-      await closeResource("Socket.IO shutdown failed.", () => closeSocketServer(io));
-      await closeResource(
-        "Socket operation drain after Socket.IO shutdown failed.",
+      await awaitStage(httpCloseStage);
+      await runStage("socket_io_shutdown", () => closeSocketServer(io));
+      await runStage(
+        "socket_operation_drain_after_socket_io",
         drainSocketOperations,
       );
-      await closeResource(
-        "Connection state shutdown failed.",
+      await runStage(
+        "connection_state_shutdown",
         closeConnectionState,
       );
-      await closeResource(
-        "Distributed realtime shutdown failed.",
+      await runStage(
+        "distributed_realtime_shutdown",
         closeDistributedRealtime,
       );
-      await closeResource("Prisma shutdown failed.", disconnectPrisma);
+      await runStage("prisma_shutdown", disconnectPrisma);
 
       if (failureCount > 0) {
-        throw new Error("Backend shutdown failed");
+        const error = new Error("Backend shutdown failed");
+        emitLifecycleError(logger, "bootstrap.shutdown.failed", error, {
+          reason,
+          result: "failed",
+          durationMs: monotonicDuration(shutdownStartedAt, clock),
+        });
+        throw error;
       }
-      logger.info("bootstrap.shutdown.completed", { result: "completed" });
+      emitLifecycleLog(logger, "info", "bootstrap.shutdown.completed", {
+        reason,
+        result: "completed",
+        durationMs: monotonicDuration(shutdownStartedAt, clock),
+      });
     })();
 
     return shutdownPromise;
@@ -167,26 +223,30 @@ export const registerProcessHandlers = ({
 }: ProcessHandlerOptions) => {
   let terminationStarted = false;
 
-  const terminate = (exitCode: number) => {
+  const terminate = (exitCode: number, reason: LogShutdownReason) => {
     if (terminationStarted) {
       return;
     }
     terminationStarted = true;
-    void shutdown().then(
+    void shutdown(reason).then(
       () => exit(exitCode),
       () => exit(1),
     );
   };
 
-  const handleSigterm = () => terminate(0);
-  const handleSigint = () => terminate(0);
+  const handleSigterm = () => terminate(0, "sigterm");
+  const handleSigint = () => terminate(0, "sigint");
   const handleUncaughtException = (error: Error) => {
-    logSafeError(logger, "bootstrap.uncaught_exception.failed", error);
-    terminate(1);
+    emitLifecycleError(logger, "bootstrap.uncaught_exception.failed", error, {
+      reason: "uncaught_exception",
+    });
+    terminate(1, "uncaught_exception");
   };
   const handleUnhandledRejection = (reason: unknown) => {
-    logSafeError(logger, "bootstrap.unhandled_rejection.failed", reason);
-    terminate(1);
+    emitLifecycleError(logger, "bootstrap.unhandled_rejection.failed", reason, {
+      reason: "unhandled_rejection",
+    });
+    terminate(1, "unhandled_rejection");
   };
 
   processTarget.on("SIGTERM", handleSigterm);

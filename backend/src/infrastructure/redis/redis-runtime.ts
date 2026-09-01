@@ -1,3 +1,11 @@
+import {
+  markRedisClientClosed,
+  markRedisClientClosing,
+  markRedisClientConnecting,
+  markRedisClientReady,
+  markRedisClientUnavailable,
+} from "./redis-client.js";
+
 export interface RedisLifecycleClient {
   readonly isOpen: boolean;
   readonly isReady: boolean;
@@ -36,8 +44,18 @@ export const createRedisRuntime = <Client extends RedisLifecycleClient>(
     }
 
     try {
-      connectPromise = client.connect().then(() => undefined);
+      markRedisClientConnecting(client);
+      connectPromise = client.connect().then(
+        () => {
+          markRedisClientReady(client);
+        },
+        (error: unknown) => {
+          markRedisClientUnavailable(client, error);
+          throw error;
+        },
+      );
     } catch (error) {
+      markRedisClientUnavailable(client, error);
       connectPromise = Promise.reject(error);
     }
 
@@ -46,6 +64,7 @@ export const createRedisRuntime = <Client extends RedisLifecycleClient>(
 
   const close = (): Promise<void> => {
     closingOrClosed = true;
+    markRedisClientClosing(client);
 
     if (closePromise) {
       return closePromise;
@@ -54,10 +73,12 @@ export const createRedisRuntime = <Client extends RedisLifecycleClient>(
     closePromise = (async () => {
       if (client.isOpen) {
         await client.close();
+        markRedisClientClosed(client);
         return;
       }
 
       client.destroy();
+      markRedisClientClosed(client);
     })();
 
     return closePromise;

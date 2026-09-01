@@ -349,7 +349,7 @@ describe("Socket connection-state runtime", () => {
     });
     expect(reconcilePresence.mock.calls).toEqual([["user-a"], ["user-b"]]);
     expect(harness.logger.events.at(-1)).toMatchObject({
-      event: "redis.connection_maintenance.failed",
+      event: "redis.connection_maintenance.unavailable",
       fields: { errorType: "Error" },
     });
 
@@ -358,6 +358,46 @@ describe("Socket connection-state runtime", () => {
       expect(harness.directory.cleanupSettledPresence).toHaveBeenCalledTimes(3);
       expect(harness.runtime.isReady).toBe(true);
     });
+    expect(harness.logger.events.at(-1)).toMatchObject({
+      event: "redis.connection_maintenance.recovered",
+      fields: { result: "recovered" },
+    });
+  });
+
+  it("logs one unavailable transition for repeated maintenance failures and one recovery", async () => {
+    const harness = createDistributedHarness();
+    const callbacks = {
+      reconcilePresence: vi.fn(async () => undefined),
+      handleLostConnection: vi.fn(async () => undefined),
+    };
+    await harness.runtime.connect();
+    await harness.runtime.start(callbacks);
+    const privateFailure = new Error(
+      "rediss://private-user:private-password@redis.example.test",
+    );
+    harness.directory.renewOwnedLeases
+      .mockRejectedValueOnce(privateFailure)
+      .mockRejectedValueOnce(privateFailure)
+      .mockRejectedValueOnce(privateFailure);
+
+    for (let failure = 1; failure <= 3; failure += 1) {
+      harness.getScheduledCallback()?.();
+      await vi.waitFor(() => {
+        expect(harness.directory.renewOwnedLeases).toHaveBeenCalledTimes(1 + failure);
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    expect(harness.runtime.isReady).toBe(false);
+    harness.getScheduledCallback()?.();
+    await vi.waitFor(() => expect(harness.runtime.isReady).toBe(true));
+
+    const transitionEvents = harness.logger.events.filter(({ event }) =>
+      event.startsWith("redis.connection_maintenance."));
+    expect(transitionEvents.map(({ event }) => event)).toEqual([
+      "redis.connection_maintenance.unavailable",
+      "redis.connection_maintenance.recovered",
+    ]);
+    expect(JSON.stringify(transitionEvents)).not.toContain("private-password");
   });
 
   it("stays unready when initial maintenance fails and does not schedule", async () => {

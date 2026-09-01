@@ -11,7 +11,12 @@ import { createLocalSocketEventRateLimitProvider } from "../../socket/local-sock
 import type { SocketEventRateLimitPort } from "../../socket/socket-event-rate-limit.port.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
 import { noopLogger } from "../../observability/noop-logger.js";
-import { logSafeError } from "../../observability/safe-error.js";
+import {
+  emitLifecycleError,
+  emitLifecycleLog,
+  getLifecycleErrorMetadata,
+  selectLifecycleLoggerComponent,
+} from "../../observability/lifecycle-logger.js";
 import {
   createRedisClient,
   type NodeRedisClient,
@@ -148,6 +153,35 @@ const createDistributedStateRuntime = ({
   let startPromise: Promise<void> | undefined;
   let closePromise: Promise<void> | undefined;
   let callbacks: SocketConnectionMaintenanceCallbacks | undefined;
+  let maintenanceUnavailable = false;
+
+  const markMaintenanceUnavailable = (error: unknown) => {
+    operational = false;
+    if (draining) return;
+    if (maintenanceUnavailable) return;
+    maintenanceUnavailable = true;
+    emitLifecycleLog(
+      logger,
+      "warn",
+      "redis.connection_maintenance.unavailable",
+      {
+        result: "unavailable",
+        ...getLifecycleErrorMetadata(error),
+      },
+    );
+  };
+
+  const markMaintenanceRecovered = () => {
+    if (draining) return;
+    if (!maintenanceUnavailable) return;
+    maintenanceUnavailable = false;
+    emitLifecycleLog(
+      logger,
+      "info",
+      "redis.connection_maintenance.recovered",
+      { result: "recovered" },
+    );
+  };
 
   const runMaintenance = (): Promise<void> => {
     if (currentIteration) return currentIteration;
@@ -155,35 +189,41 @@ const createDistributedStateRuntime = ({
     currentIteration = (async () => {
       if (!callbacks || draining) return;
 
-      let iterationFailed = false;
-      let firstIterationFailure: unknown;
-      const recordIterationFailure = (error: unknown) => {
-        operational = false;
-        if (!iterationFailed) firstIterationFailure = error;
-        iterationFailed = true;
-      };
+      try {
+        let iterationFailed = false;
+        let firstIterationFailure: unknown;
+        const recordIterationFailure = (error: unknown) => {
+          operational = false;
+          if (!iterationFailed) firstIterationFailure = error;
+          iterationFailed = true;
+        };
 
-      const renewal = await directory.renewOwnedLeases();
-      for (const connection of renewal.missingConnections) {
-        try {
-          await callbacks.handleLostConnection(connection);
-        } catch (error) {
-          recordIterationFailure(error);
+        const renewal = await directory.renewOwnedLeases();
+        for (const connection of renewal.missingConnections) {
+          try {
+            await callbacks.handleLostConnection(connection);
+          } catch (error) {
+            recordIterationFailure(error);
+          }
         }
-      }
 
-      await directory.reapExpiredLeases();
-      const pendingPresence = await directory.listPendingPresence();
-      for (const transition of pendingPresence) {
-        try {
-          await callbacks.reconcilePresence(transition.userId);
-        } catch (error) {
-          recordIterationFailure(error);
+        await directory.reapExpiredLeases();
+        const pendingPresence = await directory.listPendingPresence();
+        for (const transition of pendingPresence) {
+          try {
+            await callbacks.reconcilePresence(transition.userId);
+          } catch (error) {
+            recordIterationFailure(error);
+          }
         }
+        await directory.cleanupSettledPresence();
+        if (iterationFailed) throw firstIterationFailure;
+        operational = true;
+        markMaintenanceRecovered();
+      } catch (error) {
+        markMaintenanceUnavailable(error);
+        throw error;
       }
-      await directory.cleanupSettledPresence();
-      if (iterationFailed) throw firstIterationFailure;
-      operational = true;
     })().finally(() => {
       currentIteration = undefined;
     });
@@ -192,9 +232,8 @@ const createDistributedStateRuntime = ({
   };
 
   const runScheduledMaintenance = () => {
-    void runMaintenance().catch((error) => {
-      operational = false;
-      logSafeError(logger, "redis.connection_maintenance.failed", error);
+    void runMaintenance().catch(() => {
+      // The edge-triggered maintenance state transition is logged in runMaintenance.
     });
   };
 
@@ -267,7 +306,11 @@ const createDistributedStateRuntime = ({
           try {
             commandRuntime.client.destroy();
           } catch (destroyError) {
-            logSafeError(logger, "redis.connection_state_force_close.failed", destroyError);
+            emitLifecycleError(
+              logger,
+              "redis.connection_state_force_close.failed",
+              destroyError,
+            );
           }
           throw error;
         })
@@ -290,9 +333,11 @@ export const createSocketConnectionStateRuntime = ({
     );
   }
 
+  const redisLogger = selectLifecycleLoggerComponent(logger, "redis");
+
   const createCommandClient = dependencies.createCommandClient
     ?? ((configuration: RedisConnectionConfiguration) =>
-      createRedisClient(configuration, logger) as NodeRedisClient);
+      createRedisClient(configuration, redisLogger, "command") as NodeRedisClient);
   const createCommandRuntime = dependencies.createRuntime
     ?? ((client: RedisLifecycleClient & RedisScriptExecutor) =>
       createRedisRuntime(client));
@@ -313,6 +358,6 @@ export const createSocketConnectionStateRuntime = ({
     directory,
     eventLimiter,
     scheduleRecurring,
-    logger: logger.forComponent("redis"),
+    logger: redisLogger,
   });
 };
