@@ -178,6 +178,7 @@ const lifecycleCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.seenChat,
     resourceKey: CHAT_ID,
     logContext: "socket.message_seen.failed",
+    operation: "message_seen",
   },
   {
     label: "MESSAGE_EDIT",
@@ -197,6 +198,7 @@ const lifecycleCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.editMessage,
     resourceKey: MESSAGE_ID,
     logContext: "socket.message_edit.failed",
+    operation: "message_edit",
   },
   {
     label: "MESSAGE_DELETE",
@@ -207,6 +209,7 @@ const lifecycleCases = [
     resourcePolicy: SOCKET_EVENT_LIMITS.deleteMessage,
     resourceKey: MESSAGE_ID,
     logContext: "socket.message_delete.failed",
+    operation: "message_delete",
   },
 ] as const;
 
@@ -295,6 +298,7 @@ describe("Socket message lifecycle security ordering", () => {
     payload,
     actorPolicy,
     logContext,
+    operation,
   }) => {
     const authorizationFailure = new Error("private authorization detail");
     const authorizationMock = authorizationMockFor(event);
@@ -309,7 +313,7 @@ describe("Socket message lifecycle security ordering", () => {
     expect(harness.roomEmit).not.toHaveBeenCalled();
     expect(harness.logger.events.at(-1)).toMatchObject({
       event: logContext,
-      fields: { errorType: "Error" },
+      fields: { operation, result: "failed", errorType: "Error" },
     });
     expect(JSON.stringify(harness.logger.events)).not.toContain("private authorization detail");
   });

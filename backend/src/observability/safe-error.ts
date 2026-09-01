@@ -43,8 +43,12 @@ export const logSafeError = (
   error: unknown,
   fields?: Omit<LogEventFields, "errorType" | "applicationCode">,
 ): void => {
-  logger.error(event, {
-    ...fields,
-    ...getSafeErrorMetadata(error),
-  });
+  try {
+    logger.error(event, {
+      ...fields,
+      ...getSafeErrorMetadata(error),
+    });
+  } catch {
+    // Logging must never change the protected operation's behavior.
+  }
 };

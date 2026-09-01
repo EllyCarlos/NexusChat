@@ -44,6 +44,7 @@ export const registerReactionHandlers = ({
       socket,
       event: Events.NEW_REACTION,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -53,6 +54,7 @@ export const registerReactionHandlers = ({
         socket,
         event: Events.NEW_REACTION,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.reactionMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -87,7 +89,10 @@ export const registerReactionHandlers = ({
 
       realtime.emitNewReaction(chatId, payload);
     } catch (error) {
-      logSafeError(logger, "socket.reaction_addition.failed", error);
+      logSafeError(logger, "socket.reaction_addition.failed", error, {
+        operation: "reaction_add",
+        result: "failed",
+      });
     }
   });
 
@@ -99,6 +104,7 @@ export const registerReactionHandlers = ({
       socket,
       event: Events.DELETE_REACTION,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -108,6 +114,7 @@ export const registerReactionHandlers = ({
         socket,
         event: Events.DELETE_REACTION,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.reactionMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -125,7 +132,10 @@ export const registerReactionHandlers = ({
       };
       realtime.emitDeleteReaction(chatId, payload);
     } catch (error) {
-      logSafeError(logger, "socket.reaction_deletion.failed", error);
+      logSafeError(logger, "socket.reaction_deletion.failed", error, {
+        operation: "reaction_delete",
+        result: "failed",
+      });
     }
   });
 };

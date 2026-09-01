@@ -309,6 +309,7 @@ const interactionCases = [
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
     log: "socket.reaction_addition.failed",
+    operation: "reaction_add",
   },
   {
     event: Events.DELETE_REACTION,
@@ -319,6 +320,7 @@ const interactionCases = [
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
     log: "socket.reaction_deletion.failed",
+    operation: "reaction_delete",
   },
   {
     event: Events.USER_TYPING,
@@ -329,6 +331,7 @@ const interactionCases = [
     authorization: () => vi.mocked(prisma.chat.findFirst),
     resourceKey: CHAT_ID,
     log: "socket.typing.failed",
+    operation: "typing",
   },
   {
     event: Events.VOTE_IN,
@@ -339,6 +342,7 @@ const interactionCases = [
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
     log: "socket.poll_vote.failed",
+    operation: "poll_vote",
   },
   {
     event: Events.VOTE_OUT,
@@ -349,6 +353,7 @@ const interactionCases = [
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
     log: "socket.poll_vote_removal.failed",
+    operation: "poll_vote_remove",
   },
   {
     event: Events.PIN_MESSAGE,
@@ -359,6 +364,7 @@ const interactionCases = [
     authorization: () => vi.mocked(prisma.message.findFirst),
     resourceKey: MESSAGE_ID,
     log: "socket.message_pin.failed",
+    operation: "message_pin",
   },
   {
     event: Events.UNPIN_MESSAGE,
@@ -369,6 +375,7 @@ const interactionCases = [
     authorization: () => vi.mocked(prisma.pinnedMessages.findFirst),
     resourceKey: MESSAGE_ID,
     log: "socket.message_unpin.failed",
+    operation: "message_unpin",
   },
 ] as const;
 
@@ -488,6 +495,7 @@ describe("Socket interaction error boundaries", () => {
     authorization,
     event,
     log,
+    operation,
     payload,
   }) => {
     const privateFailure = new Error(`private-${event}-database-detail`);
@@ -500,7 +508,7 @@ describe("Socket interaction error boundaries", () => {
       level: "error",
       component: "socket",
       event: log,
-      fields: { errorType: "Error" },
+      fields: { operation, result: "failed", errorType: "Error" },
     });
     expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
@@ -516,6 +524,7 @@ describe("Socket interaction error boundaries", () => {
       prepare: () => undefined,
       completedWrite: () => vi.mocked(prisma.reactions.create),
       log: "socket.reaction_addition.failed",
+      operation: "reaction_add",
     },
     {
       event: Events.DELETE_REACTION,
@@ -523,6 +532,7 @@ describe("Socket interaction error boundaries", () => {
       prepare: () => undefined,
       completedWrite: () => vi.mocked(prisma.reactions.deleteMany),
       log: "socket.reaction_deletion.failed",
+      operation: "reaction_delete",
     },
     {
       event: Events.VOTE_IN,
@@ -532,6 +542,7 @@ describe("Socket interaction error boundaries", () => {
       },
       completedWrite: () => vi.mocked(prisma.vote.create),
       log: "socket.poll_vote.failed",
+      operation: "poll_vote",
     },
     {
       event: Events.VOTE_OUT,
@@ -541,6 +552,7 @@ describe("Socket interaction error boundaries", () => {
       },
       completedWrite: () => vi.mocked(prisma.vote.deleteMany),
       log: "socket.poll_vote_removal.failed",
+      operation: "poll_vote_remove",
     },
     {
       event: Events.PIN_MESSAGE,
@@ -548,6 +560,7 @@ describe("Socket interaction error boundaries", () => {
       prepare: () => undefined,
       completedWrite: () => vi.mocked(prisma.message.update),
       log: "socket.message_pin.failed",
+      operation: "message_pin",
     },
     {
       event: Events.UNPIN_MESSAGE,
@@ -555,12 +568,13 @@ describe("Socket interaction error boundaries", () => {
       prepare: () => undefined,
       completedWrite: () => vi.mocked(prisma.message.update),
       log: "socket.message_unpin.failed",
+      operation: "message_unpin",
     },
   ] as const;
 
   it.each(roomDeliveryFailureCases)(
     "preserves completed persistence and safe-logs a thrown $event room delivery",
-    async ({ completedWrite, event, log, payload, prepare }) => {
+    async ({ completedWrite, event, log, operation, payload, prepare }) => {
       const privateFailure = new Error(`private-${event}-delivery-detail`);
       prepare();
       const harness = await createHarness();
@@ -577,7 +591,7 @@ describe("Socket interaction error boundaries", () => {
         level: "error",
         component: "socket",
         event: log,
-        fields: { errorType: "Error" },
+        fields: { operation, result: "failed", errorType: "Error" },
       });
       expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
       expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
@@ -603,7 +617,7 @@ describe("Socket interaction error boundaries", () => {
       level: "error",
       component: "socket",
       event: "socket.typing.failed",
-      fields: { errorType: "Error" },
+      fields: { operation: "typing", result: "failed", errorType: "Error" },
     });
     expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
@@ -642,7 +656,7 @@ describe("Socket interaction error boundaries", () => {
     expect(prisma.message.update).toHaveBeenCalledOnce();
     expect(harness.logger.events.at(-1)).toMatchObject({
       event: "socket.message_pin.failed",
-      fields: { errorType: "Error" },
+      fields: { operation: "message_pin", result: "failed", errorType: "Error" },
     });
     expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);

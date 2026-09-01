@@ -41,6 +41,7 @@ export const registerPollHandlers = ({
       socket,
       event: Events.VOTE_IN,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -51,6 +52,7 @@ export const registerPollHandlers = ({
         socket,
         event: Events.VOTE_IN,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.voteMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -77,7 +79,10 @@ export const registerPollHandlers = ({
       };
       realtime.emitVoteIn(chatId, payload);
     } catch (error) {
-      logSafeError(logger, "socket.poll_vote.failed", error);
+      logSafeError(logger, "socket.poll_vote.failed", error, {
+        operation: "poll_vote",
+        result: "failed",
+      });
     }
   });
 
@@ -89,6 +94,7 @@ export const registerPollHandlers = ({
       socket,
       event: Events.VOTE_OUT,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -99,6 +105,7 @@ export const registerPollHandlers = ({
         socket,
         event: Events.VOTE_OUT,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.voteMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -130,7 +137,10 @@ export const registerPollHandlers = ({
       };
       realtime.emitVoteOut(chatId, payload);
     } catch (error) {
-      logSafeError(logger, "socket.poll_vote_removal.failed", error);
+      logSafeError(logger, "socket.poll_vote_removal.failed", error, {
+        operation: "poll_vote_remove",
+        result: "failed",
+      });
     }
   });
 };

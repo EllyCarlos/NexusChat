@@ -254,7 +254,7 @@ describe("CALL_USER workflow characterization", () => {
     expect(pushNotification).not.toHaveBeenCalled();
     expect(safeLog).toHaveBeenCalledExactlyOnceWith(
       "socket.call_user.failed",
-      { errorType: "Error" },
+      { operation: "call_user", result: "failed", errorType: "Error" },
     );
   });
 
@@ -276,7 +276,7 @@ describe("CALL_USER workflow characterization", () => {
     expect(pushNotification).not.toHaveBeenCalled();
     expect(safeLog).toHaveBeenCalledExactlyOnceWith(
       "socket.call_user.failed",
-      { errorType: "Error" },
+      { operation: "call_user", result: "failed", errorType: "Error" },
     );
   });
 
@@ -353,7 +353,7 @@ describe("CALL_USER workflow characterization", () => {
     expect(harness.ioRelayEmit).not.toHaveBeenCalled();
     expect(safeLog).toHaveBeenCalledExactlyOnceWith(
       "socket.call_user.failed",
-      { errorType: "Error" },
+      { operation: "call_user", result: "failed", errorType: "Error" },
     );
   });
 });
@@ -433,7 +433,12 @@ describe("CALL_ACCEPTED and CALL_REJECTED shared transport/state characterizatio
       event === Events.CALL_ACCEPTED
         ? "socket.call_acceptance.failed"
         : "socket.call_rejection.failed",
-      { errorType: "CustomError", applicationCode: "LEGACY_CUSTOM_ERROR" },
+      {
+        operation: event === Events.CALL_ACCEPTED ? "call_accept" : "call_reject",
+        result: "failed",
+        errorType: "CustomError",
+        applicationCode: "LEGACY_CUSTOM_ERROR",
+      },
     );
   });
 
@@ -577,7 +582,7 @@ describe("CALL_ACCEPTED workflow characterization", () => {
     expect(harness.socketEmit.mock.calls).toEqual([[Events.CALL_END]]);
     expect(safeLog).toHaveBeenCalledExactlyOnceWith(
       "socket.call_acceptance.failed",
-      { errorType: "Error" },
+      { operation: "call_accept", result: "failed", errorType: "Error" },
     );
   });
 });
@@ -669,7 +674,7 @@ describe("CALL_REJECTED workflow characterization", () => {
     expect(harness.socketEmit).not.toHaveBeenCalled();
     expect(safeLog).toHaveBeenCalledExactlyOnceWith(
       "socket.call_rejection.failed",
-      { errorType: "Error" },
+      { operation: "call_reject", result: "failed", errorType: "Error" },
     );
   });
 
@@ -699,7 +704,7 @@ describe("CALL_REJECTED workflow characterization", () => {
     expect(harness.socketEmit).not.toHaveBeenCalled();
     expect(safeLog).toHaveBeenCalledExactlyOnceWith(
       "socket.call_rejection.failed",
-      { errorType: "Error" },
+      { operation: "call_reject", result: "failed", errorType: "Error" },
     );
   });
 });

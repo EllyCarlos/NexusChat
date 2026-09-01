@@ -400,7 +400,12 @@ describe("authorization remains authoritative", () => {
       level: "error",
       component: "socket",
       event: "socket.typing.failed",
-      fields: { errorType: "ApplicationError", applicationCode: "FORBIDDEN" },
+      fields: {
+        operation: "typing",
+        result: "failed",
+        errorType: "ApplicationError",
+        applicationCode: "FORBIDDEN",
+      },
     });
     expect(logOutput).toContain("FORBIDDEN");
     expect(logOutput).not.toContain(applicationError.message);

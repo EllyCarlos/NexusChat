@@ -208,7 +208,12 @@ describe("Socket root connection admission and registration", () => {
     expect(registerWebRtcHandlers).toHaveBeenCalledWith(
       client.socket,
       runtime.io,
-      { directory: runtime.directory, limiter: runtime.limiter, logger: runtime.logger },
+      {
+        directory: runtime.directory,
+        limiter: runtime.limiter,
+        logger: runtime.logger,
+        sendNotification: expect.any(Function),
+      },
     );
 
     expect(client.socket.on.mock.invocationCallOrder[0]).toBeLessThan(
@@ -273,7 +278,12 @@ describe("Socket root connection admission and registration", () => {
     expect(registerWebRtcHandlers).toHaveBeenCalledWith(
       client.socket,
       runtime.io,
-      { directory: runtime.directory, limiter: runtime.limiter, logger: runtime.logger },
+      {
+        directory: runtime.directory,
+        limiter: runtime.limiter,
+        logger: runtime.logger,
+        sendNotification: expect.any(Function),
+      },
     );
   });
 

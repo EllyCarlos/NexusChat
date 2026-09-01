@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   disconnectPrisma: vi.fn(async () => undefined),
   initializeProviders: vi.fn(),
   registerSocketHandlers: vi.fn(),
+  sendNotification: vi.fn(),
+  createObservedPushNotificationSender: vi.fn(),
   route: vi.fn((_request, _response, next) => next()),
   socketAuthenticator: vi.fn((_socket, next) => next()),
   createSocketAuthenticatorMiddleware: vi.fn(),
@@ -33,6 +35,10 @@ vi.mock("../src/middlewares/socket-auth.middleware.js", () => ({
     .mockReturnValue(mocks.socketAuthenticator),
 }));
 vi.mock("../src/socket/socket.js", () => ({ default: mocks.registerSocketHandlers }));
+vi.mock("../src/modules/notifications/push-notification.service.js", () => ({
+  createObservedPushNotificationSender: mocks.createObservedPushNotificationSender
+    .mockReturnValue(mocks.sendNotification),
+}));
 vi.mock("../src/routes/attachment.router.js", () => ({ default: mocks.route }));
 vi.mock("../src/routes/auth.router.js", () => ({ default: mocks.route }));
 vi.mock("../src/routes/chat.router.js", () => ({ default: mocks.route }));
@@ -257,7 +263,11 @@ describe("backend server construction", () => {
       limiter: state.eventLimiter,
       presence: runtime.presence,
       logger: expect.objectContaining({ component: "socket" }),
+      sendNotification: mocks.sendNotification,
     });
+    expect(mocks.createObservedPushNotificationSender).toHaveBeenCalledWith(
+      expect.objectContaining({ component: "provider" }),
+    );
     expect(runtime.socketLifecycle).toBe(socketLifecycle);
     expect(state.runtime.connect).not.toHaveBeenCalled();
     expect(state.runtime.start).not.toHaveBeenCalled();

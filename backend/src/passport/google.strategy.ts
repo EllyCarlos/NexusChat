@@ -1,10 +1,14 @@
+import { performance } from "node:perf_hooks";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import type { RuntimeConfig } from "../interfaces/config/config.interface.js";
 import { provisionGoogleAccount } from "../modules/auth/google-account.service.js";
 import type { LoggerPort } from "../observability/logger.port.js";
 import { noopLogger } from "../observability/noop-logger.js";
-import { logSafeError } from "../observability/safe-error.js";
+import {
+  emitOperationError,
+  operationDuration,
+} from "../observability/operation-observer.js";
 
 let isRegistered = false;
 
@@ -21,6 +25,7 @@ export const registerGoogleStrategy = (
     clientSecret: configuration.oauth.googleClientSecret,
     callbackURL: configuration.oauth.callbackUrl,
   }, async function (_accessToken, _refreshToken, profile, done) {
+    const startedAt = performance.now();
     try {
       if (profile.emails && profile.emails[0].value && profile.displayName) {
         const identity = await provisionGoogleAccount({
@@ -35,7 +40,13 @@ export const registerGoogleStrategy = (
       }
       throw new Error("Some Error occured");
     } catch (error) {
-      logSafeError(logger, "auth.oauth_profile.failed", error);
+      emitOperationError(logger, "auth.oauth_profile.failed", error, {
+        provider: "google_oauth",
+        operation: "profile_provision",
+        errorCategory: "provider",
+        result: "failed",
+        durationMs: operationDuration(startedAt, performance.now.bind(performance)),
+      });
       done(null, false);
     }
   }));

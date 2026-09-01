@@ -37,6 +37,7 @@ export const registerTypingHandlers = ({
       socket,
       event: Events.USER_TYPING,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.typingActor],
       keyParts: [userId],
     }))) return;
@@ -46,6 +47,7 @@ export const registerTypingHandlers = ({
         socket,
         event: Events.USER_TYPING,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.typingChat],
         keyParts: [userId, chatId],
       }))) return;
@@ -61,7 +63,10 @@ export const registerTypingHandlers = ({
 
       realtime.broadcastTypingToOthers(chatId, payload);
     } catch (error) {
-      logSafeError(logger, "socket.typing.failed", error);
+      logSafeError(logger, "socket.typing.failed", error, {
+        operation: "typing",
+        result: "failed",
+      });
     }
   });
 };

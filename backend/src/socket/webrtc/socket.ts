@@ -26,6 +26,8 @@ import { logSafeError } from "../../observability/safe-error.js";
 import { CustomError } from "../../utils/error.utils.js";
 import type { SocketConnectionDirectory } from "../connection-directory.js";
 import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
+import type { SendPushNotificationInput } from "../../modules/notifications/application/send-push-notification.js";
+import { sendPushNotification } from "../../modules/notifications/push-notification.service.js";
 import {
   enforceSocketEventLimits,
   parseSocketPayload,
@@ -36,6 +38,7 @@ type WebRtcHandlerDependencies = {
   directory: SocketConnectionDirectory;
   limiter: SocketEventRateLimitPort;
   logger?: LoggerPort;
+  sendNotification?: (input: SendPushNotificationInput) => void;
 };
 
 const registerWebRtcHandlers = (
@@ -47,9 +50,15 @@ const registerWebRtcHandlers = (
     directory,
     limiter,
     logger = noopLogger.forComponent("socket"),
+    sendNotification = sendPushNotification,
   } = dependencies;
   const userId = socket.user.id;
-  const calls = createSocketCallSignalingService({ io, socket, directory });
+  const calls = createSocketCallSignalingService({
+    io,
+    socket,
+    directory,
+    sendNotification,
+  });
 
   socket.on(Events.CALL_USER, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.CALL_USER, callUserEventSchema, rawPayload);
@@ -59,6 +68,7 @@ const registerWebRtcHandlers = (
       socket,
       event: Events.CALL_USER,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
     }))) return;
@@ -68,6 +78,7 @@ const registerWebRtcHandlers = (
         socket,
         event: Events.CALL_USER,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.callInitiation],
         keyParts: [userId, callee.id],
       }))) return;
@@ -85,7 +96,10 @@ const registerWebRtcHandlers = (
         offer,
       });
     } catch (error) {
-      logSafeError(logger, "socket.call_user.failed", error);
+      logSafeError(logger, "socket.call_user.failed", error, {
+        operation: "call_user",
+        result: "failed",
+      });
     }
   });
 
@@ -97,6 +111,7 @@ const registerWebRtcHandlers = (
       socket,
       event: Events.CALL_ACCEPTED,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
     }))) return;
@@ -111,6 +126,7 @@ const registerWebRtcHandlers = (
         socket,
         event: Events.CALL_ACCEPTED,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.callState],
         keyParts: [userId, call.id],
       }))) return;
@@ -120,7 +136,10 @@ const registerWebRtcHandlers = (
         answer,
       });
     } catch (error) {
-      logSafeError(logger, "socket.call_acceptance.failed", error);
+      logSafeError(logger, "socket.call_acceptance.failed", error, {
+        operation: "call_accept",
+        result: "failed",
+      });
     }
   });
 
@@ -132,6 +151,7 @@ const registerWebRtcHandlers = (
       socket,
       event: Events.CALL_REJECTED,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
     }))) return;
@@ -142,12 +162,16 @@ const registerWebRtcHandlers = (
         socket,
         event: Events.CALL_REJECTED,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.callState],
         keyParts: [userId, call.id],
       }))) return;
       await calls.rejectCall({ call });
     } catch (error) {
-      logSafeError(logger, "socket.call_rejection.failed", error);
+      logSafeError(logger, "socket.call_rejection.failed", error, {
+        operation: "call_reject",
+        result: "failed",
+      });
     }
   });
 
@@ -159,6 +183,7 @@ const registerWebRtcHandlers = (
       socket,
       event: Events.CALL_END,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
     }))) return;
@@ -170,12 +195,16 @@ const registerWebRtcHandlers = (
         socket,
         event: Events.CALL_END,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.callState],
         keyParts: [userId, call.id],
       }))) return;
       await calls.endCall({ call });
     } catch (error) {
-      logSafeError(logger, "socket.call_end.failed", error);
+      logSafeError(logger, "socket.call_end.failed", error, {
+        operation: "call_end",
+        result: "failed",
+      });
     }
   });
 
@@ -187,6 +216,7 @@ const registerWebRtcHandlers = (
       socket,
       event: Events.CALLEE_BUSY,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.callActor],
       keyParts: [userId],
     }))) return;
@@ -197,12 +227,16 @@ const registerWebRtcHandlers = (
         socket,
         event: Events.CALLEE_BUSY,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.callState],
         keyParts: [userId, call.id],
       }))) return;
       await calls.markCalleeBusy({ call });
     } catch (error) {
-      logSafeError(logger, "socket.callee_busy.failed", error);
+      logSafeError(logger, "socket.callee_busy.failed", error, {
+        operation: "callee_busy",
+        result: "failed",
+      });
     }
   });
 
@@ -214,6 +248,7 @@ const registerWebRtcHandlers = (
       socket,
       event: Events.ICE_CANDIDATE,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.iceActor],
       keyParts: [userId],
     }))) return;
@@ -225,6 +260,7 @@ const registerWebRtcHandlers = (
         socket,
         event: Events.ICE_CANDIDATE,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.iceCall],
         keyParts: [userId, call.id],
       }))) return;
@@ -235,7 +271,10 @@ const registerWebRtcHandlers = (
         candidate,
       });
     } catch (error) {
-      logSafeError(logger, "socket.ice_candidate.failed", error);
+      logSafeError(logger, "socket.ice_candidate.failed", error, {
+        operation: "ice_candidate",
+        result: "failed",
+      });
     }
   });
 
@@ -247,6 +286,7 @@ const registerWebRtcHandlers = (
       socket,
       event: Events.NEGO_NEEDED,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.negotiationActor],
       keyParts: [userId],
     }))) return;
@@ -258,6 +298,7 @@ const registerWebRtcHandlers = (
         socket,
         event: Events.NEGO_NEEDED,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.negotiationCall],
         keyParts: [userId, call.id],
       }))) return;
@@ -268,7 +309,10 @@ const registerWebRtcHandlers = (
         offer,
       });
     } catch (error) {
-      logSafeError(logger, "socket.negotiation_needed.failed", error);
+      logSafeError(logger, "socket.negotiation_needed.failed", error, {
+        operation: "negotiation_needed",
+        result: "failed",
+      });
     }
   });
 
@@ -280,6 +324,7 @@ const registerWebRtcHandlers = (
       socket,
       event: Events.NEGO_DONE,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.negotiationActor],
       keyParts: [userId],
     }))) return;
@@ -291,6 +336,7 @@ const registerWebRtcHandlers = (
         socket,
         event: Events.NEGO_DONE,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.negotiationCall],
         keyParts: [userId, call.id],
       }))) return;
@@ -301,7 +347,10 @@ const registerWebRtcHandlers = (
         answer,
       });
     } catch (error) {
-      logSafeError(logger, "socket.negotiation_done.failed", error);
+      logSafeError(logger, "socket.negotiation_done.failed", error, {
+        operation: "negotiation_done",
+        result: "failed",
+      });
     }
   });
 };

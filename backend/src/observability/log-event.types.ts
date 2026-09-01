@@ -52,6 +52,7 @@ export const MIGRATED_LOG_EVENT_NAMES = [
   "presence.online_update.failed",
   "provider.email_initialization.failed",
   "provider.firebase_credentials.failed",
+  "provider.push_delivery.failed",
   "redis.connection_maintenance.recovered",
   "redis.connection_maintenance.unavailable",
   "redis.connection_state_force_close.failed",
@@ -68,6 +69,7 @@ export const MIGRATED_LOG_EVENT_NAMES = [
   "socket.call_user.failed",
   "socket.callee_busy.failed",
   "socket.connection_registration.failed",
+  "socket.connection.rejected",
   "socket.connection_removal.failed",
   "socket.encrypted_audio_upload.failed",
   "socket.ice_candidate.failed",
@@ -85,6 +87,7 @@ export const MIGRATED_LOG_EVENT_NAMES = [
   "socket.online_users_lookup.failed",
   "socket.poll_vote.failed",
   "socket.poll_vote_removal.failed",
+  "socket.rate_limit.unavailable",
   "socket.reaction_addition.failed",
   "socket.reaction_deletion.failed",
   "socket.room_initialization.failed",
@@ -123,6 +126,47 @@ export type LogOperationResult =
   | "success"
   | "succeeded"
   | "unavailable";
+
+export const LOG_OPERATION_NAMES = [
+  "connection_registration",
+  "message_send",
+  "message_seen",
+  "message_edit",
+  "message_delete",
+  "typing",
+  "reaction_add",
+  "reaction_delete",
+  "poll_vote",
+  "poll_vote_remove",
+  "message_pin",
+  "message_unpin",
+  "call_user",
+  "call_accept",
+  "call_reject",
+  "call_end",
+  "callee_busy",
+  "ice_candidate",
+  "negotiation_needed",
+  "negotiation_done",
+  "rate_limit_check",
+  "push_send",
+  "email_send",
+  "profile_provision",
+] as const;
+
+export type LogOperationName = typeof LOG_OPERATION_NAMES[number];
+
+export const LOG_EXTERNAL_PROVIDERS = [
+  "firebase",
+  "email",
+  "cloudinary",
+  "google_oauth",
+] as const;
+
+export type LogExternalProvider = typeof LOG_EXTERNAL_PROVIDERS[number];
+
+export const LOG_REJECTION_REASONS = ["connection_cap"] as const;
+export type LogRejectionReason = typeof LOG_REJECTION_REASONS[number];
 
 export type LogHttpMethod =
   | "DELETE"
@@ -177,7 +221,7 @@ export const LOG_SHUTDOWN_REASONS = [
 export type LogShutdownReason = typeof LOG_SHUTDOWN_REASONS[number];
 
 export interface LogEventFields {
-  readonly operation?: string;
+  readonly operation?: LogOperationName;
   readonly result?: LogOperationResult;
   readonly durationMs?: number;
   readonly responseSizeBytes?: number;
@@ -188,6 +232,8 @@ export interface LogEventFields {
   readonly role?: LogRedisRole;
   readonly state?: LogRedisState;
   readonly reason?: LogShutdownReason;
+  readonly provider?: LogExternalProvider;
+  readonly rejectionReason?: LogRejectionReason;
   readonly errorCategory?: LogErrorCategory;
   readonly errorType?: string;
   readonly applicationCode?: string;
@@ -250,6 +296,9 @@ const LOG_LIFECYCLE_STAGE_VALUES = new Set<LogLifecycleStage>(LOG_LIFECYCLE_STAG
 const LOG_REDIS_ROLE_VALUES = new Set<LogRedisRole>(LOG_REDIS_ROLES);
 const LOG_REDIS_STATE_VALUES = new Set<LogRedisState>(LOG_REDIS_STATES);
 const LOG_SHUTDOWN_REASON_VALUES = new Set<LogShutdownReason>(LOG_SHUTDOWN_REASONS);
+const LOG_OPERATION_NAME_VALUES = new Set<LogOperationName>(LOG_OPERATION_NAMES);
+const LOG_EXTERNAL_PROVIDER_VALUES = new Set<LogExternalProvider>(LOG_EXTERNAL_PROVIDERS);
+const LOG_REJECTION_REASON_VALUES = new Set<LogRejectionReason>(LOG_REJECTION_REASONS);
 
 const isSafeToken = (value: unknown, maximumLength = 128): value is string =>
   typeof value === "string"
@@ -271,7 +320,9 @@ export const selectAllowedLogFields = (
   if (!fields) return {};
 
   const selected: LogEventFields = {
-    ...(isSafeToken(fields.operation) ? { operation: fields.operation } : {}),
+    ...(LOG_OPERATION_NAME_VALUES.has(fields.operation as LogOperationName)
+      ? { operation: fields.operation }
+      : {}),
     ...(LOG_OPERATION_RESULTS.has(fields.result as LogOperationResult)
       ? { result: fields.result }
       : {}),
@@ -309,6 +360,12 @@ export const selectAllowedLogFields = (
       : {}),
     ...(LOG_SHUTDOWN_REASON_VALUES.has(fields.reason as LogShutdownReason)
       ? { reason: fields.reason }
+      : {}),
+    ...(LOG_EXTERNAL_PROVIDER_VALUES.has(fields.provider as LogExternalProvider)
+      ? { provider: fields.provider }
+      : {}),
+    ...(LOG_REJECTION_REASON_VALUES.has(fields.rejectionReason as LogRejectionReason)
+      ? { rejectionReason: fields.rejectionReason }
       : {}),
     ...(LOG_ERROR_CATEGORIES.has(fields.errorCategory as LogErrorCategory)
       ? { errorCategory: fields.errorCategory }

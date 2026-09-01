@@ -20,6 +20,8 @@ import {
   createSocketAllowRequest,
 } from "../security/origin-policy.js";
 import { prismaSocketPresencePersistence } from "../socket/prisma-socket-presence.persistence.js";
+import { createObservedPushNotificationSender } from "../modules/notifications/push-notification.service.js";
+import { selectOperationLoggerComponent } from "../observability/operation-observer.js";
 import registerSocketHandlers, {
   type SocketHandlerLifecycle,
 } from "../socket/socket.js";
@@ -56,6 +58,9 @@ export const createBackendServer = ({
   const httpLogger = logger.forComponent("http");
   const socketLogger = logger.forComponent("socket");
   const presenceLogger = logger.forComponent("presence");
+  const sendNotification = createObservedPushNotificationSender(
+    selectOperationLoggerComponent(logger, "provider"),
+  );
   const originPolicy = createOriginPolicy({
     environment: config.app.environment,
     frontendOrigin: config.app.clientUrl,
@@ -110,6 +115,7 @@ export const createBackendServer = ({
     limiter: connectionState.eventLimiter,
     presence,
     logger: socketLogger,
+    sendNotification,
   });
 
   return {

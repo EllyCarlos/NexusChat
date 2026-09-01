@@ -1,11 +1,14 @@
 import type { Socket } from "socket.io";
 import type { z } from "zod";
 import { Events } from "../enums/event/event.enum.js";
+import type { LogOperationName } from "../observability/log-event.types.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { emitOperationError } from "../observability/operation-observer.js";
 import {
   BoundedInMemoryRateLimiter,
   type RateLimitPolicy,
 } from "../security/rate-limit.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
 import type { SocketEventRateLimitPort } from "./socket-event-rate-limit.port.js";
 
 const SECOND = 1_000;
@@ -33,6 +36,28 @@ export const SOCKET_EVENT_LIMITS = {
   negotiationActor: { namespace: "socket-negotiation-actor", limit: 60, windowMs: 30 * SECOND },
   negotiationCall: { namespace: "socket-negotiation-call", limit: 10, windowMs: 30 * SECOND },
 } satisfies Record<string, RateLimitPolicy>;
+
+export const SOCKET_OPERATION_BY_EVENT: Readonly<Partial<Record<Events, LogOperationName>>> = Object.freeze({
+  [Events.MESSAGE]: "message_send",
+  [Events.MESSAGE_SEEN]: "message_seen",
+  [Events.MESSAGE_EDIT]: "message_edit",
+  [Events.MESSAGE_DELETE]: "message_delete",
+  [Events.USER_TYPING]: "typing",
+  [Events.NEW_REACTION]: "reaction_add",
+  [Events.DELETE_REACTION]: "reaction_delete",
+  [Events.VOTE_IN]: "poll_vote",
+  [Events.VOTE_OUT]: "poll_vote_remove",
+  [Events.PIN_MESSAGE]: "message_pin",
+  [Events.UNPIN_MESSAGE]: "message_unpin",
+  [Events.CALL_USER]: "call_user",
+  [Events.CALL_ACCEPTED]: "call_accept",
+  [Events.CALL_REJECTED]: "call_reject",
+  [Events.CALL_END]: "call_end",
+  [Events.CALLEE_BUSY]: "callee_busy",
+  [Events.ICE_CANDIDATE]: "ice_candidate",
+  [Events.NEGO_NEEDED]: "negotiation_needed",
+  [Events.NEGO_DONE]: "negotiation_done",
+});
 
 export type SocketSecurityErrorCategory =
   | "INVALID_PAYLOAD"
@@ -94,17 +119,22 @@ export const enforceSocketEventLimits = async ({
   limiter,
   policies,
   keyParts,
+  logger = noopLogger.forComponent("socket"),
 }: {
   socket: Socket;
   event: string;
   limiter: SocketEventRateLimitPort;
   policies: readonly RateLimitPolicy[];
   keyParts: readonly string[];
+  logger?: LoggerPort;
 }): Promise<boolean> => {
   try {
     if (await limiter.consumeAll(policies, keyParts)) return true;
   } catch (error) {
-    logServerError("Socket rate-limit evaluation failed.", error);
+    emitOperationError(logger, "socket.rate_limit.unavailable", error, {
+      operation: SOCKET_OPERATION_BY_EVENT[event as Events] ?? "rate_limit_check",
+      result: "unavailable",
+    });
   }
 
   emitSocketSecurityError(socket, "RATE_LIMITED", event);

@@ -47,6 +47,7 @@ export const registerPinHandlers = ({
       socket,
       event: Events.PIN_MESSAGE,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -56,6 +57,7 @@ export const registerPinHandlers = ({
         socket,
         event: Events.PIN_MESSAGE,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.pinMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -175,7 +177,10 @@ export const registerPinHandlers = ({
 
       realtime.emitPinMessage(chatId, pinnedMessage);
     } catch (error) {
-      logSafeError(logger, "socket.message_pin.failed", error);
+      logSafeError(logger, "socket.message_pin.failed", error, {
+        operation: "message_pin",
+        result: "failed",
+      });
     }
   });
 
@@ -187,6 +192,7 @@ export const registerPinHandlers = ({
       socket,
       event: Events.UNPIN_MESSAGE,
       limiter,
+      logger,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -196,6 +202,7 @@ export const registerPinHandlers = ({
         socket,
         event: Events.UNPIN_MESSAGE,
         limiter,
+        logger,
         policies: [SOCKET_EVENT_LIMITS.pinMessage],
         keyParts: [userId, authorizedPin.messageId],
       }))) return;
@@ -223,7 +230,10 @@ export const registerPinHandlers = ({
       };
       realtime.emitUnpinMessage(deletedPinnedMessage.chatId, payload);
     } catch (error) {
-      logSafeError(logger, "socket.message_unpin.failed", error);
+      logSafeError(logger, "socket.message_unpin.failed", error, {
+        operation: "message_unpin",
+        result: "failed",
+      });
     }
   });
 };

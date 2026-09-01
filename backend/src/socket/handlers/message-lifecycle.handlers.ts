@@ -44,20 +44,22 @@ export const registerMessageLifecycleHandlers = ({
         if (!parsedPayload) return;
         const { chatId } = parsedPayload;
         if (!(await enforceSocketEventLimits({
-            socket,
-            event: Events.MESSAGE_SEEN,
-            limiter,
-            policies: [SOCKET_EVENT_LIMITS.seenActor],
+          socket,
+          event: Events.MESSAGE_SEEN,
+          limiter,
+          logger,
+          policies: [SOCKET_EVENT_LIMITS.seenActor],
             keyParts: [userId],
         }))) return;
 
         try {
             await assertChatMember(userId, chatId);
             if (!(await enforceSocketEventLimits({
-                socket,
-                event: Events.MESSAGE_SEEN,
-                limiter,
-                policies: [SOCKET_EVENT_LIMITS.seenChat],
+              socket,
+              event: Events.MESSAGE_SEEN,
+              limiter,
+              logger,
+              policies: [SOCKET_EVENT_LIMITS.seenChat],
                 keyParts: [userId, chatId],
             }))) return;
 
@@ -95,7 +97,10 @@ export const registerMessageLifecycleHandlers = ({
             realtime.emitMessageSeen(chatId, payload)
 
         } catch (error) {
-            logSafeError(logger, "socket.message_seen.failed", error)
+            logSafeError(logger, "socket.message_seen.failed", error, {
+                operation: "message_seen",
+                result: "failed",
+            })
         }
     })
 
@@ -104,19 +109,21 @@ export const registerMessageLifecycleHandlers = ({
         if (!parsedPayload) return;
         const { chatId, messageId, updatedTextContent } = parsedPayload;
         if (!(await enforceSocketEventLimits({
-            socket,
-            event: Events.MESSAGE_EDIT,
-            limiter,
-            policies: [SOCKET_EVENT_LIMITS.mutationActor],
+          socket,
+          event: Events.MESSAGE_EDIT,
+          limiter,
+          logger,
+          policies: [SOCKET_EVENT_LIMITS.mutationActor],
             keyParts: [userId],
         }))) return;
         try {
             const authorizedMessage = await assertMessageOwner(userId, chatId, messageId);
             if (!(await enforceSocketEventLimits({
-                socket,
-                event: Events.MESSAGE_EDIT,
-                limiter,
-                policies: [SOCKET_EVENT_LIMITS.editMessage],
+              socket,
+              event: Events.MESSAGE_EDIT,
+              limiter,
+              logger,
+              policies: [SOCKET_EVENT_LIMITS.editMessage],
                 keyParts: [userId, authorizedMessage.id],
             }))) return;
 
@@ -138,7 +145,10 @@ export const registerMessageLifecycleHandlers = ({
 
             realtime.emitMessageEdit(chatId, payload)
         } catch (error) {
-            logSafeError(logger, "socket.message_edit.failed", error);
+            logSafeError(logger, "socket.message_edit.failed", error, {
+                operation: "message_edit",
+                result: "failed",
+            });
         }
     })
 
@@ -147,20 +157,22 @@ export const registerMessageLifecycleHandlers = ({
         if (!parsedPayload) return;
         const { chatId, messageId } = parsedPayload;
         if (!(await enforceSocketEventLimits({
-            socket,
-            event: Events.MESSAGE_DELETE,
-            limiter,
-            policies: [SOCKET_EVENT_LIMITS.mutationActor],
+          socket,
+          event: Events.MESSAGE_DELETE,
+          limiter,
+          logger,
+          policies: [SOCKET_EVENT_LIMITS.mutationActor],
             keyParts: [userId],
         }))) return;
 
         try {
             const messageToBeDeleted = await assertMessageOwner(userId, chatId, messageId);
             if (!(await enforceSocketEventLimits({
-                socket,
-                event: Events.MESSAGE_DELETE,
-                limiter,
-                policies: [SOCKET_EVENT_LIMITS.deleteMessage],
+              socket,
+              event: Events.MESSAGE_DELETE,
+              limiter,
+              logger,
+              policies: [SOCKET_EVENT_LIMITS.deleteMessage],
                 keyParts: [userId, messageToBeDeleted.id],
             }))) return;
 
@@ -214,7 +226,10 @@ export const registerMessageLifecycleHandlers = ({
                 realtime.emitMessageDelete(chatId, payload)
             }
         } catch (error) {
-            logSafeError(logger, "socket.message_delete.failed", error);
+            logSafeError(logger, "socket.message_delete.failed", error, {
+                operation: "message_delete",
+                result: "failed",
+            });
         }
     })
 };

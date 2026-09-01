@@ -149,6 +149,8 @@ const expectCustomErrorLog = (
   const [loggedContext, fields] = serverErrorLog.mock.calls[0]!;
   expect(loggedContext).toBe(context);
   expect(fields).toEqual({
+    operation: context === "socket.call_end.failed" ? "call_end" : "callee_busy",
+    result: "failed",
     errorType: "CustomError",
     applicationCode: "LEGACY_CUSTOM_ERROR",
   });
@@ -350,7 +352,9 @@ describe("CALL_END characterization", () => {
     expect(harness.ioTo).not.toHaveBeenCalled();
     expect(harness.socketTo).not.toHaveBeenCalled();
     expect(harness.socketEmit).not.toHaveBeenCalled();
-    expect(serverErrorLog).toHaveBeenCalledWith("socket.call_end.failed", { errorType: "Error" });
+    expect(serverErrorLog).toHaveBeenCalledWith("socket.call_end.failed", {
+      operation: "call_end", result: "failed", errorType: "Error",
+    });
   });
 
   it("looks up both participants before delivery, so a callee lookup failure cuts off caller delivery", async () => {
@@ -372,7 +376,9 @@ describe("CALL_END characterization", () => {
     ]);
     expect(harness.ioTo).not.toHaveBeenCalled();
     expect(harness.ioRelayEmit).not.toHaveBeenCalled();
-    expect(serverErrorLog).toHaveBeenCalledWith("socket.call_end.failed", { errorType: "Error" });
+    expect(serverErrorLog).toHaveBeenCalledWith("socket.call_end.failed", {
+      operation: "call_end", result: "failed", errorType: "Error",
+    });
   });
 
   it("keeps the DB transition and cuts off callee delivery when caller delivery throws", async () => {
@@ -396,7 +402,9 @@ describe("CALL_END characterization", () => {
     expect(getLatestSocket).toHaveBeenCalledTimes(2);
     expect(harness.ioTo.mock.calls).toEqual([["caller-socket"]]);
     expect(ioRelayEmit.mock.calls).toEqual([[Events.CALL_END]]);
-    expect(serverErrorLog).toHaveBeenCalledWith("socket.call_end.failed", { errorType: "Error" });
+    expect(serverErrorLog).toHaveBeenCalledWith("socket.call_end.failed", {
+      operation: "call_end", result: "failed", errorType: "Error",
+    });
   });
 
   it("leaves caller delivery committed when the later callee delivery throws", async () => {
@@ -427,7 +435,9 @@ describe("CALL_END characterization", () => {
       [Events.CALL_END],
       [Events.CALL_END],
     ]);
-    expect(serverErrorLog).toHaveBeenCalledWith("socket.call_end.failed", { errorType: "Error" });
+    expect(serverErrorLog).toHaveBeenCalledWith("socket.call_end.failed", {
+      operation: "call_end", result: "failed", errorType: "Error",
+    });
   });
 });
 
@@ -533,7 +543,9 @@ describe("CALLEE_BUSY characterization", () => {
     expect(harness.getLatestSocket).not.toHaveBeenCalled();
     expect(harness.socketTo).not.toHaveBeenCalled();
     expect(harness.socketEmit).not.toHaveBeenCalled();
-    expect(serverErrorLog).toHaveBeenCalledWith("socket.callee_busy.failed", { errorType: "Error" });
+    expect(serverErrorLog).toHaveBeenCalledWith("socket.callee_busy.failed", {
+      operation: "callee_busy", result: "failed", errorType: "Error",
+    });
   });
 
   it("keeps the MISSED transition when caller lookup fails and performs no delivery", async () => {
@@ -551,7 +563,9 @@ describe("CALLEE_BUSY characterization", () => {
     expect(harness.socketTo).not.toHaveBeenCalled();
     expect(harness.socketRelayEmit).not.toHaveBeenCalled();
     expect(harness.socketEmit).not.toHaveBeenCalled();
-    expect(serverErrorLog).toHaveBeenCalledWith("socket.callee_busy.failed", { errorType: "Error" });
+    expect(serverErrorLog).toHaveBeenCalledWith("socket.callee_busy.failed", {
+      operation: "callee_busy", result: "failed", errorType: "Error",
+    });
   });
 
   it("keeps the MISSED transition and cuts off peer CALL_END when CALLEE_BUSY delivery throws", async () => {
@@ -572,7 +586,9 @@ describe("CALLEE_BUSY characterization", () => {
     expect(harness.socketTo.mock.calls).toEqual([["caller-socket"]]);
     expect(socketRelayEmit.mock.calls).toEqual([[Events.CALLEE_BUSY]]);
     expect(harness.socketEmit).not.toHaveBeenCalled();
-    expect(serverErrorLog).toHaveBeenCalledWith("socket.callee_busy.failed", { errorType: "Error" });
+    expect(serverErrorLog).toHaveBeenCalledWith("socket.callee_busy.failed", {
+      operation: "callee_busy", result: "failed", errorType: "Error",
+    });
   });
 
   it("leaves CALLEE_BUSY delivered when the later peer CALL_END delivery throws", async () => {
@@ -601,6 +617,8 @@ describe("CALLEE_BUSY characterization", () => {
       [Events.CALL_END],
     ]);
     expect(harness.socketEmit).not.toHaveBeenCalled();
-    expect(serverErrorLog).toHaveBeenCalledWith("socket.callee_busy.failed", { errorType: "Error" });
+    expect(serverErrorLog).toHaveBeenCalledWith("socket.callee_busy.failed", {
+      operation: "callee_busy", result: "failed", errorType: "Error",
+    });
   });
 });

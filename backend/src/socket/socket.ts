@@ -3,7 +3,10 @@ import { Events } from "../enums/event/event.enum.js";
 import { prisma } from "../lib/prisma.lib.js";
 import type { LoggerPort } from "../observability/logger.port.js";
 import { noopLogger } from "../observability/noop-logger.js";
+import { emitOperationLog } from "../observability/operation-observer.js";
 import { logSafeError } from "../observability/safe-error.js";
+import { sendPushNotification } from "../modules/notifications/push-notification.service.js";
+import type { SendPushNotificationInput } from "../modules/notifications/application/send-push-notification.js";
 import type {
   SocketConnectionDirectory,
   SocketPresenceTransition,
@@ -48,6 +51,7 @@ type SocketHandlerDependencies = {
   presence?: SocketPresenceCoordinator;
   operationTracker?: SocketOperationTracker;
   logger?: LoggerPort;
+  sendNotification?: (input: SendPushNotificationInput) => void;
 };
 
 export interface SocketHandlerLifecycle {
@@ -69,6 +73,7 @@ const registerSocketHandlers = (
   const limiter = dependencies.limiter ?? createLocalSocketEventRateLimitProvider();
   const presenceWriteQueue = dependencies.presenceWriteQueue ?? socketPresenceWriteQueue;
   const logger = dependencies.logger ?? noopLogger.forComponent("socket");
+  const sendNotification = dependencies.sendNotification ?? sendPushNotification;
   const presence = dependencies.presence ?? createLocalSocketPresenceCoordinator({
     directory,
     publisher: createSocketPresencePublisher(io),
@@ -135,12 +140,20 @@ const registerSocketHandlers = (
     try {
       registration = await directory.add(userId, socket.id);
     } catch (error) {
-      logSafeError(logger, "socket.connection_registration.failed", error);
+      logSafeError(logger, "socket.connection_registration.failed", error, {
+        operation: "connection_registration",
+        result: "failed",
+      });
       socket.disconnect(true);
       return;
     }
 
     if (!registration.accepted) {
+      emitOperationLog(logger, "debug", "socket.connection.rejected", {
+        operation: "connection_registration",
+        result: "rejected",
+        rejectionReason: "connection_cap",
+      });
       emitSocketSecurityError(socket, "CONNECTION_LIMIT", "connection");
       socket.disconnect(true);
       return;
@@ -193,13 +206,25 @@ const registerSocketHandlers = (
 
     const realtime = createSocketChatEventRealtimeAdapter({ io, socket });
 
-    registerMessageHandlers({ socket, userId, limiter, realtime, logger });
+    registerMessageHandlers({
+      socket,
+      userId,
+      limiter,
+      realtime,
+      logger,
+      sendNotification,
+    });
     registerMessageLifecycleHandlers({ socket, userId, limiter, realtime, logger });
     registerReactionHandlers({ socket, userId, limiter, realtime, logger });
     registerTypingHandlers({ socket, userId, limiter, realtime, logger });
     registerPollHandlers({ socket, userId, limiter, realtime, logger });
     registerPinHandlers({ socket, userId, limiter, realtime, logger });
-    registerWebRtcHandlers(socket, io, { directory, limiter, logger });
+    registerWebRtcHandlers(socket, io, {
+      directory,
+      limiter,
+      logger,
+      sendNotification,
+    });
   })()));
 
   return Object.freeze({

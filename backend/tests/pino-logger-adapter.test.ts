@@ -70,7 +70,7 @@ describe("Pino LoggerPort adapter", () => {
     });
 
     logger.forComponent("redis").info("redis.runtime.ready", {
-      operation: "connect",
+      operation: "rate_limit_check",
       result: "available",
     });
 
@@ -80,7 +80,7 @@ describe("Pino LoggerPort adapter", () => {
       runtimeMode: "local",
       component: "redis",
       event: "redis.runtime.ready",
-      operation: "connect",
+      operation: "rate_limit_check",
       result: "available",
     });
   });
@@ -95,7 +95,8 @@ describe("Pino LoggerPort adapter", () => {
     });
     const sensitive = "private-provider-token";
     const unsafeFields = {
-      operation: "send",
+      operation: "push_send",
+      provider: "firebase",
       result: "failed",
       errorType: "Error",
       error: new Error(sensitive),
@@ -110,7 +111,8 @@ describe("Pino LoggerPort adapter", () => {
 
     const output = capture.output.join("");
     expect(capture.records()[0]).toMatchObject({
-      operation: "send",
+      operation: "push_send",
+      provider: "firebase",
       result: "failed",
       errorType: "Error",
     });

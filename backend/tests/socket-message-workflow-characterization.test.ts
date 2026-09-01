@@ -388,10 +388,18 @@ describe("Socket MESSAGE pre-extraction security and rate-limit characterization
     });
 
     expect(consumeAll).toHaveBeenCalledOnce();
-    expect(logServerError).toHaveBeenCalledWith(
-      "Socket rate-limit evaluation failed.",
-      providerFailure,
-    );
+    expect(logServerError).not.toHaveBeenCalled();
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: "socket.rate_limit.unavailable",
+      fields: {
+        operation: "message_send",
+        result: "unavailable",
+        errorType: "Error",
+      },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(providerFailure.message);
     expect(harness.socket.emit).toHaveBeenCalledWith(Events.SECURITY_ERROR, {
       category: "RATE_LIMITED",
       event: Events.MESSAGE,
@@ -418,7 +426,11 @@ describe("Socket MESSAGE pre-extraction security and rate-limit characterization
     expect(prisma.message.create).not.toHaveBeenCalled();
     expect(harness.logger.events.at(-1)).toMatchObject({
       event: "socket.message_send.failed",
-      fields: { errorType: "Error" },
+      fields: {
+        operation: "message_send",
+        result: "failed",
+        errorType: "Error",
+      },
     });
     expect(harness.socket.emit).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();

@@ -10,7 +10,12 @@ vi.mock("../src/config/firebase.config.js", () => ({
 }));
 
 import { notificationTitles } from "../src/constants/notification-title.contant.js";
-import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
+import type { LoggerPort } from "../src/observability/logger.port.js";
+import {
+  createObservedPushNotificationSender,
+  sendPushNotification,
+} from "../src/modules/notifications/push-notification.service.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 describe("FCM notification payload", () => {
   beforeEach(() => {
@@ -166,5 +171,69 @@ describe("FCM notification payload", () => {
     expect(loggedOutput).not.toContain(sensitiveToken);
     expect(loggedOutput).not.toContain(sensitiveBody);
     expect(loggedOutput).not.toContain(providerErrorDetail);
+  });
+
+  it("emits one bounded failure event for observed Firebase delivery without awaiting it", async () => {
+    const logger = createCapturingLogger("provider");
+    const sensitiveToken = "private-observed-fcm-token";
+    const sensitiveBody = "private observed notification body";
+    mocks.send.mockRejectedValueOnce(
+      new Error(`Firebase rejected ${sensitiveToken}: ${sensitiveBody}`),
+    );
+    const clock = vi.fn()
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(107.5);
+    const sendObservedNotification = createObservedPushNotificationSender(logger, clock);
+
+    const result = sendObservedNotification({
+      recipientToken: sensitiveToken,
+      title: "Notification",
+      body: sensitiveBody,
+    });
+
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(logger.events).toHaveLength(1));
+    expect(logger.events).toEqual([{
+      level: "error",
+      component: "provider",
+      event: "provider.push_delivery.failed",
+      fields: {
+        provider: "firebase",
+        operation: "push_send",
+        errorCategory: "provider",
+        result: "failed",
+        durationMs: 7.5,
+        errorType: "Error",
+      },
+    }]);
+    expect(JSON.stringify(logger.events)).not.toContain(sensitiveToken);
+    expect(JSON.stringify(logger.events)).not.toContain(sensitiveBody);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Firebase failure fire-and-forget when the observed logger throws", async () => {
+    const throwFromLogger = () => {
+      throw new Error("logger unavailable");
+    };
+    const throwingLogger: LoggerPort = {
+      component: "provider",
+      forComponent: () => throwingLogger,
+      debug: throwFromLogger,
+      info: throwFromLogger,
+      warn: throwFromLogger,
+      error: throwFromLogger,
+    };
+    mocks.send.mockRejectedValueOnce(new Error("private Firebase failure"));
+    const sendObservedNotification = createObservedPushNotificationSender(
+      throwingLogger,
+      vi.fn().mockReturnValueOnce(10).mockReturnValueOnce(11),
+    );
+
+    expect(sendObservedNotification({
+      recipientToken: "opaque-token",
+      body: "opaque body",
+    })).toBeUndefined();
+
+    await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledOnce());
   });
 });

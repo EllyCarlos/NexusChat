@@ -1,11 +1,15 @@
 
+import { performance } from "node:perf_hooks";
 import { config } from "../config/env.config.js";
 import { updateUserAvatar } from "../modules/users/profile.service.js";
 import { sendMail } from "../utils/email.util.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { signPasswordResetToken } from "../modules/auth/token/session-token.service.js";
 import { getRequestLogger } from "../observability/request-logger.js";
-import { logSafeError } from "../observability/safe-error.js";
+import {
+    emitOperationError,
+    operationDuration,
+} from "../observability/operation-observer.js";
 import { cleanupTemporaryFiles } from "../utils/upload-lifecycle.util.js";
 
 const getBaseUrl = () => {
@@ -48,6 +52,7 @@ export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {
         return next(new CustomError(`Invalid email type. Supported types: ${validEmailTypes.join(', ')}`, 400));
     }
 
+    const deliveryStartedAt = performance.now();
     try {
         switch (emailType) {
             case 'welcome':
@@ -104,10 +109,20 @@ export const testEmailHandler = asyncErrorHandler(async (req, res, next) => {
         });
 
     } catch (error) {
-        logSafeError(
+        emitOperationError(
             getRequestLogger(req, "notification"),
             "notification.email_send.failed",
             error,
+            {
+                provider: "email",
+                operation: "email_send",
+                errorCategory: "provider",
+                result: "failed",
+                durationMs: operationDuration(
+                    deliveryStartedAt,
+                    performance.now.bind(performance),
+                ),
+            },
         );
         return next(new CustomError(`Failed to send ${emailType} email`, 500));
     }

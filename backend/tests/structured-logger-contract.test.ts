@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { LogEventFields } from "../src/observability/log-event.types.js";
+import {
+  LOG_OPERATION_NAMES,
+  MIGRATED_LOG_EVENT_NAMES,
+  type LogEventFields,
+} from "../src/observability/log-event.types.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
 
 describe("provider-neutral structured logger contract", () => {
@@ -38,7 +42,7 @@ describe("provider-neutral structured logger contract", () => {
   it("retains only explicitly allowed structured fields", () => {
     const logger = createCapturingLogger("http");
     logger.info("http.request.completed", {
-      operation: "request.complete",
+      operation: "message_send",
       result: "succeeded",
       durationMs: 12.5,
       statusCode: 204,
@@ -49,10 +53,12 @@ describe("provider-neutral structured logger contract", () => {
       errorType: "ApplicationError",
       applicationCode: "CONFLICT",
       requestId: "request-123",
+      provider: "firebase",
+      rejectionReason: "connection_cap",
     });
 
     expect(logger.events[0]?.fields).toEqual({
-      operation: "request.complete",
+      operation: "message_send",
       result: "succeeded",
       durationMs: 12.5,
       statusCode: 204,
@@ -63,6 +69,8 @@ describe("provider-neutral structured logger contract", () => {
       errorType: "ApplicationError",
       applicationCode: "CONFLICT",
       requestId: "request-123",
+      provider: "firebase",
+      rejectionReason: "connection_cap",
     });
   });
 
@@ -82,7 +90,7 @@ describe("provider-neutral structured logger contract", () => {
 
     logger.error("provider.delivery.failed", unsafeFields);
 
-    expect(logger.events[0]?.fields).toEqual({ operation: "delivery" });
+    expect(logger.events[0]?.fields).toEqual({});
     expect(JSON.stringify(logger.events)).not.toContain(sensitiveValue);
   });
 
@@ -103,5 +111,40 @@ describe("provider-neutral structured logger contract", () => {
 
     second.reset();
     expect(second.events).toEqual([]);
+  });
+
+  it("keeps event and operation catalogs unique, bounded, and identifier-free", () => {
+    expect(new Set(MIGRATED_LOG_EVENT_NAMES).size).toBe(MIGRATED_LOG_EVENT_NAMES.length);
+    expect(new Set(LOG_OPERATION_NAMES).size).toBe(LOG_OPERATION_NAMES.length);
+    expect(LOG_OPERATION_NAMES).toEqual([
+      "connection_registration",
+      "message_send",
+      "message_seen",
+      "message_edit",
+      "message_delete",
+      "typing",
+      "reaction_add",
+      "reaction_delete",
+      "poll_vote",
+      "poll_vote_remove",
+      "message_pin",
+      "message_unpin",
+      "call_user",
+      "call_accept",
+      "call_reject",
+      "call_end",
+      "callee_busy",
+      "ice_candidate",
+      "negotiation_needed",
+      "negotiation_done",
+      "rate_limit_check",
+      "push_send",
+      "email_send",
+      "profile_provision",
+    ]);
+    expect(LOG_OPERATION_NAMES.every((operation) =>
+      /^[a-z][a-z0-9_]*$/.test(operation)
+      && !/[0-9]{6,}/.test(operation),
+    )).toBe(true);
   });
 });

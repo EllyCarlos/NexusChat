@@ -53,6 +53,7 @@ vi.mock("../src/socket/webrtc/socket.js", () => ({
 
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
+import type { LoggerPort } from "../src/observability/logger.port.js";
 import type {
   DirectoryConnectionRegistration,
   DirectoryConnectionRemoval,
@@ -146,10 +147,12 @@ const createHarness = ({
   directory = createDirectory(),
   presence = createPresence(),
   registry,
+  providedLogger,
 }: {
   directory?: SocketConnectionDirectory;
   presence?: SocketPresenceCoordinator;
   registry?: SocketConnectionRegistry;
+  providedLogger?: LoggerPort;
 } = {}) => {
   const logger = createCapturingLogger("socket");
   let connectionHandler: ((socket: Socket) => Promise<unknown>) | undefined;
@@ -175,7 +178,7 @@ const createHarness = ({
   const lifecycle = registerSocketHandlers(io as unknown as Server, {
     directory,
     presence,
-    logger,
+    logger: providedLogger ?? logger,
     ...(registry ? { registry } : {}),
   });
 
@@ -304,6 +307,18 @@ describe("Phase 2D-3 Socket root directory admission", () => {
       event: "connection",
     });
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
+    expect(harness.logger.events).toContainEqual({
+      level: "debug",
+      component: "socket",
+      event: "socket.connection.rejected",
+      fields: {
+        operation: "connection_registration",
+        result: "rejected",
+        rejectionReason: "connection_cap",
+      },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(USER_ID);
+    expect(JSON.stringify(harness.logger.events)).not.toContain(SOCKET_ID);
     expect(directory.onlineUserIds).not.toHaveBeenCalled();
     expect(directory.remove).not.toHaveBeenCalled();
     expect(harness.presence.reconcileTransition).not.toHaveBeenCalled();
@@ -323,9 +338,37 @@ describe("Phase 2D-3 Socket root directory admission", () => {
       level: "error",
       component: "socket",
       event: "socket.connection_registration.failed",
-      fields: { errorType: "Error" },
+      fields: {
+        operation: "connection_registration",
+        result: "failed",
+        errorType: "Error",
+      },
     });
     expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
+    expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
+    expect(directory.onlineUserIds).not.toHaveBeenCalled();
+    expectNoOrdinaryInitialization(harness);
+  });
+
+  it("preserves failed-admission behavior when the logger throws", async () => {
+    const directory = createDirectory({
+      add: vi.fn(async () => Promise.reject(new Error("private admission failure"))),
+    });
+    const throwFromLogger = () => {
+      throw new Error("logger unavailable");
+    };
+    const throwingLogger: LoggerPort = {
+      component: "socket",
+      forComponent: () => throwingLogger,
+      debug: throwFromLogger,
+      info: throwFromLogger,
+      warn: throwFromLogger,
+      error: throwFromLogger,
+    };
+    const harness = createHarness({ directory, providedLogger: throwingLogger });
+
+    await expect(harness.runConnection()).resolves.toBeUndefined();
+
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
     expect(directory.onlineUserIds).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
