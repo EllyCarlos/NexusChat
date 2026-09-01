@@ -214,7 +214,6 @@ const createLiveRuntime = async (redisUrl: string): Promise<LiveRuntime> => {
     environment: "test",
     originPolicy,
     readiness: () => state?.isReady === true && transport?.isReady === true,
-    requestLogger: (_request, _response, next) => next(),
   });
   const httpServer = createServer(app);
   const io = new SocketServer(httpServer, {

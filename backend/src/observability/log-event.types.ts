@@ -39,6 +39,7 @@ export const MIGRATED_LOG_EVENT_NAMES = [
   "bootstrap.unhandled_rejection.failed",
   "http.application_request.failed",
   "http.origin_configuration.ignored",
+  "http.request.completed",
   "http.unexpected_request.failed",
   "notification.email_send.failed",
   "presence.offline_update.failed",
@@ -98,12 +99,17 @@ export type LogErrorCategory =
 
 export type LogOperationResult =
   | "accepted"
+  | "aborted"
   | "available"
+  | "client_error"
   | "completed"
   | "failed"
+  | "redirect"
   | "recovered"
   | "rejected"
+  | "server_error"
   | "started"
+  | "success"
   | "succeeded"
   | "unavailable";
 
@@ -114,12 +120,14 @@ export type LogHttpMethod =
   | "OPTIONS"
   | "PATCH"
   | "POST"
-  | "PUT";
+  | "PUT"
+  | "OTHER";
 
 export interface LogEventFields {
   readonly operation?: string;
   readonly result?: LogOperationResult;
   readonly durationMs?: number;
+  readonly responseSizeBytes?: number;
   readonly statusCode?: number;
   readonly route?: string;
   readonly method?: LogHttpMethod;
@@ -143,12 +151,17 @@ const SAFE_ROUTE_PATTERN = /^[A-Za-z0-9_/:.*-]+$/;
 
 const LOG_OPERATION_RESULTS = new Set<LogOperationResult>([
   "accepted",
+  "aborted",
   "available",
+  "client_error",
   "completed",
   "failed",
+  "redirect",
   "recovered",
   "rejected",
+  "server_error",
   "started",
+  "success",
   "succeeded",
   "unavailable",
 ]);
@@ -161,6 +174,7 @@ const LOG_HTTP_METHODS = new Set<LogHttpMethod>([
   "PATCH",
   "POST",
   "PUT",
+  "OTHER",
 ]);
 
 const LOG_ERROR_CATEGORIES = new Set<LogErrorCategory>([
@@ -202,6 +216,11 @@ export const selectAllowedLogFields = (
       : {}),
     ...(isFiniteNonNegativeNumber(fields.durationMs)
       ? { durationMs: fields.durationMs }
+      : {}),
+    ...(Number.isSafeInteger(fields.responseSizeBytes)
+      && fields.responseSizeBytes !== undefined
+      && fields.responseSizeBytes >= 0
+      ? { responseSizeBytes: fields.responseSizeBytes }
       : {}),
     ...(Number.isSafeInteger(fields.statusCode)
       && fields.statusCode !== undefined

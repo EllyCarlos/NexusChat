@@ -43,7 +43,7 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   validateGoogleOAuthState,
 } from "../src/middlewares/oauth-state.middleware.js";
-import { createRequestLogger } from "../src/middlewares/request-logger.middleware.js";
+import { createHttpObservabilityMiddleware } from "../src/middlewares/http-observability.middleware.js";
 import {
   createOAuthStateBinding,
   OAUTH_STATE_TTL_MS,
@@ -62,16 +62,10 @@ const createResponse = () => {
   return response;
 };
 
-const captureMorganOutput = async (requestPath: string) => {
-  let output = "";
+const captureStructuredHttpOutput = async (requestPath: string) => {
+  const logger = createCapturingLogger("application");
   const app = express();
-  app.use(createRequestLogger({
-    stream: {
-      write: (line: string) => {
-        output += line;
-      },
-    },
-  }));
+  app.use(createHttpObservabilityMiddleware({ logger }));
   app.use((_req, res) => res.status(204).end());
 
   const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
@@ -81,7 +75,7 @@ const captureMorganOutput = async (requestPath: string) => {
   try {
     const address = server.address() as AddressInfo;
     await fetch(`http://127.0.0.1:${address.port}${requestPath}`);
-    return output;
+    return JSON.stringify(logger.events);
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
@@ -384,32 +378,32 @@ describe("OAuth-sensitive logging", () => {
     }
   });
 
-  it("omits the Google authorization code from Morgan output", async () => {
-    const output = await captureMorganOutput(
+  it("omits the Google authorization code from structured HTTP output", async () => {
+    const output = await captureStructuredHttpOutput(
       "/api/v1/auth/google/callback?code=google-secret-code",
     );
 
-    expect(output).toContain("GET /api/v1/auth/google/callback 204");
+    expect(output).toContain("http.request.completed");
     expect(output).not.toContain("google-secret-code");
     expect(output).not.toContain("code=");
   });
 
-  it("omits OAuth state from Morgan output", async () => {
-    const output = await captureMorganOutput(
+  it("omits OAuth state from structured HTTP output", async () => {
+    const output = await captureStructuredHttpOutput(
       "/api/v1/auth/google/callback?state=raw-oauth-state",
     );
 
-    expect(output).toContain("GET /api/v1/auth/google/callback 204");
+    expect(output).toContain("http.request.completed");
     expect(output).not.toContain("raw-oauth-state");
     expect(output).not.toContain("state=");
   });
 
-  it("automatically omits other sensitive query tokens from Morgan output", async () => {
-    const output = await captureMorganOutput(
+  it("automatically omits other sensitive query tokens from structured HTTP output", async () => {
+    const output = await captureStructuredHttpOutput(
       "/api/v1/auth/recovery?token=raw-recovery-token",
     );
 
-    expect(output).toContain("GET /api/v1/auth/recovery 204");
+    expect(output).toContain("http.request.completed");
     expect(output).not.toContain("raw-recovery-token");
     expect(output).not.toContain("token=");
   });

@@ -3,7 +3,6 @@ import multer from "multer";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
-import { createRequestLogger } from "../src/middlewares/request-logger.middleware.js";
 import {
   createOriginPolicy,
   DEVELOPMENT_FRONTEND_ORIGIN,
@@ -35,7 +34,6 @@ const createOriginTestApp = (originPolicy = createOriginPolicy({
     originPolicy,
     environment: "test",
     routes: [{ path: "/api/v1", router }],
-    requestLogger: createRequestLogger({ stream: { write: () => undefined } }),
   });
 
   return { app, protectedWork, oauthStateWork };

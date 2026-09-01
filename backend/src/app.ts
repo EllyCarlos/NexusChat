@@ -6,7 +6,11 @@ import passport from "passport";
 import type { LoggerPort } from "./observability/logger.port.js";
 import { noopLogger } from "./observability/noop-logger.js";
 import { errorMiddleware, notFoundMiddleware } from "./middlewares/error.middleware.js";
-import { createRequestLogger } from "./middlewares/request-logger.middleware.js";
+import {
+  createHttpObservabilityMiddleware,
+  createRouteTemplateBaseMiddleware,
+} from "./middlewares/http-observability.middleware.js";
+import { REQUEST_ID_HEADER } from "./observability/request-id.js";
 import {
   createCorsOriginDelegate,
   createMutationOriginMiddleware,
@@ -22,7 +26,6 @@ type CreateAppOptions = {
   originPolicy: OriginPolicy;
   environment: string;
   routes?: AppRoute[];
-  requestLogger?: ReturnType<typeof createRequestLogger>;
   readiness?: () => boolean;
   logger?: LoggerPort;
 };
@@ -31,13 +34,13 @@ export const createApp = ({
   originPolicy,
   environment,
   routes = [],
-  requestLogger = createRequestLogger(),
   readiness = () => true,
   logger = noopLogger,
 }: CreateAppOptions) => {
   const app = express();
 
   app.set("logger", logger);
+  app.use(createHttpObservabilityMiddleware({ logger }));
 
   app.disable("x-powered-by");
   app.use(helmet({
@@ -60,6 +63,7 @@ export const createApp = ({
 
   app.use(cors({
     credentials: true,
+    exposedHeaders: [REQUEST_ID_HEADER],
     origin: createCorsOriginDelegate(originPolicy),
   }));
   app.use(createMutationOriginMiddleware(originPolicy));
@@ -67,14 +71,13 @@ export const createApp = ({
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
   app.use(cookieParser());
-  app.use(requestLogger);
   app.use("/api/v1/auth", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     next();
   });
 
   for (const route of routes) {
-    app.use(route.path, route.router);
+    app.use(route.path, createRouteTemplateBaseMiddleware(route.path), route.router);
   }
 
   app.get("/", (_req: Request, res: Response) => {
