@@ -19,6 +19,20 @@ const optionalRedisUrlSchema = z.preprocess((value) => {
   return trimmedValue.length > 0 ? trimmedValue : undefined;
 }, redisUrlValueSchema.optional());
 
+const metricsEnabledSchema = z.preprocess(
+  (value) => value === undefined ? "false" : value,
+  z.enum(["true", "false"]),
+).transform((value) => value === "true");
+
+const metricsBearerTokenSchema = z.string()
+  .min(32, "METRICS_BEARER_TOKEN must contain at least 32 characters")
+  .max(256, "METRICS_BEARER_TOKEN cannot exceed 256 characters")
+  .regex(
+    /^[A-Za-z0-9._~+/-]+={0,2}$/,
+    "METRICS_BEARER_TOKEN must be a valid bearer credential",
+  )
+  .optional();
+
 const environmentSchema = z.object({
   NODE_ENV: nodeEnvironmentSchema,
   PORT: z.string({ required_error: "PORT is required" })
@@ -44,6 +58,8 @@ const environmentSchema = z.object({
   DATABASE_URL: z.string({ required_error: "DATABASE_URL is required" }),
   DIRECT_URL: z.string({ required_error: "DIRECT_URL is required" }),
   REDIS_URL: optionalRedisUrlSchema,
+  METRICS_ENABLED: metricsEnabledSchema,
+  METRICS_BEARER_TOKEN: metricsBearerTokenSchema,
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
@@ -52,6 +68,14 @@ const environmentSchema = z.object({
   FRONTEND_URL: z.string().optional(),
   CLIENT_URL: z.string().optional(),
 }).superRefine((environment, context) => {
+  if (environment.METRICS_ENABLED && !environment.METRICS_BEARER_TOKEN) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["METRICS_BEARER_TOKEN"],
+      message: "METRICS_BEARER_TOKEN is required when metrics are enabled",
+    });
+  }
+
   if (environment.NODE_ENV !== "production") {
     return;
   }

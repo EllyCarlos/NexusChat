@@ -29,7 +29,7 @@ describe("HTTP observability static boundary", () => {
   it("installs correlation before the unchanged security and parsing chain", async () => {
     const source = await readSource("src/app.ts");
     const orderedMarkers = [
-      "app.use(createHttpObservabilityMiddleware({ logger }))",
+      "app.use(createHttpObservabilityMiddleware({ logger, metrics }))",
       "app.use(helmet({",
       "app.use(cors({",
       "app.use(createMutationOriginMiddleware(originPolicy))",
@@ -57,6 +57,6 @@ describe("HTTP observability static boundary", () => {
 
     expect(packageJson.dependencies).not.toHaveProperty("morgan");
     expect(packageJson.devDependencies).not.toHaveProperty("@types/morgan");
-    expect(JSON.stringify(packageJson)).not.toMatch(/pino-http|express-request-id|cls-hooked|prom-client/i);
+    expect(JSON.stringify(packageJson)).not.toMatch(/pino-http|express-request-id|cls-hooked/i);
   });
 });

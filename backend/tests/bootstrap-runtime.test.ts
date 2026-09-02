@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { Server as HttpServer } from "node:http";
 import { Server as SocketServer } from "socket.io";
+import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
       serverUrl: "http://localhost:4000",
     },
     redis: { url: undefined },
+    metrics: { enabled: false, bearerToken: undefined },
   },
 }));
 
@@ -57,6 +59,7 @@ import type {
 import type { SocketConnectionDirectory } from "../src/socket/connection-directory.js";
 import type { SocketHandlerLifecycle } from "../src/socket/socket.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const createDeferred = () => {
   let resolve!: () => void;
@@ -236,9 +239,13 @@ describe("backend server construction", () => {
     const useSpy = vi.spyOn(SocketServer.prototype, "use");
     const state = createFakeConnectionState();
     const socketLifecycle = createFakeSocketLifecycle().lifecycle;
+    const metrics = createCapturingMetrics();
     mocks.registerSocketHandlers.mockReturnValueOnce(socketLifecycle);
 
-    const runtime = createBackendServer({ connectionState: state.runtime });
+    const runtime = createBackendServer({
+      connectionState: state.runtime,
+      metrics,
+    });
 
     expect(runtime.app).toBeTypeOf("function");
     expect(runtime.httpServer).toBeInstanceOf(HttpServer);
@@ -271,6 +278,13 @@ describe("backend server construction", () => {
     expect(runtime.socketLifecycle).toBe(socketLifecycle);
     expect(state.runtime.connect).not.toHaveBeenCalled();
     expect(state.runtime.start).not.toHaveBeenCalled();
+    const response = await request(runtime.app).get("/");
+    expect(response.status).toBe(200);
+    expect(metrics.completions).toMatchObject([{
+      method: "GET",
+      route: "/",
+      statusClass: "2xx",
+    }]);
     await runtime.io.close();
     useSpy.mockRestore();
   });

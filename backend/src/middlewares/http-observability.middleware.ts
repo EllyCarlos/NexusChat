@@ -7,12 +7,19 @@ import type {
   LogOperationResult,
 } from "../observability/log-event.types.js";
 import type { LoggerPort } from "../observability/logger.port.js";
+import type {
+  HttpRequestMetricLifecycle,
+  HttpStatusClass,
+  MetricsPort,
+} from "../observability/metrics.port.js";
+import { noopMetrics } from "../observability/noop-metrics.js";
 import { createRequestContextLogger } from "../observability/request-context-logger.js";
 import { runWithRequestContext } from "../observability/request-context.js";
 import {
   REQUEST_ID_HEADER,
   selectRequestId,
 } from "../observability/request-id.js";
+import { isMetricsRequest } from "./metrics-endpoint.middleware.js";
 
 const requestRouteBases = new WeakMap<Request, string>();
 const SAFE_ROUTE_TEMPLATE = /^\/[A-Za-z0-9_/:.*-]*$/;
@@ -28,6 +35,7 @@ const KNOWN_HTTP_METHODS = new Set<LogHttpMethod>([
 
 type HttpObservabilityOptions = {
   readonly logger: LoggerPort;
+  readonly metrics?: MetricsPort;
   readonly clock?: () => number;
   readonly generateRequestId?: () => string;
 };
@@ -64,9 +72,16 @@ export const createRouteTemplateBaseMiddleware = (base: string): RequestHandler 
   };
 };
 
-const normalizeMethod = (method: string): LogHttpMethod => {
+export const normalizeHttpMethod = (method: string): LogHttpMethod => {
   const normalized = method.toUpperCase() as LogHttpMethod;
   return KNOWN_HTTP_METHODS.has(normalized) ? normalized : "OTHER";
+};
+
+export const classifyHttpStatusClass = (statusCode: number): HttpStatusClass => {
+  if (!Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
+    return "other";
+  }
+  return `${Math.floor(statusCode / 100)}xx` as HttpStatusClass;
 };
 
 const classifyStatus = (statusCode: number): LogOperationResult => {
@@ -98,6 +113,7 @@ const durationSince = (startedAt: number, clock: () => number): number => {
 
 export const createHttpObservabilityMiddleware = ({
   logger,
+  metrics = noopMetrics,
   clock = () => performance.now(),
   generateRequestId,
 }: HttpObservabilityOptions): RequestHandler => {
@@ -108,24 +124,43 @@ export const createHttpObservabilityMiddleware = ({
       request.get(REQUEST_ID_HEADER),
       generateRequestId,
     );
+    const method = normalizeHttpMethod(request.method);
     const startedAt = clock();
     response.setHeader(REQUEST_ID_HEADER, requestId);
 
     runWithRequestContext({ requestId }, () => {
-      let logged = false;
+      let requestMetric: HttpRequestMetricLifecycle | undefined;
+      if (!isMetricsRequest(response)) {
+        try {
+          requestMetric = metrics.startHttpRequest({ method });
+        } catch {
+          // Request handling must not depend on metrics health.
+        }
+      }
+      let completed = false;
       const logCompletion = (result?: LogOperationResult): void => {
-        if (logged) return;
-        logged = true;
+        if (completed) return;
+        completed = true;
         const route = getNormalizedRequestRoute(request);
+        const durationMs = durationSince(startedAt, clock);
+        try {
+          requestMetric?.complete({
+            route,
+            statusClass: classifyHttpStatusClass(response.statusCode),
+            durationSeconds: durationMs / 1_000,
+          });
+        } catch {
+          // Request handling must not depend on metrics health.
+        }
         if (route === "/health" && response.statusCode < 500) return;
 
         const fields: LogEventFields = {
           requestId,
-          method: normalizeMethod(request.method),
+          method,
           route,
           statusCode: response.statusCode,
           result: result ?? classifyStatus(response.statusCode),
-          durationMs: durationSince(startedAt, clock),
+          durationMs,
           ...(() => {
             const responseSizeBytes = readResponseSize(response);
             return responseSizeBytes === undefined ? {} : { responseSizeBytes };

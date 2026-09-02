@@ -7,6 +7,7 @@ import { initializeProviders } from "../config/providers.config.js";
 import { createSocketAuthenticatorMiddleware } from "../middlewares/socket-auth.middleware.js";
 import type { LoggerPort } from "../observability/logger.port.js";
 import { noopLogger } from "../observability/noop-logger.js";
+import type { MetricsPort } from "../observability/metrics.port.js";
 import { createSocketConnectionStateRuntime } from "../infrastructure/redis/socket-connection-state.runtime.js";
 import type { SocketConnectionStateRuntime } from "../infrastructure/redis/socket-connection-state.runtime.js";
 import attachmentRoutes from "../routes/attachment.router.js";
@@ -31,6 +32,7 @@ import {
   type SocketPresenceCoordinator,
 } from "../socket/socket-presence.coordinator.js";
 import { createSocketPresencePublisher } from "../socket/socket-presence.publisher.js";
+import { createProcessMetrics } from "./metrics-composition.js";
 
 export type BackendServer = {
   app: ReturnType<typeof createApp>;
@@ -45,6 +47,7 @@ export type CreateBackendServerOptions = {
   connectionState?: SocketConnectionStateRuntime;
   readiness?: () => boolean;
   logger?: LoggerPort;
+  metrics?: MetricsPort;
 };
 
 export const createBackendServer = ({
@@ -53,6 +56,7 @@ export const createBackendServer = ({
   }),
   readiness,
   logger = noopLogger,
+  metrics = createProcessMetrics({ enabled: config.metrics.enabled }),
 }: CreateBackendServerOptions = {}): BackendServer => {
   initializeProviders(config, logger.forComponent("provider"));
   const httpLogger = logger.forComponent("http");
@@ -75,6 +79,8 @@ export const createBackendServer = ({
     environment: config.app.environment,
     readiness,
     logger,
+    metrics,
+    metricsConfiguration: config.metrics,
     routes: [
       { path: "/api/v1/auth", router: authRoutes },
       { path: "/api/v1/chat", router: chatRoutes },

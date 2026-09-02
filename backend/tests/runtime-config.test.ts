@@ -23,7 +23,7 @@ vi.mock("../src/schemas/env.schema.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/schemas/env.schema.js")>();
   return {
     ...actual,
-    loadEnvironment: () => ({ ...runtimeEnvironment }),
+    loadEnvironment: () => ({ ...runtimeEnvironment, METRICS_ENABLED: false }),
   };
 });
 
@@ -107,6 +107,78 @@ describe("runtime configuration boundary", () => {
     }).REDIS_URL).toBeUndefined();
   });
 
+  it("defaults metrics to disabled with no credential", () => {
+    const parsed = parseEnvironment(runtimeEnvironment);
+
+    expect(parsed.METRICS_ENABLED).toBe(false);
+    expect(parsed.METRICS_BEARER_TOKEN).toBeUndefined();
+    expect(createRuntimeConfig(parsed).metrics).toEqual({
+      enabled: false,
+      bearerToken: undefined,
+    });
+  });
+
+  it("accepts explicit false without a metrics credential", () => {
+    const parsed = parseEnvironment({
+      ...runtimeEnvironment,
+      METRICS_ENABLED: "false",
+    });
+
+    expect(parsed.METRICS_ENABLED).toBe(false);
+  });
+
+  it("accepts enabled metrics only with a dedicated bounded bearer credential", () => {
+    const bearerToken = "obvious-fake-metrics-token-0123456789abcdef";
+    const parsed = parseEnvironment({
+      ...runtimeEnvironment,
+      METRICS_ENABLED: "true",
+      METRICS_BEARER_TOKEN: bearerToken,
+    });
+
+    expect(parsed.METRICS_ENABLED).toBe(true);
+    expect(createRuntimeConfig(parsed).metrics).toEqual({
+      enabled: true,
+      bearerToken,
+    });
+  });
+
+  it("rejects enabled metrics without a credential and exposes only its variable name", () => {
+    let thrown: unknown;
+    try {
+      parseEnvironment({
+        ...runtimeEnvironment,
+        METRICS_ENABLED: "true",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ApplicationError);
+    expect((thrown as Error).message).toContain("METRICS_BEARER_TOKEN");
+    expect((thrown as Error).message).not.toContain(runtimeEnvironment.JWT_SECRET);
+  });
+
+  it.each([
+    "too-short",
+    "obvious invalid metrics token with spaces 123456",
+    "obvious-invalid-token-with-illegal-value-123456!",
+  ])("rejects an invalid metrics credential without exposing it: %s", (bearerToken) => {
+    let thrown: unknown;
+    try {
+      parseEnvironment({
+        ...runtimeEnvironment,
+        METRICS_ENABLED: "true",
+        METRICS_BEARER_TOKEN: bearerToken,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ApplicationError);
+    expect((thrown as Error).message).toContain("METRICS_BEARER_TOKEN");
+    expect((thrown as Error).message).not.toContain(bearerToken);
+  });
+
   it.each([
     "redis://redis.example.test:6379",
     "rediss://redis.example.test:6380",
@@ -151,6 +223,7 @@ describe("runtime configuration boundary", () => {
     });
     expect(created.auth.jwtSecret).toBe(runtimeEnvironment.JWT_SECRET);
     expect(created.redis).toEqual({ url: undefined });
+    expect(created.metrics).toEqual({ enabled: false, bearerToken: undefined });
     expect(created.oauth.callbackUrl).toBe(
       "http://localhost:4000/api/v1/auth/google/callback",
     );
