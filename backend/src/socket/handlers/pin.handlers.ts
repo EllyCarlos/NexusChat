@@ -10,7 +10,10 @@ import {
   assertPinAccessible,
 } from "../../services/authorization.service.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
 import { noopLogger } from "../../observability/noop-logger.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
+import { recordUnexpectedSocketOperationFailure } from "../../observability/realtime-metrics.js";
 import { logSafeError } from "../../observability/safe-error.js";
 import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
@@ -30,6 +33,7 @@ type PinHandlerDependencies = {
   limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
   logger?: LoggerPort;
+  metrics?: MetricsPort;
 };
 
 export const registerPinHandlers = ({
@@ -38,6 +42,7 @@ export const registerPinHandlers = ({
   limiter,
   realtime,
   logger = noopLogger.forComponent("socket"),
+  metrics = noopMetrics,
 }: PinHandlerDependencies): void => {
   socket.on(Events.PIN_MESSAGE, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.PIN_MESSAGE, pinMessageEventSchema, rawPayload);
@@ -48,6 +53,7 @@ export const registerPinHandlers = ({
       event: Events.PIN_MESSAGE,
       limiter,
       logger,
+      metrics,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -58,6 +64,7 @@ export const registerPinHandlers = ({
         event: Events.PIN_MESSAGE,
         limiter,
         logger,
+        metrics,
         policies: [SOCKET_EVENT_LIMITS.pinMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -177,6 +184,7 @@ export const registerPinHandlers = ({
 
       realtime.emitPinMessage(chatId, pinnedMessage);
     } catch (error) {
+      recordUnexpectedSocketOperationFailure(metrics, "message_pin", error);
       logSafeError(logger, "socket.message_pin.failed", error, {
         operation: "message_pin",
         result: "failed",
@@ -193,6 +201,7 @@ export const registerPinHandlers = ({
       event: Events.UNPIN_MESSAGE,
       limiter,
       logger,
+      metrics,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -203,6 +212,7 @@ export const registerPinHandlers = ({
         event: Events.UNPIN_MESSAGE,
         limiter,
         logger,
+        metrics,
         policies: [SOCKET_EVENT_LIMITS.pinMessage],
         keyParts: [userId, authorizedPin.messageId],
       }))) return;
@@ -230,6 +240,7 @@ export const registerPinHandlers = ({
       };
       realtime.emitUnpinMessage(deletedPinnedMessage.chatId, payload);
     } catch (error) {
+      recordUnexpectedSocketOperationFailure(metrics, "message_unpin", error);
       logSafeError(logger, "socket.message_unpin.failed", error, {
         operation: "message_unpin",
         result: "failed",

@@ -41,6 +41,7 @@ import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { CustomError } from "../src/utils/error.utils.js";
 import type { LoggerPort } from "../src/observability/logger.port.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const testLogger: LoggerPort = {
   component: "socket",
@@ -145,6 +146,7 @@ const createHarness = ({
   directory = createTestConnectionDirectory(),
   ioRelayEmit = vi.fn(),
   limiter = createLimiter().limiter,
+  metrics = createCapturingMetrics(),
   socketEmit = vi.fn(),
   socketRelayEmit = vi.fn(),
 }: {
@@ -152,6 +154,7 @@ const createHarness = ({
   directory?: TestConnectionDirectory;
   ioRelayEmit?: ReturnType<typeof vi.fn>;
   limiter?: SocketEventRateLimitPort;
+  metrics?: ReturnType<typeof createCapturingMetrics>;
   socketEmit?: ReturnType<typeof vi.fn>;
   socketRelayEmit?: ReturnType<typeof vi.fn>;
 } = {}) => {
@@ -180,12 +183,14 @@ const createHarness = ({
     directory,
     limiter,
     logger: testLogger,
+    metrics,
   });
 
   return {
     getLatestSocket,
     ioRelayEmit,
     ioTo,
+    metrics,
     socketEmit,
     socketRelayEmit,
     socketTo,
@@ -730,6 +735,7 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     });
     expect(mocks.callHistoryUpdate).not.toHaveBeenCalled();
     expect(harness.socketEmit).not.toHaveBeenCalled();
+    expect(harness.metrics.socketOperationFailures).toEqual([operation]);
   });
 
   it.each([

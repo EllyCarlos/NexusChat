@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RateLimitPolicy } from "../src/security/rate-limit.js";
 import {
@@ -12,6 +12,7 @@ import {
   SOCKET_EVENT_LIMITS,
   SocketEventRateLimiter,
 } from "../src/socket/socket-security.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const policy = (namespace: string, limit: number): RateLimitPolicy => ({
   namespace,
@@ -152,5 +153,20 @@ describe("async local Socket rate-limit provider", () => {
     await expect(provider.consume(oneRequest, ["subject"])).resolves.toBe(false);
     provider.clear();
     await expect(provider.consume(oneRequest, ["subject"])).resolves.toBe(true);
+  });
+
+  it("records one local provider failure and preserves the original rejection", async () => {
+    const engine = new SocketEventRateLimiter();
+    const failure = new Error("private local limiter failure");
+    vi.spyOn(engine, "consume").mockImplementationOnce(() => {
+      throw failure;
+    });
+    const metrics = createCapturingMetrics();
+    const provider = createLocalSocketEventRateLimitProvider(engine, metrics);
+
+    await expect(provider.consume(policy("local-failure", 1), ["private-user-id"]))
+      .rejects.toBe(failure);
+    expect(metrics.socketRateLimitProviderFailures).toEqual(["local"]);
+    expect(JSON.stringify(metrics)).not.toContain("private-user-id");
   });
 });

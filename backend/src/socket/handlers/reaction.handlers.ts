@@ -7,7 +7,10 @@ import {
 } from "../../schemas/socket.schema.js";
 import { assertMessageAccessible } from "../../services/authorization.service.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
 import { noopLogger } from "../../observability/noop-logger.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
+import { recordUnexpectedSocketOperationFailure } from "../../observability/realtime-metrics.js";
 import { logSafeError } from "../../observability/safe-error.js";
 import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
@@ -27,6 +30,7 @@ type ReactionHandlerDependencies = {
   limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
   logger?: LoggerPort;
+  metrics?: MetricsPort;
 };
 
 export const registerReactionHandlers = ({
@@ -35,6 +39,7 @@ export const registerReactionHandlers = ({
   limiter,
   realtime,
   logger = noopLogger.forComponent("socket"),
+  metrics = noopMetrics,
 }: ReactionHandlerDependencies): void => {
   socket.on(Events.NEW_REACTION, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.NEW_REACTION, newReactionEventSchema, rawPayload);
@@ -45,6 +50,7 @@ export const registerReactionHandlers = ({
       event: Events.NEW_REACTION,
       limiter,
       logger,
+      metrics,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -55,6 +61,7 @@ export const registerReactionHandlers = ({
         event: Events.NEW_REACTION,
         limiter,
         logger,
+        metrics,
         policies: [SOCKET_EVENT_LIMITS.reactionMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -89,6 +96,7 @@ export const registerReactionHandlers = ({
 
       realtime.emitNewReaction(chatId, payload);
     } catch (error) {
+      recordUnexpectedSocketOperationFailure(metrics, "reaction_add", error);
       logSafeError(logger, "socket.reaction_addition.failed", error, {
         operation: "reaction_add",
         result: "failed",
@@ -105,6 +113,7 @@ export const registerReactionHandlers = ({
       event: Events.DELETE_REACTION,
       limiter,
       logger,
+      metrics,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -115,6 +124,7 @@ export const registerReactionHandlers = ({
         event: Events.DELETE_REACTION,
         limiter,
         logger,
+        metrics,
         policies: [SOCKET_EVENT_LIMITS.reactionMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -132,6 +142,7 @@ export const registerReactionHandlers = ({
       };
       realtime.emitDeleteReaction(chatId, payload);
     } catch (error) {
+      recordUnexpectedSocketOperationFailure(metrics, "reaction_delete", error);
       logSafeError(logger, "socket.reaction_deletion.failed", error, {
         operation: "reaction_delete",
         result: "failed",

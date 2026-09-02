@@ -54,6 +54,8 @@ vi.mock("../src/socket/webrtc/socket.js", () => ({
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
 import type { LoggerPort } from "../src/observability/logger.port.js";
+import type { MetricsPort } from "../src/observability/metrics.port.js";
+import { noopMetrics } from "../src/observability/noop-metrics.js";
 import type {
   DirectoryConnectionRegistration,
   DirectoryConnectionRemoval,
@@ -64,6 +66,7 @@ import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import type { SocketPresenceCoordinator } from "../src/socket/socket-presence.coordinator.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const USER_ID = "cm2d300000000000000000001";
 const REMOTE_USER_ID = "cm2d300000000000000000002";
@@ -148,13 +151,18 @@ const createHarness = ({
   presence = createPresence(),
   registry,
   providedLogger,
+  providedMetrics,
+  runtimeMode = "distributed",
 }: {
   directory?: SocketConnectionDirectory;
   presence?: SocketPresenceCoordinator;
   registry?: SocketConnectionRegistry;
   providedLogger?: LoggerPort;
+  providedMetrics?: MetricsPort;
+  runtimeMode?: "local" | "distributed";
 } = {}) => {
   const logger = createCapturingLogger("socket");
+  const metrics = providedMetrics ?? createCapturingMetrics();
   let connectionHandler: ((socket: Socket) => Promise<unknown>) | undefined;
   const localRoomDisconnect = vi.fn();
   const globalRoomDisconnect = vi.fn();
@@ -179,6 +187,8 @@ const createHarness = ({
     directory,
     presence,
     logger: providedLogger ?? logger,
+    metrics,
+    runtimeMode,
     ...(registry ? { registry } : {}),
   });
 
@@ -207,6 +217,7 @@ const createHarness = ({
     io,
     lifecycle,
     logger,
+    metrics,
     localRoomDisconnect,
     presence,
     runConnection: () => {
@@ -244,6 +255,40 @@ beforeEach(() => {
 });
 
 describe("Phase 2D-3 Socket root directory admission", () => {
+  it("records accepted admission, process-local active lifecycle, and one disconnect completion", async () => {
+    const harness = createHarness();
+
+    await harness.runConnection();
+
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "accepted",
+      reason: "none",
+    }]);
+    expect(harness.metrics.socketConnectionStarts).toEqual(["distributed"]);
+    expect(harness.metrics.activeSocketConnections.get("distributed")).toBe(1);
+
+    await harness.handlers.get("disconnect")!();
+    await harness.handlers.get("disconnect")!();
+
+    expect(harness.metrics.activeSocketConnections.get("distributed")).toBe(0);
+    expect(harness.metrics.socketConnectionCompletions).toEqual(["distributed"]);
+  });
+
+  it("keeps independent accepted connections in the same process-local active gauge", async () => {
+    const metrics = createCapturingMetrics();
+    const first = createHarness({ providedMetrics: metrics, runtimeMode: "local" });
+    const second = createHarness({ providedMetrics: metrics, runtimeMode: "local" });
+
+    await first.runConnection();
+    await second.runConnection();
+    expect(metrics.activeSocketConnections.get("local")).toBe(2);
+
+    await first.handlers.get("disconnect")!();
+    expect(metrics.activeSocketConnections.get("local")).toBe(1);
+    await second.handlers.get("disconnect")!();
+    expect(metrics.activeSocketConnections.get("local")).toBe(0);
+  });
+
   it("awaits admission and the global online list before rooms and ordinary handlers", async () => {
     const addResult = deferred<DirectoryConnectionRegistration>();
     const onlineResult = deferred<string[]>();
@@ -323,6 +368,11 @@ describe("Phase 2D-3 Socket root directory admission", () => {
     expect(directory.remove).not.toHaveBeenCalled();
     expect(harness.presence.reconcileTransition).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "rejected",
+      reason: "connection_cap",
+    }]);
+    expect(harness.metrics.socketConnectionStarts).toEqual([]);
   });
 
   it("safe-logs directory admission failure and fails closed", async () => {
@@ -348,6 +398,11 @@ describe("Phase 2D-3 Socket root directory admission", () => {
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
     expect(directory.onlineUserIds).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "failed",
+      reason: "registration_failure",
+    }]);
+    expect(harness.metrics.socketConnectionStarts).toEqual([]);
   });
 
   it("preserves failed-admission behavior when the logger throws", async () => {
@@ -372,6 +427,11 @@ describe("Phase 2D-3 Socket root directory admission", () => {
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
     expect(directory.onlineUserIds).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "failed",
+      reason: "registration_failure",
+    }]);
+    expect(harness.metrics.socketConnectionStarts).toEqual([]);
   });
 
   it("removes an accepted registration when disconnect arrives while add is pending", async () => {
@@ -411,6 +471,27 @@ describe("Phase 2D-3 Socket root directory admission", () => {
     expect(harness.directory.add).not.toHaveBeenCalled();
     expect(harness.socket.on).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "rejected",
+      reason: "runtime_unavailable",
+    }]);
+  });
+
+  it("isolates throwing metrics from accepted admission and disconnect cleanup", async () => {
+    const throwMetric = () => {
+      throw new Error("metrics unavailable");
+    };
+    const throwingMetrics: MetricsPort = {
+      ...noopMetrics,
+      recordSocketConnectionAdmission: throwMetric,
+      startSocketConnection: throwMetric,
+    };
+    const harness = createHarness({ providedMetrics: throwingMetrics });
+
+    await expect(harness.runConnection()).resolves.toBeUndefined();
+    await expect(harness.handlers.get("disconnect")!()).resolves.toBeUndefined();
+
+    expect(harness.directory.remove).toHaveBeenCalledWith(USER_ID, SOCKET_ID);
   });
 
   it.each([

@@ -25,6 +25,7 @@ import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 import type { LoggerPort } from "../src/observability/logger.port.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const CALLER_ID = "cm51000000000000000000001";
 const CALLEE_ID = "cm51000000000000000000002";
@@ -112,6 +113,7 @@ const createHarness = (actorUserId: string) => {
   const socketTo = vi.fn(() => ({ emit: socketRelayEmit }));
   const ioRelayEmit = vi.fn();
   const ioTo = vi.fn(() => ({ emit: ioRelayEmit }));
+  const metrics = createCapturingMetrics();
 
   const socket = {
     user: {
@@ -133,12 +135,14 @@ const createHarness = (actorUserId: string) => {
     directory,
     limiter,
     logger: testLogger,
+    metrics,
   });
 
   return {
     ioRelayEmit,
     ioTo,
     limit,
+    metrics,
     addSocket,
     registryLookup,
     socketEmit,
@@ -256,6 +260,7 @@ describe("CALL_USER workflow characterization", () => {
       "socket.call_user.failed",
       { operation: "call_user", result: "failed", errorType: "Error" },
     );
+    expect(harness.metrics.socketOperationFailures).toEqual(["call_user"]);
   });
 
   it("keeps both offline deliveries when missed persistence fails and cuts off notification", async () => {
@@ -474,6 +479,9 @@ describe("CALL_ACCEPTED and CALL_REJECTED shared transport/state characterizatio
       category: "RATE_LIMITED",
       event,
     });
+    expect(harness.metrics.socketRateLimitRejections).toEqual([
+      event === Events.CALL_ACCEPTED ? "call_accept" : "call_reject",
+    ]);
     expect(harness.registryLookup).not.toHaveBeenCalled();
     expect(callUpdate).not.toHaveBeenCalled();
     expect(harness.socketTo).not.toHaveBeenCalled();

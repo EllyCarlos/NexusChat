@@ -6,8 +6,14 @@ import { prisma } from "../../lib/prisma.lib.js";
 import { sendPushNotification } from "../../modules/notifications/push-notification.service.js";
 import type { SendPushNotificationInput } from "../../modules/notifications/application/send-push-notification.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
 import { noopLogger } from "../../observability/noop-logger.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
 import { emitOperationLog } from "../../observability/operation-observer.js";
+import {
+  recordSocketOperationFailure,
+  recordUnexpectedSocketOperationFailure,
+} from "../../observability/realtime-metrics.js";
 import { logSafeError } from "../../observability/safe-error.js";
 import { messageEventSchema } from "../../schemas/socket.schema.js";
 import {
@@ -37,6 +43,7 @@ type RegisterMessageHandlersInput = {
   limiter: SocketEventRateLimitPort;
   realtime: MessageRealtimePort;
   logger?: LoggerPort;
+  metrics?: MetricsPort;
   sendNotification?: (input: SendPushNotificationInput) => void;
 };
 
@@ -46,6 +53,7 @@ export const registerMessageHandlers = ({
   limiter,
   realtime,
   logger = noopLogger.forComponent("socket"),
+  metrics = noopMetrics,
   sendNotification = sendPushNotification,
 }: RegisterMessageHandlersInput): void => {
   socket.on(Events.MESSAGE, async (rawPayload: unknown) => {
@@ -57,6 +65,7 @@ export const registerMessageHandlers = ({
       event: Events.MESSAGE,
       limiter,
       logger,
+      metrics,
       policies: [SOCKET_EVENT_LIMITS.messageActorBurst],
       keyParts: [userId],
     }))) return;
@@ -74,6 +83,7 @@ export const registerMessageHandlers = ({
         event: Events.MESSAGE,
         limiter,
         logger,
+        metrics,
         policies: [SOCKET_EVENT_LIMITS.messageChatBurst, SOCKET_EVENT_LIMITS.messageChatWindow],
         keyParts: [userId, chatId],
       }))) return;
@@ -83,6 +93,7 @@ export const registerMessageHandlers = ({
       if (audio) {
         const uploadResult = await uploadAudioToCloudinary({ buffer: audio }) as UploadApiResponse | undefined;
         if (!uploadResult) {
+          recordSocketOperationFailure(metrics, "message_send");
           emitOperationLog(logger, "error", "socket.audio_upload.failed", {
             operation: "message_send",
             result: "failed",
@@ -113,6 +124,7 @@ export const registerMessageHandlers = ({
       else if (encryptedAudio) {
         const uploadResult = (await uploadEncryptedAudioToCloudinary({ buffer: encryptedAudio })) as UploadApiResponse | undefined;
         if (!uploadResult) {
+          recordSocketOperationFailure(metrics, "message_send");
           emitOperationLog(logger, "error", "socket.encrypted_audio_upload.failed", {
             operation: "message_send",
             result: "failed",
@@ -290,6 +302,7 @@ export const registerMessageHandlers = ({
       // Depending on the Prisma query result, 'message' could be null if no record is found.
       // Add a check here if 'message' is critical for the next steps.
       if (!message) {
+        recordSocketOperationFailure(metrics, "message_send");
         emitOperationLog(logger, "error", "socket.message_retrieval.failed", {
           operation: "message_send",
           result: "failed",
@@ -372,6 +385,7 @@ export const registerMessageHandlers = ({
       realtime.emitUnreadMessage(chatId, unreadMessagePayload)
 
     } catch (error) {
+      recordUnexpectedSocketOperationFailure(metrics, "message_send", error);
       logSafeError(logger, "socket.message_send.failed", error, {
         operation: "message_send",
         result: "failed",

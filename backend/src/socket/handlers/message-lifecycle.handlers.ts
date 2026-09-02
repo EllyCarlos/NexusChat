@@ -8,7 +8,10 @@ import {
 } from "../../schemas/socket.schema.js";
 import { assertChatMember, assertMessageOwner } from "../../services/authorization.service.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
 import { noopLogger } from "../../observability/noop-logger.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
+import { recordUnexpectedSocketOperationFailure } from "../../observability/realtime-metrics.js";
 import { logSafeError } from "../../observability/safe-error.js";
 import { deleteFilesFromCloudinary } from "../../utils/auth.util.js";
 import type {
@@ -30,6 +33,7 @@ type RegisterMessageLifecycleHandlersArgs = {
     limiter: SocketEventRateLimitPort;
     realtime: MessageRealtimePort;
     logger?: LoggerPort;
+    metrics?: MetricsPort;
 };
 
 export const registerMessageLifecycleHandlers = ({
@@ -38,6 +42,7 @@ export const registerMessageLifecycleHandlers = ({
     limiter,
     realtime,
     logger = noopLogger.forComponent("socket"),
+    metrics = noopMetrics,
 }: RegisterMessageLifecycleHandlersArgs): void => {
     socket.on(Events.MESSAGE_SEEN, async (rawPayload: unknown) => {
         const parsedPayload = parseSocketPayload(socket, Events.MESSAGE_SEEN, messageSeenEventSchema, rawPayload);
@@ -48,6 +53,7 @@ export const registerMessageLifecycleHandlers = ({
           event: Events.MESSAGE_SEEN,
           limiter,
           logger,
+          metrics,
           policies: [SOCKET_EVENT_LIMITS.seenActor],
             keyParts: [userId],
         }))) return;
@@ -59,6 +65,7 @@ export const registerMessageLifecycleHandlers = ({
               event: Events.MESSAGE_SEEN,
               limiter,
               logger,
+              metrics,
               policies: [SOCKET_EVENT_LIMITS.seenChat],
                 keyParts: [userId, chatId],
             }))) return;
@@ -97,6 +104,7 @@ export const registerMessageLifecycleHandlers = ({
             realtime.emitMessageSeen(chatId, payload)
 
         } catch (error) {
+            recordUnexpectedSocketOperationFailure(metrics, "message_seen", error);
             logSafeError(logger, "socket.message_seen.failed", error, {
                 operation: "message_seen",
                 result: "failed",
@@ -113,6 +121,7 @@ export const registerMessageLifecycleHandlers = ({
           event: Events.MESSAGE_EDIT,
           limiter,
           logger,
+          metrics,
           policies: [SOCKET_EVENT_LIMITS.mutationActor],
             keyParts: [userId],
         }))) return;
@@ -123,6 +132,7 @@ export const registerMessageLifecycleHandlers = ({
               event: Events.MESSAGE_EDIT,
               limiter,
               logger,
+              metrics,
               policies: [SOCKET_EVENT_LIMITS.editMessage],
                 keyParts: [userId, authorizedMessage.id],
             }))) return;
@@ -145,6 +155,7 @@ export const registerMessageLifecycleHandlers = ({
 
             realtime.emitMessageEdit(chatId, payload)
         } catch (error) {
+            recordUnexpectedSocketOperationFailure(metrics, "message_edit", error);
             logSafeError(logger, "socket.message_edit.failed", error, {
                 operation: "message_edit",
                 result: "failed",
@@ -161,6 +172,7 @@ export const registerMessageLifecycleHandlers = ({
           event: Events.MESSAGE_DELETE,
           limiter,
           logger,
+          metrics,
           policies: [SOCKET_EVENT_LIMITS.mutationActor],
             keyParts: [userId],
         }))) return;
@@ -172,6 +184,7 @@ export const registerMessageLifecycleHandlers = ({
               event: Events.MESSAGE_DELETE,
               limiter,
               logger,
+              metrics,
               policies: [SOCKET_EVENT_LIMITS.deleteMessage],
                 keyParts: [userId, messageToBeDeleted.id],
             }))) return;
@@ -226,6 +239,7 @@ export const registerMessageLifecycleHandlers = ({
                 realtime.emitMessageDelete(chatId, payload)
             }
         } catch (error) {
+            recordUnexpectedSocketOperationFailure(metrics, "message_delete", error);
             logSafeError(logger, "socket.message_delete.failed", error, {
                 operation: "message_delete",
                 result: "failed",

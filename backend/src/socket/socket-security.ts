@@ -1,10 +1,15 @@
 import type { Socket } from "socket.io";
 import type { z } from "zod";
 import { Events } from "../enums/event/event.enum.js";
-import type { LogOperationName } from "../observability/log-event.types.js";
 import type { LoggerPort } from "../observability/logger.port.js";
+import type {
+  MetricsPort,
+  SocketMetricOperation,
+} from "../observability/metrics.port.js";
 import { noopLogger } from "../observability/noop-logger.js";
+import { noopMetrics } from "../observability/noop-metrics.js";
 import { emitOperationError } from "../observability/operation-observer.js";
+import { recordSocketRateLimitRejection } from "../observability/realtime-metrics.js";
 import {
   BoundedInMemoryRateLimiter,
   type RateLimitPolicy,
@@ -37,7 +42,7 @@ export const SOCKET_EVENT_LIMITS = {
   negotiationCall: { namespace: "socket-negotiation-call", limit: 10, windowMs: 30 * SECOND },
 } satisfies Record<string, RateLimitPolicy>;
 
-export const SOCKET_OPERATION_BY_EVENT: Readonly<Partial<Record<Events, LogOperationName>>> = Object.freeze({
+export const SOCKET_OPERATION_BY_EVENT: Readonly<Partial<Record<Events, SocketMetricOperation>>> = Object.freeze({
   [Events.MESSAGE]: "message_send",
   [Events.MESSAGE_SEEN]: "message_seen",
   [Events.MESSAGE_EDIT]: "message_edit",
@@ -120,6 +125,7 @@ export const enforceSocketEventLimits = async ({
   policies,
   keyParts,
   logger = noopLogger.forComponent("socket"),
+  metrics = noopMetrics,
 }: {
   socket: Socket;
   event: string;
@@ -127,9 +133,12 @@ export const enforceSocketEventLimits = async ({
   policies: readonly RateLimitPolicy[];
   keyParts: readonly string[];
   logger?: LoggerPort;
+  metrics?: MetricsPort;
 }): Promise<boolean> => {
   try {
     if (await limiter.consumeAll(policies, keyParts)) return true;
+    const operation = SOCKET_OPERATION_BY_EVENT[event as Events];
+    if (operation) recordSocketRateLimitRejection(metrics, operation);
   } catch (error) {
     emitOperationError(logger, "socket.rate_limit.unavailable", error, {
       operation: SOCKET_OPERATION_BY_EVENT[event as Events] ?? "rate_limit_check",

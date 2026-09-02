@@ -74,6 +74,7 @@ import {
 import { sendPushNotification } from "../src/modules/notifications/push-notification.service.js";
 import { logServerError } from "../src/utils/safe-logger.utils.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const ACTOR_ID = "cm41000000000000000000001";
 const CHAT_ID = "cm41000000000000000000002";
@@ -130,9 +131,11 @@ const createLimiter = (
 const createHarness = async ({
   limiter = createLimiter().limiter,
   roomEmit = vi.fn(),
+  metrics = createCapturingMetrics(),
 }: {
   limiter?: SocketEventRateLimitPort;
   roomEmit?: ReturnType<typeof vi.fn>;
+  metrics?: ReturnType<typeof createCapturingMetrics>;
 } = {}) => {
   const handlers = new Map<string, EventHandler>();
   let connectionHandler: ((socket: Socket) => Promise<void>) | undefined;
@@ -171,6 +174,7 @@ const createHarness = async ({
     limiter,
     presence,
     logger,
+    metrics,
   });
   await connectionHandler!(socket as unknown as Socket);
   vi.mocked(socket.emit).mockClear();
@@ -178,6 +182,7 @@ const createHarness = async ({
   return {
     io,
     logger,
+    metrics,
     roomEmit,
     socket,
     triggerMessage: async (payload: unknown) => {
@@ -283,6 +288,7 @@ describe("Socket MESSAGE pre-extraction security and rate-limit characterization
     expect(consumeAll).not.toHaveBeenCalled();
     expect(assertChatMember).not.toHaveBeenCalled();
     expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(harness.metrics.socketRateLimitRejections).toEqual([]);
   });
 
   it("applies actor limit, membership, reply access, then both chat limits before creation", async () => {
@@ -346,6 +352,7 @@ describe("Socket MESSAGE pre-extraction security and rate-limit characterization
       event: Events.MESSAGE,
     });
     expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(harness.metrics.socketRateLimitRejections).toEqual(["message_send"]);
   });
 
   it("awaits actor admission before authorization and persistence", async () => {
@@ -407,6 +414,7 @@ describe("Socket MESSAGE pre-extraction security and rate-limit characterization
     expect(assertChatMember).not.toHaveBeenCalled();
     expect(prisma.message.create).not.toHaveBeenCalled();
     expect(harness.roomEmit).not.toHaveBeenCalled();
+    expect(harness.metrics.socketRateLimitRejections).toEqual([]);
   });
 
   it("does not consume chat limits when reply authorization fails and safe-logs only", async () => {
@@ -996,6 +1004,7 @@ describe("Socket MESSAGE committed-state failure cutoffs", () => {
     });
     expect(harness.roomEmit).not.toHaveBeenCalled();
     expect(prisma.unreadMessages.findUnique).not.toHaveBeenCalled();
+    expect(harness.metrics.socketOperationFailures).toEqual(["message_send"]);
   });
 
   it("stops after latest-message update failure and uses the event-local safe log", async () => {
@@ -1014,6 +1023,7 @@ describe("Socket MESSAGE committed-state failure cutoffs", () => {
     expect(harness.roomEmit).not.toHaveBeenCalled();
     expect(harness.logger.events.at(-1)).toMatchObject({ event: "socket.message_send.failed" });
     expect(harness.socket.emit).not.toHaveBeenCalled();
+    expect(harness.metrics.socketOperationFailures).toEqual(["message_send"]);
   });
 
   it("does no unread work when MESSAGE delivery throws after persistence and projection", async () => {

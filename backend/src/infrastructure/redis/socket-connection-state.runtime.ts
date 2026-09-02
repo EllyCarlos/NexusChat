@@ -10,7 +10,13 @@ import { createLocalSocketConnectionDirectory } from "../../socket/local-connect
 import { createLocalSocketEventRateLimitProvider } from "../../socket/local-socket-event-rate-limit.adapter.js";
 import type { SocketEventRateLimitPort } from "../../socket/socket-event-rate-limit.port.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
 import { noopLogger } from "../../observability/noop-logger.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
+import {
+  startConnectionMaintenanceMetric,
+  startPresenceReconciliationMetric,
+} from "../../observability/realtime-metrics.js";
 import {
   emitLifecycleError,
   emitLifecycleLog,
@@ -88,6 +94,7 @@ type CreateStateRuntimeOptions = {
   mode: SocketTransportMode;
   dependencies?: StateRuntimeDependencies;
   logger?: LoggerPort;
+  metrics?: MetricsPort;
 };
 
 const scheduleRecurringTask = (
@@ -103,9 +110,10 @@ const scheduleRecurringTask = (
 
 const createLocalStateRuntime = (
   registry: SocketConnectionRegistry,
+  metrics: MetricsPort,
 ): SocketConnectionStateRuntime => {
   const directory = createLocalSocketConnectionDirectory(registry);
-  const eventLimiter = createLocalSocketEventRateLimitProvider();
+  const eventLimiter = createLocalSocketEventRateLimitProvider(undefined, metrics);
   let started = false;
   let draining = false;
   const closePromise = Promise.resolve();
@@ -138,12 +146,14 @@ const createDistributedStateRuntime = ({
   eventLimiter,
   scheduleRecurring,
   logger,
+  metrics,
 }: {
   commandRuntime: RedisRuntime;
   directory: SocketConnectionDirectory & SocketConnectionStateMaintenance;
   eventLimiter: SocketEventRateLimitPort;
   scheduleRecurring: NonNullable<StateRuntimeDependencies["scheduleRecurring"]>;
   logger: LoggerPort;
+  metrics: MetricsPort;
 }): SocketConnectionStateRuntime => {
   let started = false;
   let operational = false;
@@ -189,6 +199,8 @@ const createDistributedStateRuntime = ({
     currentIteration = (async () => {
       if (!callbacks || draining) return;
 
+      const maintenanceMetric = startConnectionMaintenanceMetric(metrics);
+
       try {
         let iterationFailed = false;
         let firstIterationFailure: unknown;
@@ -208,19 +220,30 @@ const createDistributedStateRuntime = ({
         }
 
         await directory.reapExpiredLeases();
-        const pendingPresence = await directory.listPendingPresence();
-        for (const transition of pendingPresence) {
-          try {
-            await callbacks.reconcilePresence(transition.userId);
-          } catch (error) {
-            recordIterationFailure(error);
+        const presenceMetric = startPresenceReconciliationMetric(metrics);
+        let presenceFailed = false;
+        try {
+          const pendingPresence = await directory.listPendingPresence();
+          for (const transition of pendingPresence) {
+            try {
+              await callbacks.reconcilePresence(transition.userId);
+            } catch (error) {
+              presenceFailed = true;
+              recordIterationFailure(error);
+            }
           }
+          presenceMetric.complete(presenceFailed ? "failed" : "success");
+        } catch (error) {
+          presenceMetric.complete("failed");
+          throw error;
         }
         await directory.cleanupSettledPresence();
         if (iterationFailed) throw firstIterationFailure;
         operational = true;
         markMaintenanceRecovered();
+        maintenanceMetric.complete("success");
       } catch (error) {
+        maintenanceMetric.complete("failed");
         markMaintenanceUnavailable(error);
         throw error;
       }
@@ -326,10 +349,12 @@ export const createSocketConnectionStateRuntime = ({
   mode,
   dependencies = {},
   logger = noopLogger.forComponent("redis"),
+  metrics = noopMetrics,
 }: CreateStateRuntimeOptions): SocketConnectionStateRuntime => {
   if (mode.kind === "local") {
     return createLocalStateRuntime(
       dependencies.localRegistry ?? socketConnectionRegistry,
+      metrics,
     );
   }
 
@@ -337,7 +362,12 @@ export const createSocketConnectionStateRuntime = ({
 
   const createCommandClient = dependencies.createCommandClient
     ?? ((configuration: RedisConnectionConfiguration) =>
-      createRedisClient(configuration, redisLogger, "command") as NodeRedisClient);
+      createRedisClient(
+        configuration,
+        redisLogger,
+        "command",
+        metrics,
+      ) as NodeRedisClient);
   const createCommandRuntime = dependencies.createRuntime
     ?? ((client: RedisLifecycleClient & RedisScriptExecutor) =>
       createRedisRuntime(client));
@@ -345,7 +375,10 @@ export const createSocketConnectionStateRuntime = ({
     ?? ((executor: RedisScriptExecutor) =>
       createRedisSocketConnectionDirectory({ executor }));
   const createEventLimiter = dependencies.createEventLimiter
-    ?? createRedisSocketEventRateLimitProvider;
+    ?? ((options) => createRedisSocketEventRateLimitProvider({
+      ...options,
+      metrics,
+    }));
   const scheduleRecurring = dependencies.scheduleRecurring ?? scheduleRecurringTask;
 
   const commandClient = createCommandClient({ url: mode.redisUrl });
@@ -359,5 +392,6 @@ export const createSocketConnectionStateRuntime = ({
     eventLimiter,
     scheduleRecurring,
     logger: redisLogger,
+    metrics,
   });
 };

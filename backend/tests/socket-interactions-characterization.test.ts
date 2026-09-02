@@ -50,6 +50,7 @@ import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-eve
 import registerSocketHandlers from "../src/socket/socket.js";
 import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const USER_ID = "cm50000000000000000000001";
 const CHAT_ID = "cm50000000000000000000002";
@@ -240,7 +241,10 @@ type LimiterDouble = {
   consumeAll: ReturnType<typeof vi.fn>;
 };
 
-const createHarness = async (limiter?: LimiterDouble) => {
+const createHarness = async (
+  limiter?: LimiterDouble,
+  metrics = createCapturingMetrics(),
+) => {
   const handlers = new Map<string, EventHandler>();
   let connectionHandler: ((socket: Socket) => Promise<void>) | undefined;
   const roomEmit = vi.fn();
@@ -279,6 +283,7 @@ const createHarness = async (limiter?: LimiterDouble) => {
     registry: new SocketConnectionRegistry(),
     limiter: selectedLimiter,
     logger,
+    metrics,
   });
   expect(connectionHandler).toBeDefined();
   await connectionHandler!(socket as unknown as Socket);
@@ -289,6 +294,7 @@ const createHarness = async (limiter?: LimiterDouble) => {
     handlers,
     io,
     logger,
+    metrics,
     roomEmit,
     socket,
     trigger: async (event: Events, payload: unknown) => {
@@ -436,6 +442,7 @@ describe("Socket interaction parse and limiter ordering", () => {
   it.each(interactionCases)("cuts off $event at the actor-level limiter before authorization", async ({
     actorPolicy,
     event,
+    operation,
     payload,
   }) => {
     const consumeAll = vi.fn().mockResolvedValue(false);
@@ -453,12 +460,14 @@ describe("Socket interaction parse and limiter ordering", () => {
       category: "RATE_LIMITED",
       event,
     });
+    expect(harness.metrics.socketRateLimitRejections).toEqual([operation]);
   });
 
   it.each(interactionCases)("authorizes $event before its resource-level limiter and mutation", async ({
     actorPolicy,
     authorization,
     event,
+    operation,
     payload,
     resourceKey,
     resourcePolicy,
@@ -483,10 +492,12 @@ describe("Socket interaction parse and limiter ordering", () => {
     expectNoInteractionPersistence();
     expect(harness.roomEmit).not.toHaveBeenCalled();
     expect(harness.broadcastRoomEmit).not.toHaveBeenCalled();
+    expect(harness.metrics.socketOperationFailures).toEqual([]);
     expect(harness.socket.emit).toHaveBeenCalledWith(Events.SECURITY_ERROR, {
       category: "RATE_LIMITED",
       event,
     });
+    expect(harness.metrics.socketRateLimitRejections).toEqual([operation]);
   });
 });
 
@@ -515,6 +526,7 @@ describe("Socket interaction error boundaries", () => {
     expectNoInteractionPersistence();
     expect(harness.roomEmit).not.toHaveBeenCalled();
     expect(harness.broadcastRoomEmit).not.toHaveBeenCalled();
+    expect(harness.metrics.socketOperationFailures).toEqual([operation]);
   });
 
   const roomDeliveryFailureCases = [
@@ -595,6 +607,7 @@ describe("Socket interaction error boundaries", () => {
       });
       expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
       expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
+      expect(harness.metrics.socketOperationFailures).toEqual([operation]);
     },
   );
 
@@ -621,6 +634,7 @@ describe("Socket interaction error boundaries", () => {
     });
     expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(JSON.stringify(harness.socket.emit.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.metrics.socketOperationFailures).toEqual(["typing"]);
   });
 
   it("stops pin replacement work and safe-logs when PIN_LIMIT_REACHED delivery throws", async () => {

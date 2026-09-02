@@ -11,6 +11,7 @@ import {
   SOCKET_EVENT_RATE_LIMIT_REDIS_KEY_PREFIX,
 } from "../src/infrastructure/redis/socket-event-rate-limit-script.js";
 import type { RateLimitPolicy } from "../src/security/rate-limit.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const POLICY_A = {
   namespace: "socket-policy-a",
@@ -38,8 +39,9 @@ const createHarness = (isReady = true) => {
     isReady,
     eval: evalMock,
   };
-  const provider = createRedisSocketEventRateLimitProvider({ executor });
-  return { evalMock, executor, provider };
+  const metrics = createCapturingMetrics();
+  const provider = createRedisSocketEventRateLimitProvider({ executor, metrics });
+  return { evalMock, executor, metrics, provider };
 };
 
 const decision = (allowed: boolean): string => JSON.stringify({ allowed });
@@ -96,21 +98,25 @@ describe("Redis Socket event rate-limit provider", () => {
   });
 
   it("propagates an executor failure without retry or fallback", async () => {
-    const { evalMock, provider } = createHarness();
+    const { evalMock, metrics, provider } = createHarness();
     const failure = new Error("obvious-fake-command-failure");
     evalMock.mockRejectedValue(failure);
 
     await expect(provider.consume(POLICY_A, KEY_PARTS)).rejects.toBe(failure);
     expect(evalMock).toHaveBeenCalledOnce();
+    expect(metrics.socketRateLimitProviderFailures).toEqual(["redis"]);
+    expect(JSON.stringify(metrics)).not.toContain(KEY_PARTS[0]);
+    expect(JSON.stringify(metrics)).not.toContain(KEY_PARTS[1]);
   });
 
   it("fails closed before EVAL while the shared command executor is not ready", async () => {
-    const { evalMock, provider } = createHarness(false);
+    const { evalMock, metrics, provider } = createHarness(false);
 
     await expect(provider.consume(POLICY_A, KEY_PARTS)).rejects.toThrow(
       "Redis Socket event rate-limit executor is not ready.",
     );
     expect(evalMock).not.toHaveBeenCalled();
+    expect(metrics.socketRateLimitProviderFailures).toEqual(["redis"]);
   });
 
   it.each([

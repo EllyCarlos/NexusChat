@@ -54,6 +54,7 @@ import { createLocalSocketConnectionDirectory } from "../src/socket/local-connec
 import { LocalSocketEventRateLimitAdapter } from "../src/socket/local-socket-event-rate-limit.adapter.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 
 const USER_ID = "cm40000000000000000000001";
@@ -132,12 +133,14 @@ const makeRuntime = () => {
   const limiter = new LocalSocketEventRateLimitAdapter();
   const presenceWriteQueue = new SocketPresenceWriteQueue();
   const logger = createCapturingLogger("socket");
+  const metrics = createCapturingMetrics();
 
   registerSocketHandlers(io as unknown as Server, {
     directory,
     limiter,
     presenceWriteQueue,
     logger,
+    metrics,
   });
 
   return {
@@ -145,6 +148,7 @@ const makeRuntime = () => {
     directory,
     limiter,
     logger,
+    metrics,
     presenceWriteQueue,
     registry,
     runConnection: async (socket: Socket) => {
@@ -212,6 +216,7 @@ describe("Socket root connection admission and registration", () => {
         directory: runtime.directory,
         limiter: runtime.limiter,
         logger: runtime.logger,
+        metrics: runtime.metrics,
         sendNotification: expect.any(Function),
       },
     );
@@ -282,6 +287,7 @@ describe("Socket root connection admission and registration", () => {
         directory: runtime.directory,
         limiter: runtime.limiter,
         logger: runtime.logger,
+        metrics: runtime.metrics,
         sendNotification: expect.any(Function),
       },
     );

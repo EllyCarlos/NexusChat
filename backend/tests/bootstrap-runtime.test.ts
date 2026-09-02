@@ -263,6 +263,7 @@ describe("backend server construction", () => {
     expect(mocks.createSocketAuthenticatorMiddleware).toHaveBeenCalledWith(
       undefined,
       expect.objectContaining({ component: "auth" }),
+      metrics,
     );
     expect(useSpy).toHaveBeenCalledWith(mocks.socketAuthenticator);
     expect(mocks.registerSocketHandlers).toHaveBeenCalledWith(runtime.io, {
@@ -270,6 +271,8 @@ describe("backend server construction", () => {
       limiter: state.eventLimiter,
       presence: runtime.presence,
       logger: expect.objectContaining({ component: "socket" }),
+      metrics,
+      runtimeMode: "local",
       sendNotification: mocks.sendNotification,
     });
     expect(mocks.createObservedPushNotificationSender).toHaveBeenCalledWith(
@@ -306,11 +309,13 @@ describe("backend startup", () => {
       close: vi.fn(async () => undefined),
     };
     const createConnectionState = vi.fn(() => state.runtime);
+    const metrics = createCapturingMetrics();
     const processLogger = createCapturingLogger("bootstrap");
     const createLogger = vi.fn(() => processLogger);
     const createServer = vi.fn((options?: CreateBackendServerOptions) => {
       readiness = options?.readiness;
       expect(options?.connectionState).toBe(state.runtime);
+      expect(options?.metrics).toBe(metrics);
       expect(readiness?.()).toBe(false);
       return fake.runtime;
     });
@@ -330,6 +335,7 @@ describe("backend startup", () => {
       logStarted: vi.fn(),
       disconnectPrisma: vi.fn(async () => undefined),
       createLogger,
+      createMetrics: () => metrics,
     });
 
     expect(createLogger).toHaveBeenCalledOnce();
@@ -342,6 +348,7 @@ describe("backend startup", () => {
     expect(createConnectionState).toHaveBeenCalledWith({
       mode: { kind: "local" },
       logger: processLogger,
+      metrics,
     });
     expect(state.runtime.connect).toHaveBeenCalledOnce();
     expect(state.runtime.start).toHaveBeenCalledOnce();
@@ -513,7 +520,9 @@ describe("backend startup", () => {
       expect(options?.connectionState).toBe(state.runtime);
       return fake.runtime;
     });
-    const prepareTransport = vi.fn(async () => {
+    const metrics = createCapturingMetrics();
+    const prepareTransport = vi.fn(async ({ metrics: selectedMetrics }) => {
+      expect(selectedMetrics).toBe(metrics);
       expect(readiness?.()).toBe(false);
       expect(state.runtime.connect).not.toHaveBeenCalled();
       expect(fake.httpServer.listen).not.toHaveBeenCalled();
@@ -530,6 +539,7 @@ describe("backend startup", () => {
       registerHandlers: vi.fn(() => vi.fn()),
       logStarted: vi.fn(),
       disconnectPrisma: vi.fn(async () => undefined),
+      createMetrics: () => metrics,
     });
 
     expect(prepareTransport).toHaveBeenCalledWith({
@@ -539,6 +549,7 @@ describe("backend startup", () => {
         kind: "distributed",
         redisUrl: "rediss://redis.example.test:6380",
       },
+      metrics,
     });
     expect(prepareTransport.mock.invocationCallOrder[0]).toBeLessThan(
       state.runtime.connect.mock.invocationCallOrder[0],

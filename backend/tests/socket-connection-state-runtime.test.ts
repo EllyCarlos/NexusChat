@@ -10,6 +10,7 @@ import {
 } from "../src/infrastructure/redis/socket-connection-state.runtime.js";
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const createDistributedHarness = () => {
   const commandClient = {
@@ -73,6 +74,7 @@ const createDistributedHarness = () => {
   };
   const createEventLimiter = vi.fn(() => eventLimiter);
   const logger = createCapturingLogger("redis");
+  const metrics = createCapturingMetrics();
 
   const runtime = createSocketConnectionStateRuntime({
     mode: { kind: "distributed", redisUrl: "redis://example.test" },
@@ -84,6 +86,7 @@ const createDistributedHarness = () => {
       scheduleRecurring,
     },
     logger,
+    metrics,
   });
 
   return {
@@ -99,6 +102,7 @@ const createDistributedHarness = () => {
     scheduleRecurring,
     recurringTask,
     logger,
+    metrics,
     getScheduledCallback: () => scheduledCallback,
   };
 };
@@ -181,6 +185,8 @@ describe("Socket connection-state runtime", () => {
     );
     expect(harness.recurringTask.unref).toHaveBeenCalledOnce();
     expect(harness.runtime.isReady).toBe(true);
+    expect(harness.metrics.connectionMaintenanceResults).toEqual(["success"]);
+    expect(harness.metrics.presenceReconciliationResults).toEqual(["success"]);
   });
 
   it("does not overlap scheduled maintenance iterations", async () => {
@@ -237,6 +243,8 @@ describe("Socket connection-state runtime", () => {
     expect(harness.scheduleRecurring).toHaveBeenCalledOnce();
     expect(harness.recurringTask.unref).toHaveBeenCalledOnce();
     expect(harness.runtime.isReady).toBe(true);
+    expect(harness.metrics.connectionMaintenanceResults).toEqual(["success"]);
+    expect(harness.metrics.presenceReconciliationResults).toEqual(["success"]);
   });
 
   it("continues later presence users and cleanup after one reconciliation fails", async () => {
@@ -279,6 +287,14 @@ describe("Socket connection-state runtime", () => {
     expect(harness.directory.cleanupSettledPresence).toHaveBeenCalledTimes(2);
     expect(harness.scheduleRecurring).toHaveBeenCalledOnce();
     expect(harness.runtime.isReady).toBe(true);
+    expect(harness.metrics.connectionMaintenanceResults).toEqual([
+      "failed",
+      "success",
+    ]);
+    expect(harness.metrics.presenceReconciliationResults).toEqual([
+      "failed",
+      "success",
+    ]);
   });
 
   it("continues later lost-connection callbacks and cleanup after one callback fails", async () => {
@@ -396,6 +412,13 @@ describe("Socket connection-state runtime", () => {
     expect(transitionEvents.map(({ event }) => event)).toEqual([
       "redis.connection_maintenance.unavailable",
       "redis.connection_maintenance.recovered",
+    ]);
+    expect(harness.metrics.connectionMaintenanceResults).toEqual([
+      "success",
+      "failed",
+      "failed",
+      "failed",
+      "success",
     ]);
     expect(JSON.stringify(transitionEvents)).not.toContain("private-password");
   });

@@ -5,7 +5,10 @@ import {
   getLifecycleErrorMetadata,
 } from "../../observability/lifecycle-logger.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
 import { noopLogger } from "../../observability/noop-logger.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
+import { recordRedisRuntimeState } from "../../observability/realtime-metrics.js";
 
 export type NodeRedisClient = ReturnType<typeof createClient>;
 
@@ -35,6 +38,7 @@ const observeRedisClient = (
   client: NodeRedisClient,
   logger: LoggerPort,
   role: LogRedisRole,
+  metrics: MetricsPort,
 ): NodeRedisClient => {
   let phase: RedisLifecyclePhase = "initial";
   let hasBeenReady = false;
@@ -43,6 +47,7 @@ const observeRedisClient = (
     markConnecting: () => {
       if (phase !== "initial") return;
       phase = "connecting";
+      recordRedisRuntimeState(metrics, { role, state: "connecting" });
       emitLifecycleLog(logger, "info", "redis.runtime.connecting", {
         role,
         state: "connecting",
@@ -54,6 +59,7 @@ const observeRedisClient = (
       const recovered = hasBeenReady;
       phase = "ready";
       hasBeenReady = true;
+      recordRedisRuntimeState(metrics, { role, state: "ready" });
       emitLifecycleLog(
         logger,
         "info",
@@ -68,6 +74,7 @@ const observeRedisClient = (
     markUnavailable: (error?: unknown) => {
       if (phase === "closing" || phase === "closed" || phase === "unavailable") return;
       phase = "unavailable";
+      recordRedisRuntimeState(metrics, { role, state: "unavailable" });
       emitLifecycleLog(logger, "warn", "redis.runtime.unavailable", {
         role,
         state: "unavailable",
@@ -82,6 +89,7 @@ const observeRedisClient = (
     markClosed: () => {
       if (phase === "closed") return;
       phase = "closed";
+      recordRedisRuntimeState(metrics, { role, state: "closed" });
       emitLifecycleLog(logger, "info", "redis.runtime.closed", {
         role,
         state: "closed",
@@ -135,10 +143,12 @@ export const createRedisClient = ({
 }: RedisConnectionConfiguration,
 logger: LoggerPort = noopLogger.forComponent("redis"),
 role: LogRedisRole = "command",
-): NodeRedisClient => observeRedisClient(createClient({ url }), logger, role);
+metrics: MetricsPort = noopMetrics,
+): NodeRedisClient => observeRedisClient(createClient({ url }), logger, role, metrics);
 
 export const duplicateRedisClient = (
   client: NodeRedisClient,
   logger: LoggerPort = noopLogger.forComponent("redis"),
   role: LogRedisRole = "subscriber",
-): NodeRedisClient => observeRedisClient(client.duplicate(), logger, role);
+  metrics: MetricsPort = noopMetrics,
+): NodeRedisClient => observeRedisClient(client.duplicate(), logger, role, metrics);

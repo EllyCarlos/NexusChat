@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LogRedisRole } from "../src/observability/log-event.types.js";
 import type { LoggerPort } from "../src/observability/logger.port.js";
 import { createCapturingLogger } from "./support/capturing-logger.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const redisMocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -179,10 +180,12 @@ describe("Redis client creation", () => {
       const fake = createFakeClient();
       redisMocks.createClient.mockReturnValue(fake.client);
       const logger = createCapturingLogger("redis");
+      const metrics = createCapturingMetrics();
       const runtime = createRedisRuntime(createRedisClient(
         { url: "rediss://private-user:private-password@redis.invalid" },
         logger,
         role,
+        metrics,
       ));
 
       await runtime.connect();
@@ -205,6 +208,14 @@ describe("Redis client creation", () => {
         "redis.runtime.closed",
       ]);
       expect(logger.events.every(({ fields }) => fields.role === role)).toBe(true);
+      expect(metrics.redisRuntimeStates).toEqual([
+        { role, state: "connecting" },
+        { role, state: "ready" },
+        { role, state: "unavailable" },
+        { role, state: "ready" },
+        { role, state: "unavailable" },
+        { role, state: "closed" },
+      ]);
       expect(JSON.stringify(logger.events)).not.toContain("private");
     },
   );

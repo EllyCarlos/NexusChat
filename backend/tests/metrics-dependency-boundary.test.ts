@@ -18,6 +18,14 @@ describe("metrics dependency boundary", () => {
     expect(source).not.toMatch(/prom-client|express|Counter|Gauge|Histogram|Registry/);
     expect(source).toContain("startHttpRequest");
     expect(source).toContain("HttpRequestMetricCompletion");
+    expect(source).toContain("recordSocketConnectionAdmission");
+    expect(source).toContain("startSocketConnection");
+    expect(source).toContain("recordSocketOperationFailure");
+    expect(source).toContain("recordSocketRateLimitRejection");
+    expect(source).toContain("recordSocketRateLimitProviderFailure");
+    expect(source).toContain("recordRedisRuntimeState");
+    expect(source).toContain("startConnectionMaintenance");
+    expect(source).toContain("startPresenceReconciliation");
     expect(source).not.toMatch(/increment\(name|observe\(name|set\(name|Record<string,\s*string>/);
   });
 

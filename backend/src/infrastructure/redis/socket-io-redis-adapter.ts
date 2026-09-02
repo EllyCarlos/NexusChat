@@ -3,11 +3,13 @@ import type { Server as SocketServer } from "socket.io";
 
 import { ApplicationError } from "../../errors/application-error.js";
 import type { LoggerPort } from "../../observability/logger.port.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
 import {
   emitLifecycleError,
   selectLifecycleLoggerComponent,
 } from "../../observability/lifecycle-logger.js";
 import { noopLogger } from "../../observability/noop-logger.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
 import type { NodeEnvironment } from "../../schemas/env.schema.js";
 import {
   createRedisClient,
@@ -51,6 +53,7 @@ type PrepareSocketTransportOptions = {
   mode: SocketTransportMode;
   dependencies?: SocketRedisAdapterDependencies;
   logger?: LoggerPort;
+  metrics?: MetricsPort;
 };
 
 export const resolveSocketTransportMode = ({
@@ -145,6 +148,7 @@ export const prepareSocketTransport = async ({
   mode,
   dependencies = {},
   logger = noopLogger.forComponent("redis"),
+  metrics = noopMetrics,
 }: PrepareSocketTransportOptions): Promise<SocketTransportRuntime> => {
   if (mode.kind === "local") {
     return createLocalSocketTransportRuntime();
@@ -154,10 +158,15 @@ export const prepareSocketTransport = async ({
 
   const createPublisher = dependencies.createPublisher
     ?? ((configuration: RedisConnectionConfiguration) =>
-      createRedisClient(configuration, redisLogger, "publisher"));
+      createRedisClient(configuration, redisLogger, "publisher", metrics));
   const duplicateSubscriber = dependencies.duplicateSubscriber
     ?? ((publisher: AdapterRedisClient) =>
-      duplicateRedisClient(publisher as NodeRedisClient, redisLogger, "subscriber"));
+      duplicateRedisClient(
+        publisher as NodeRedisClient,
+        redisLogger,
+        "subscriber",
+        metrics,
+      ));
   const createRuntime = dependencies.createRuntime
     ?? ((client: AdapterRedisClient) => createRedisRuntime(client));
   const createSocketAdapter = dependencies.createAdapter ?? createAdapter;

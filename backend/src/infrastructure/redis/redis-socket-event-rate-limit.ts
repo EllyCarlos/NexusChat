@@ -1,4 +1,7 @@
 import type { RateLimitPolicy } from "../../security/rate-limit.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
+import { recordSocketRateLimitProviderFailure } from "../../observability/realtime-metrics.js";
 import {
   createSocketEventRateLimitBucketIdentity,
   type SocketEventRateLimitPort,
@@ -15,6 +18,7 @@ type ReadyRedisScriptExecutor = RedisScriptExecutor & {
 
 type RedisSocketEventRateLimitOptions = {
   executor: ReadyRedisScriptExecutor;
+  metrics?: MetricsPort;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -57,9 +61,11 @@ const parseDecision = (value: unknown): boolean => {
 
 export class RedisSocketEventRateLimitProvider implements SocketEventRateLimitPort {
   private readonly executor: ReadyRedisScriptExecutor;
+  private readonly metrics: MetricsPort;
 
-  constructor({ executor }: RedisSocketEventRateLimitOptions) {
+  constructor({ executor, metrics = noopMetrics }: RedisSocketEventRateLimitOptions) {
     this.executor = executor;
+    this.metrics = metrics;
   }
 
   async consume(
@@ -67,21 +73,26 @@ export class RedisSocketEventRateLimitProvider implements SocketEventRateLimitPo
     keyParts: readonly string[],
   ): Promise<boolean> {
     validatePolicy(policy);
-    if (!this.executor.isReady) {
-      throw new Error("Redis Socket event rate-limit executor is not ready.");
-    }
+    try {
+      if (!this.executor.isReady) {
+        throw new Error("Redis Socket event rate-limit executor is not ready.");
+      }
 
-    const bucketIdentity = createSocketEventRateLimitBucketIdentity(
-      policy,
-      keyParts,
-    );
-    return parseDecision(await this.executor.eval(
-      CONSUME_SOCKET_EVENT_RATE_LIMIT_SCRIPT,
-      {
-        keys: [`${SOCKET_EVENT_RATE_LIMIT_REDIS_KEY_PREFIX}${bucketIdentity}`],
-        arguments: [String(policy.limit), String(policy.windowMs)],
-      },
-    ));
+      const bucketIdentity = createSocketEventRateLimitBucketIdentity(
+        policy,
+        keyParts,
+      );
+      return parseDecision(await this.executor.eval(
+        CONSUME_SOCKET_EVENT_RATE_LIMIT_SCRIPT,
+        {
+          keys: [`${SOCKET_EVENT_RATE_LIMIT_REDIS_KEY_PREFIX}${bucketIdentity}`],
+          arguments: [String(policy.limit), String(policy.windowMs)],
+        },
+      ));
+    } catch (error) {
+      recordSocketRateLimitProviderFailure(this.metrics, "redis");
+      throw error;
+    }
   }
 
   async consumeAll(

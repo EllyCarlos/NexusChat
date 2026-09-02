@@ -50,14 +50,19 @@ export type CreateBackendServerOptions = {
   metrics?: MetricsPort;
 };
 
-export const createBackendServer = ({
-  connectionState = createSocketConnectionStateRuntime({
-    mode: { kind: "local" },
-  }),
-  readiness,
-  logger = noopLogger,
-  metrics = createProcessMetrics({ enabled: config.metrics.enabled }),
-}: CreateBackendServerOptions = {}): BackendServer => {
+export const createBackendServer = (
+  options: CreateBackendServerOptions = {},
+): BackendServer => {
+  const {
+    readiness,
+    logger = noopLogger,
+    metrics = createProcessMetrics({ enabled: config.metrics.enabled }),
+  } = options;
+  const connectionState = options.connectionState
+    ?? createSocketConnectionStateRuntime({
+      mode: { kind: "local" },
+      metrics,
+    });
   initializeProviders(config, logger.forComponent("provider"));
   const httpLogger = logger.forComponent("http");
   const socketLogger = logger.forComponent("socket");
@@ -103,7 +108,11 @@ export const createBackendServer = ({
 
   app.set("io", io);
   app.set("connectionDirectory", connectionState.directory);
-  io.use(createSocketAuthenticatorMiddleware(undefined, logger.forComponent("auth")));
+  io.use(createSocketAuthenticatorMiddleware(
+    undefined,
+    logger.forComponent("auth"),
+    metrics,
+  ));
   const publisher = createSocketPresencePublisher(io);
   const presence = connectionState.maintenance
     ? createDistributedSocketPresenceCoordinator({
@@ -121,6 +130,8 @@ export const createBackendServer = ({
     limiter: connectionState.eventLimiter,
     presence,
     logger: socketLogger,
+    metrics,
+    runtimeMode: connectionState.mode,
     sendNotification,
   });
 

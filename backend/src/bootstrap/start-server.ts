@@ -17,6 +17,7 @@ import type {
   LogLifecycleStage,
   LogShutdownReason,
 } from "../observability/log-event.types.js";
+import type { MetricsPort } from "../observability/metrics.port.js";
 import {
   emitLifecycleError,
   emitLifecycleLog,
@@ -36,6 +37,7 @@ import {
   createProcessLogger,
   type ProcessLoggerOptions,
 } from "./logger-composition.js";
+import { createProcessMetrics } from "./metrics-composition.js";
 
 type StartServerOptions = {
   createServer?: (options?: CreateBackendServerOptions) => BackendServer;
@@ -46,11 +48,14 @@ type StartServerOptions = {
     io: BackendServer["io"];
     mode: SocketTransportMode;
     logger?: ReturnType<typeof createProcessLogger>;
+    metrics?: MetricsPort;
   }) => Promise<SocketTransportRuntime>;
   createConnectionState?: (options: {
     mode: SocketTransportMode;
     logger?: ReturnType<typeof createProcessLogger>;
+    metrics?: MetricsPort;
   }) => SocketConnectionStateRuntime;
+  createMetrics?: () => MetricsPort;
   disconnectPrisma?: () => Promise<void>;
   registerHandlers?: typeof registerProcessHandlers;
   logStarted?: (port: string | number) => void;
@@ -86,6 +91,7 @@ export const startServer = async ({
   redisUrl = config.redis.url,
   prepareTransport = prepareSocketTransport,
   createConnectionState = createSocketConnectionStateRuntime,
+  createMetrics = () => createProcessMetrics({ enabled: config.metrics.enabled }),
   disconnectPrisma = () => prisma.$disconnect(),
   registerHandlers = registerProcessHandlers,
   logStarted,
@@ -95,6 +101,7 @@ export const startServer = async ({
   const startupStartedAt = clock();
   const mode = resolveSocketTransportMode({ environment, redisUrl });
   const logger = createLogger({ environment, runtimeMode: mode.kind });
+  const metrics = createMetrics();
   emitLifecycleLog(logger, "info", "bootstrap.startup.started", {
     result: "started",
   });
@@ -152,7 +159,7 @@ export const startServer = async ({
   };
   const connectionState = observeSyncStage(
     "connection_state_construction",
-    () => createConnectionState({ mode, logger }),
+    () => createConnectionState({ mode, logger, metrics }),
   );
   let socketTransport: SocketTransportRuntime | undefined;
   let runtime: BackendServer | undefined;
@@ -163,6 +170,7 @@ export const startServer = async ({
       () => createServer({
         connectionState,
         logger,
+        metrics,
         readiness: () => socketTransport?.isReady === true
           && connectionState.isReady
           && (runtime?.socketLifecycle?.isAcceptingConnections ?? true),
@@ -210,7 +218,7 @@ export const startServer = async ({
   try {
     socketTransport = await observeAsyncStage(
       "socket_transport",
-      () => prepareTransport({ io: runtime!.io, mode, logger }),
+      () => prepareTransport({ io: runtime!.io, mode, logger, metrics }),
     );
     await observeAsyncStage("connection_state_connect", () => connectionState.connect());
     await observeAsyncStage(

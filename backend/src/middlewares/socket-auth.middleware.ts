@@ -5,7 +5,10 @@ import { isSessionAuthenticationError } from "../modules/auth/application/authen
 import { authenticateSession } from "../modules/auth/session-auth.service.js";
 import type { AuthenticatedIdentity } from "../modules/auth/contracts/auth-identity.js";
 import type { LoggerPort } from "../observability/logger.port.js";
+import type { MetricsPort } from "../observability/metrics.port.js";
 import { noopLogger } from "../observability/noop-logger.js";
+import { noopMetrics } from "../observability/noop-metrics.js";
+import { recordSocketConnectionAdmission } from "../observability/realtime-metrics.js";
 import { logSafeError } from "../observability/safe-error.js";
 
 export const MAX_SOCKET_TOKEN_LENGTH = 4_096;
@@ -24,13 +27,21 @@ type AuthenticateSessionOperation = (input: {
 export const createSocketAuthenticatorMiddleware = (
   authenticate: AuthenticateSessionOperation = authenticateSession,
   logger: LoggerPort = noopLogger.forComponent("auth"),
+  metrics: MetricsPort = noopMetrics,
 ) => async (socket: Socket, next: NextFunction) => {
+  const rejectAuthentication = (message: string) => {
+    recordSocketConnectionAdmission(metrics, {
+      result: "rejected",
+      reason: "authentication",
+    });
+    return next(new CustomError(message, 401));
+  };
   const token = socket.handshake.query.token;
   if (token === undefined) {
-    return next(new CustomError("Token missing, please login again", 401));
+    return rejectAuthentication("Token missing, please login again");
   }
   if (!hasPlausibleJwtShape(token)) {
-    return next(new CustomError("Invalid token format", 401));
+    return rejectAuthentication("Invalid token format");
   }
 
   try {
@@ -44,18 +55,18 @@ export const createSocketAuthenticatorMiddleware = (
   } catch (error) {
     if (isSessionAuthenticationError(error)) {
       if (error.reason === "token_expired") {
-        return next(new CustomError("Token expired, please login again", 401));
+        return rejectAuthentication("Token expired, please login again");
       }
       if (error.reason === "token_invalid") {
-        return next(new CustomError("Invalid token format", 401));
+        return rejectAuthentication("Invalid token format");
       }
       if (error.reason === "identity_not_found") {
-        return next(new CustomError("Invalid Token, please login again", 401));
+        return rejectAuthentication("Invalid Token, please login again");
       }
     }
 
     logSafeError(logger, "auth.socket_authentication.failed", error);
-    return next(new CustomError("Invalid Token, please login again", 401));
+    return rejectAuthentication("Invalid Token, please login again");
   }
 };
 
