@@ -1,7 +1,22 @@
 import type { Server, Socket } from "socket.io";
 import { Events } from "../enums/event/event.enum.js";
 import { prisma } from "../lib/prisma.lib.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import type { LogRuntimeMode } from "../observability/log-event.types.js";
+import type {
+  MetricsPort,
+  SocketConnectionMetricLifecycle,
+} from "../observability/metrics.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { noopMetrics } from "../observability/noop-metrics.js";
+import {
+  recordSocketConnectionAdmission,
+  startSocketConnectionMetric,
+} from "../observability/realtime-metrics.js";
+import { emitOperationLog } from "../observability/operation-observer.js";
+import { logSafeError } from "../observability/safe-error.js";
+import { sendPushNotification } from "../modules/notifications/push-notification.service.js";
+import type { SendPushNotificationInput } from "../modules/notifications/application/send-push-notification.js";
 import type {
   SocketConnectionDirectory,
   SocketPresenceTransition,
@@ -45,6 +60,10 @@ type SocketHandlerDependencies = {
   presenceWriteQueue?: SocketPresenceWriteQueue;
   presence?: SocketPresenceCoordinator;
   operationTracker?: SocketOperationTracker;
+  logger?: LoggerPort;
+  metrics?: MetricsPort;
+  runtimeMode?: LogRuntimeMode;
+  sendNotification?: (input: SendPushNotificationInput) => void;
 };
 
 export interface SocketHandlerLifecycle {
@@ -63,12 +82,18 @@ const registerSocketHandlers = (
   const registry = dependencies.registry ?? socketConnectionRegistry;
   const directory = dependencies.directory
     ?? createLocalSocketConnectionDirectory(registry);
-  const limiter = dependencies.limiter ?? createLocalSocketEventRateLimitProvider();
+  const metrics = dependencies.metrics ?? noopMetrics;
+  const runtimeMode = dependencies.runtimeMode ?? "local";
+  const limiter = dependencies.limiter
+    ?? createLocalSocketEventRateLimitProvider(undefined, metrics);
   const presenceWriteQueue = dependencies.presenceWriteQueue ?? socketPresenceWriteQueue;
+  const logger = dependencies.logger ?? noopLogger.forComponent("socket");
+  const sendNotification = dependencies.sendNotification ?? sendPushNotification;
   const presence = dependencies.presence ?? createLocalSocketPresenceCoordinator({
     directory,
     publisher: createSocketPresencePublisher(io),
     queue: presenceWriteQueue,
+    logger: logger.forComponent("presence"),
   });
   const operationTracker = dependencies.operationTracker
     ?? createSocketOperationTracker();
@@ -77,10 +102,11 @@ const registerSocketHandlers = (
     try {
       await presence.reconcileTransition(transition);
     } catch (error) {
-      logServerError(
+      logSafeError(
+        logger,
         transition.state === "online"
-          ? "Socket online presence update failed."
-          : "Socket offline presence update failed.",
+          ? "socket.online_presence_update.failed"
+          : "socket.offline_presence_update.failed",
         error,
       );
     }
@@ -88,11 +114,19 @@ const registerSocketHandlers = (
 
   io.on("connection", (socket: Socket) => operationTracker.track((async () => {
     if (!socket.user) {
+      recordSocketConnectionAdmission(metrics, {
+        result: "rejected",
+        reason: "authentication",
+      });
       socket.disconnect(true);
       return;
     }
 
     if (!operationTracker.isAcceptingConnections) {
+      recordSocketConnectionAdmission(metrics, {
+        result: "rejected",
+        reason: "runtime_unavailable",
+      });
       socket.disconnect(true);
       return;
     }
@@ -101,10 +135,13 @@ const registerSocketHandlers = (
     let registrationAccepted = false;
     let disconnected = false;
     let removalPromise: Promise<void> | undefined;
+    let connectionMetric: SocketConnectionMetricLifecycle | undefined;
 
     const removeAcceptedConnection = () => {
       if (!registrationAccepted) return Promise.resolve();
       if (removalPromise) return removalPromise;
+
+      connectionMetric?.complete();
 
       removalPromise = (async () => {
         try {
@@ -113,7 +150,7 @@ const registerSocketHandlers = (
             await reconcileTransition(removal.presenceTransition);
           }
         } catch (error) {
-          logServerError("Socket connection removal failed.", error);
+          logSafeError(logger, "socket.connection_removal.failed", error);
         }
       })();
       return removalPromise;
@@ -129,17 +166,38 @@ const registerSocketHandlers = (
     try {
       registration = await directory.add(userId, socket.id);
     } catch (error) {
-      logServerError("Socket connection registration failed.", error);
+      recordSocketConnectionAdmission(metrics, {
+        result: "failed",
+        reason: "registration_failure",
+      });
+      logSafeError(logger, "socket.connection_registration.failed", error, {
+        operation: "connection_registration",
+        result: "failed",
+      });
       socket.disconnect(true);
       return;
     }
 
     if (!registration.accepted) {
+      recordSocketConnectionAdmission(metrics, {
+        result: "rejected",
+        reason: "connection_cap",
+      });
+      emitOperationLog(logger, "debug", "socket.connection.rejected", {
+        operation: "connection_registration",
+        result: "rejected",
+        rejectionReason: "connection_cap",
+      });
       emitSocketSecurityError(socket, "CONNECTION_LIMIT", "connection");
       socket.disconnect(true);
       return;
     }
     registrationAccepted = true;
+    recordSocketConnectionAdmission(metrics, {
+      result: "accepted",
+      reason: "none",
+    });
+    connectionMetric = startSocketConnectionMetric(metrics, { runtimeMode });
 
     const stopIfNoLongerAdmitted = async (): Promise<boolean> => {
       if (!disconnected && operationTracker.isAcceptingConnections) {
@@ -163,7 +221,7 @@ const registerSocketHandlers = (
     try {
       onlineUserIds = await directory.onlineUserIds();
     } catch (error) {
-      logServerError("Socket online users lookup failed.", error);
+      logSafeError(logger, "socket.online_users_lookup.failed", error);
       await removeAcceptedConnection();
       socket.disconnect(true);
       return;
@@ -181,19 +239,35 @@ const registerSocketHandlers = (
       });
       socket.join(userChats.map(({ chatId }) => chatId));
     } catch (error) {
-      logServerError("Socket room initialization failed.", error);
+      logSafeError(logger, "socket.room_initialization.failed", error);
     }
     if (await stopIfNoLongerAdmitted()) return;
 
     const realtime = createSocketChatEventRealtimeAdapter({ io, socket });
 
-    registerMessageHandlers({ socket, userId, limiter, realtime });
-    registerMessageLifecycleHandlers({ socket, userId, limiter, realtime });
-    registerReactionHandlers({ socket, userId, limiter, realtime });
-    registerTypingHandlers({ socket, userId, limiter, realtime });
-    registerPollHandlers({ socket, userId, limiter, realtime });
-    registerPinHandlers({ socket, userId, limiter, realtime });
-    registerWebRtcHandlers(socket, io, { directory, limiter });
+    registerMessageHandlers({
+      socket,
+      userId,
+      limiter,
+      realtime,
+      logger,
+      sendNotification,
+      metrics,
+    });
+    registerMessageLifecycleHandlers({
+      socket, userId, limiter, realtime, logger, metrics,
+    });
+    registerReactionHandlers({ socket, userId, limiter, realtime, logger, metrics });
+    registerTypingHandlers({ socket, userId, limiter, realtime, logger, metrics });
+    registerPollHandlers({ socket, userId, limiter, realtime, logger, metrics });
+    registerPinHandlers({ socket, userId, limiter, realtime, logger, metrics });
+    registerWebRtcHandlers(socket, io, {
+      directory,
+      limiter,
+      logger,
+      sendNotification,
+      metrics,
+    });
   })()));
 
   return Object.freeze({

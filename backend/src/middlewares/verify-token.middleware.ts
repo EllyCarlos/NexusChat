@@ -4,7 +4,6 @@ import { isSessionAuthenticationError } from "../modules/auth/application/authen
 import { authenticateSession } from "../modules/auth/session-auth.service.js";
 import type { AuthenticatedIdentity } from "../modules/auth/contracts/auth-identity.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
 
 type AuthenticateSessionOperation = (input: {
   token: string;
@@ -35,7 +34,6 @@ export const createVerifyTokenMiddleware = (
 ) => {
   const token = extractRestSessionToken(request);
   if (!token) {
-    console.warn("Authentication: No token found in cookies or Authorization header.");
     return next(new CustomError("Token missing, please login again", 401));
   }
 
@@ -48,7 +46,6 @@ export const createVerifyTokenMiddleware = (
     }
 
     if (error.reason === "identity_not_found") {
-      console.warn("Authentication: Token subject was not found.");
       return next(new CustomError("Invalid or expired token", 401));
     }
 
@@ -56,7 +53,6 @@ export const createVerifyTokenMiddleware = (
       return next(error);
     }
 
-    logServerError("Session token verification failed.", error);
     return next(new CustomError("Invalid or expired token", 401));
   }
 });

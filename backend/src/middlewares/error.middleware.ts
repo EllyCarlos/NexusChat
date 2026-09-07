@@ -3,7 +3,8 @@ import { ApplicationError } from "../errors/application-error.js";
 import { ZodError } from "zod";
 import jwt from 'jsonwebtoken'
 import { MulterError } from "multer";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import { getRequestLogger } from "../observability/request-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 
 type ErrorResponse = {
   success: false;
@@ -54,11 +55,19 @@ export const errorMiddleware = (
   if (err instanceof ApplicationError) {
     const statusCode = err.statusCode ?? 500;
     if (statusCode >= 500) {
-      logServerError("Application request failed.", err);
+      logSafeError(
+        getRequestLogger(req, "http"),
+        "http.application_request.failed",
+        err,
+      );
     }
     return sendError(res, statusCode, err.message);
   }
 
-  logServerError("Unexpected request failure.", err);
+  logSafeError(
+    getRequestLogger(req, "http"),
+    "http.unexpected_request.failed",
+    err,
+  );
   return sendError(res, 500, "Internal server error");
 };

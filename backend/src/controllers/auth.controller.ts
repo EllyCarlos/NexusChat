@@ -9,7 +9,8 @@ import {
 import type { fcmTokenSchemaType } from "../schemas/auth.schema.js";
 import { CustomError, asyncErrorHandler } from "../utils/error.utils.js";
 import { signOAuthExchangeToken } from "../modules/auth/token/session-token.service.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import { getRequestLogger } from "../observability/request-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 
 const getUserInfo = asyncErrorHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const user = getCurrentUser(req.user);
@@ -42,6 +43,7 @@ const checkAuth = asyncErrorHandler(async (req: AuthenticatedRequest, res: Respo
 
 // Enhanced OAuth redirect handler
 const redirectHandler = asyncErrorHandler(async (req: OAuthAuthenticatedRequest, res: Response, next: NextFunction) => {
+  const logger = getRequestLogger(req, "auth");
   try {
     if (req.user) {
       const userId = String(req.user.id);
@@ -54,23 +56,24 @@ const redirectHandler = asyncErrorHandler(async (req: OAuthAuthenticatedRequest,
         email: req.user.email,
       });
 
-      console.log('OAuth redirect issued.');
+      logger.info("auth.oauth_redirect.completed", { result: "completed" });
       return res.redirect(
         307,
         `${config.app.clientUrl}/auth/oauth-redirect#token=${encodeURIComponent(tempToken)}`
       );
     }
 
-    console.warn('OAuth callback did not produce a user.');
+    logger.warn("auth.oauth_callback.rejected", { result: "rejected" });
     return res.redirect(307, `${config.app.clientUrl}/auth/oauth-redirect?error=no_user_data`);
-  } catch {
-    console.error('OAuth redirect failed.');
+  } catch (error) {
+    logSafeError(logger, "auth.oauth_redirect.failed", error);
     return res.redirect(307, `${config.app.clientUrl}/auth/oauth-redirect?error=oauth_failed`);
   }
 });
 
 // --- NEW: Private Key Recovery Completion Endpoint ---
 const completeKeyRecovery = asyncErrorHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const logger = getRequestLogger(req, "auth");
   try {
     const userId = req.user.id; // User ID from authenticated request
 
@@ -82,7 +85,7 @@ const completeKeyRecovery = asyncErrorHandler(async (req: AuthenticatedRequest, 
       userId,
     });
 
-    console.log("Private key recovery marked as complete.");
+    logger.info("auth.key_recovery.completed", { result: "completed" });
     return res.status(200).json({
       success: true,
       message: "Private key recovery status updated successfully.",
@@ -93,7 +96,7 @@ const completeKeyRecovery = asyncErrorHandler(async (req: AuthenticatedRequest, 
       },
     });
   } catch (error) {
-    logServerError("Private key recovery completion failed.", error);
+    logSafeError(logger, "auth.key_recovery.failed", error);
     return next(new CustomError("Failed to complete private key recovery.", 500));
   }
 });

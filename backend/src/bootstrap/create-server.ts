@@ -4,7 +4,10 @@ import { Server as SocketServer } from "socket.io";
 import { createApp } from "../app.js";
 import { config } from "../config/env.config.js";
 import { initializeProviders } from "../config/providers.config.js";
-import { socketAuthenticatorMiddleware } from "../middlewares/socket-auth.middleware.js";
+import { createSocketAuthenticatorMiddleware } from "../middlewares/socket-auth.middleware.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import type { MetricsPort } from "../observability/metrics.port.js";
 import { createSocketConnectionStateRuntime } from "../infrastructure/redis/socket-connection-state.runtime.js";
 import type { SocketConnectionStateRuntime } from "../infrastructure/redis/socket-connection-state.runtime.js";
 import attachmentRoutes from "../routes/attachment.router.js";
@@ -18,6 +21,8 @@ import {
   createSocketAllowRequest,
 } from "../security/origin-policy.js";
 import { prismaSocketPresencePersistence } from "../socket/prisma-socket-presence.persistence.js";
+import { createObservedPushNotificationSender } from "../modules/notifications/push-notification.service.js";
+import { selectOperationLoggerComponent } from "../observability/operation-observer.js";
 import registerSocketHandlers, {
   type SocketHandlerLifecycle,
 } from "../socket/socket.js";
@@ -27,6 +32,7 @@ import {
   type SocketPresenceCoordinator,
 } from "../socket/socket-presence.coordinator.js";
 import { createSocketPresencePublisher } from "../socket/socket-presence.publisher.js";
+import { createProcessMetrics } from "./metrics-composition.js";
 
 export type BackendServer = {
   app: ReturnType<typeof createApp>;
@@ -40,24 +46,46 @@ export type BackendServer = {
 export type CreateBackendServerOptions = {
   connectionState?: SocketConnectionStateRuntime;
   readiness?: () => boolean;
+  logger?: LoggerPort;
+  metrics?: MetricsPort;
 };
 
-export const createBackendServer = ({
-  connectionState = createSocketConnectionStateRuntime({
-    mode: { kind: "local" },
-  }),
-  readiness,
-}: CreateBackendServerOptions = {}): BackendServer => {
-  initializeProviders(config);
+export const createBackendServer = (
+  options: CreateBackendServerOptions = {},
+): BackendServer => {
+  const {
+    readiness,
+    logger = noopLogger,
+    metrics = createProcessMetrics({ enabled: config.metrics.enabled }),
+  } = options;
+  const connectionState = options.connectionState
+    ?? createSocketConnectionStateRuntime({
+      mode: { kind: "local" },
+      metrics,
+    });
+  initializeProviders(config, logger.forComponent("provider"));
+  const httpLogger = logger.forComponent("http");
+  const socketLogger = logger.forComponent("socket");
+  const presenceLogger = logger.forComponent("presence");
+  const sendNotification = createObservedPushNotificationSender(
+    selectOperationLoggerComponent(logger, "provider"),
+  );
   const originPolicy = createOriginPolicy({
     environment: config.app.environment,
     frontendOrigin: config.app.clientUrl,
     vercelUrl: config.app.vercelUrl,
+    onInvalidConfiguredOrigin: () => httpLogger.warn(
+      "http.origin_configuration.ignored",
+      { result: "rejected" },
+    ),
   });
   const app = createApp({
     originPolicy,
     environment: config.app.environment,
     readiness,
+    logger,
+    metrics,
+    metricsConfiguration: config.metrics,
     routes: [
       { path: "/api/v1/auth", router: authRoutes },
       { path: "/api/v1/chat", router: chatRoutes },
@@ -80,7 +108,11 @@ export const createBackendServer = ({
 
   app.set("io", io);
   app.set("connectionDirectory", connectionState.directory);
-  io.use(socketAuthenticatorMiddleware);
+  io.use(createSocketAuthenticatorMiddleware(
+    undefined,
+    logger.forComponent("auth"),
+    metrics,
+  ));
   const publisher = createSocketPresencePublisher(io);
   const presence = connectionState.maintenance
     ? createDistributedSocketPresenceCoordinator({
@@ -91,11 +123,16 @@ export const createBackendServer = ({
     : createLocalSocketPresenceCoordinator({
       directory: connectionState.directory,
       publisher,
+      logger: presenceLogger,
     });
   const socketLifecycle = registerSocketHandlers(io, {
     directory: connectionState.directory,
     limiter: connectionState.eventLimiter,
     presence,
+    logger: socketLogger,
+    metrics,
+    runtimeMode: connectionState.mode,
+    sendNotification,
   });
 
   return {

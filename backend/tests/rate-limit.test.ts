@@ -79,7 +79,6 @@ const createRateTestApp = () => createApp({
     { path: "/api/v1/user", router: userRouter },
     { path: "/api/v1/attachment", router: attachmentRouter },
   ],
-  requestLogger: (_req, _res, next) => next(),
 });
 
 beforeEach(() => {
@@ -247,7 +246,6 @@ describe("upload and FCM request controls", () => {
         frontendOrigin: PRODUCTION_FRONTEND_ORIGIN,
       }),
       routes: [{ path: "/api", router }],
-      requestLogger: (_req, _res, next) => next(),
     });
 
     for (let attempt = 0; attempt < 20; attempt += 1) {

@@ -40,6 +40,17 @@ import type { SocketEventRateLimitPort } from "../src/socket/socket-event-rate-l
 import { SOCKET_EVENT_LIMITS } from "../src/socket/socket-security.js";
 import registerWebRtcHandlers from "../src/socket/webrtc/socket.js";
 import { CustomError } from "../src/utils/error.utils.js";
+import type { LoggerPort } from "../src/observability/logger.port.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
+
+const testLogger: LoggerPort = {
+  component: "socket",
+  forComponent: () => testLogger,
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: mocks.logServerError,
+};
 
 const CALLER_ID = "cm51000000000000000000001";
 const CALLEE_ID = "cm51000000000000000000002";
@@ -135,6 +146,7 @@ const createHarness = ({
   directory = createTestConnectionDirectory(),
   ioRelayEmit = vi.fn(),
   limiter = createLimiter().limiter,
+  metrics = createCapturingMetrics(),
   socketEmit = vi.fn(),
   socketRelayEmit = vi.fn(),
 }: {
@@ -142,6 +154,7 @@ const createHarness = ({
   directory?: TestConnectionDirectory;
   ioRelayEmit?: ReturnType<typeof vi.fn>;
   limiter?: SocketEventRateLimitPort;
+  metrics?: ReturnType<typeof createCapturingMetrics>;
   socketEmit?: ReturnType<typeof vi.fn>;
   socketRelayEmit?: ReturnType<typeof vi.fn>;
 } = {}) => {
@@ -169,12 +182,15 @@ const createHarness = ({
   registerWebRtcHandlers(socket as unknown as Socket, io as unknown as Server, {
     directory,
     limiter,
+    logger: testLogger,
+    metrics,
   });
 
   return {
     getLatestSocket,
     ioRelayEmit,
     ioTo,
+    metrics,
     socketEmit,
     socketRelayEmit,
     socketTo,
@@ -192,7 +208,8 @@ const workflowCases = [
     actorPolicy: SOCKET_EVENT_LIMITS.iceActor,
     callPolicy: SOCKET_EVENT_LIMITS.iceCall,
     event: Events.ICE_CANDIDATE,
-    failureLog: "ICE_CANDIDATE event failed.",
+    failureLog: "socket.ice_candidate.failed",
+    operation: "ice_candidate",
     payload: icePayload,
   },
   {
@@ -200,7 +217,8 @@ const workflowCases = [
     actorPolicy: SOCKET_EVENT_LIMITS.negotiationActor,
     callPolicy: SOCKET_EVENT_LIMITS.negotiationCall,
     event: Events.NEGO_NEEDED,
-    failureLog: "NEGO_NEEDED event failed.",
+    failureLog: "socket.negotiation_needed.failed",
+    operation: "negotiation_needed",
     payload: negotiationNeededPayload,
   },
   {
@@ -208,7 +226,8 @@ const workflowCases = [
     actorPolicy: SOCKET_EVENT_LIMITS.negotiationActor,
     callPolicy: SOCKET_EVENT_LIMITS.negotiationCall,
     event: Events.NEGO_DONE,
-    failureLog: "NEGO_DONE event failed.",
+    failureLog: "socket.negotiation_done.failed",
+    operation: "negotiation_done",
     payload: negotiationDonePayload,
   },
 ] as const;
@@ -221,23 +240,27 @@ const expectNoPersistenceOrTargetDelivery = (
   expect(harness.ioRelayEmit).not.toHaveBeenCalled();
 };
 
-const expectActiveGuardError = (failureLog: string): void => {
+const expectActiveGuardError = (failureLog: string, operation: "ice_candidate" | "negotiation_needed" | "negotiation_done"): void => {
   expect(mocks.logServerError).toHaveBeenCalledTimes(1);
-  const [context, error] = mocks.logServerError.mock.calls[0];
+  const [context, fields] = mocks.logServerError.mock.calls[0];
   expect(context).toBe(failureLog);
-  expect(error).toMatchObject({
-    message: "Call is not active",
-    statusCode: 409,
+  expect(fields).toEqual({
+    operation,
+    result: "failed",
+    errorType: "CustomError",
+    applicationCode: "LEGACY_CUSTOM_ERROR",
   });
 };
 
-const expectParticipantMismatchError = (failureLog: string): void => {
+const expectParticipantMismatchError = (failureLog: string, operation: "ice_candidate" | "negotiation_needed" | "negotiation_done"): void => {
   expect(mocks.logServerError).toHaveBeenCalledTimes(1);
-  const [context, error] = mocks.logServerError.mock.calls[0];
+  const [context, fields] = mocks.logServerError.mock.calls[0];
   expect(context).toBe(failureLog);
-  expect(error).toMatchObject({
-    message: "Call participant mismatch",
-    statusCode: 403,
+  expect(fields).toEqual({
+    operation,
+    result: "failed",
+    errorType: "CustomError",
+    applicationCode: "LEGACY_CUSTOM_ERROR",
   });
 };
 
@@ -316,9 +339,15 @@ describe("WebRTC negotiation parsing and guard order", () => {
       event: Events.ICE_CANDIDATE,
     });
     expect(mocks.logServerError).toHaveBeenCalledWith(
-      "Socket rate-limit evaluation failed.",
-      providerFailure,
+      "socket.rate_limit.unavailable",
+      {
+        operation: "ice_candidate",
+        result: "unavailable",
+        errorType: "Error",
+      },
     );
+    expect(JSON.stringify(mocks.logServerError.mock.calls))
+      .not.toContain(providerFailure.message);
     expect(mocks.assertCallParticipant).not.toHaveBeenCalled();
     expect(harness.getLatestSocket).not.toHaveBeenCalled();
     expectNoPersistenceOrTargetDelivery(harness);
@@ -329,6 +358,7 @@ describe("WebRTC negotiation parsing and guard order", () => {
     actorPolicy,
     event,
     failureLog,
+    operation,
     payload,
   }) => {
     const authorizationError = new CustomError("Call not found", 404);
@@ -342,7 +372,12 @@ describe("WebRTC negotiation parsing and guard order", () => {
     expect(consumeAll).toHaveBeenCalledWith([actorPolicy], [actorId]);
     expect(mocks.assertCallParticipant).toHaveBeenCalledWith(actorId, CALL_ID);
     expect(harness.getLatestSocket).not.toHaveBeenCalled();
-    expect(mocks.logServerError).toHaveBeenCalledWith(failureLog, authorizationError);
+    expect(mocks.logServerError).toHaveBeenCalledWith(failureLog, {
+      operation,
+      result: "failed",
+      errorType: "CustomError",
+      applicationCode: "LEGACY_CUSTOM_ERROR",
+    });
     expectNoPersistenceOrTargetDelivery(harness);
   });
 
@@ -351,6 +386,7 @@ describe("WebRTC negotiation parsing and guard order", () => {
     actorPolicy,
     event,
     failureLog,
+    operation,
     payload,
   }) => {
     mocks.assertCallParticipant.mockResolvedValueOnce(activeCall({ endedAt: NOW }));
@@ -363,7 +399,7 @@ describe("WebRTC negotiation parsing and guard order", () => {
     expect(consumeAll).toHaveBeenCalledWith([actorPolicy], [actorId]);
     expect(mocks.assertCallParticipant).toHaveBeenCalledWith(actorId, CALL_ID);
     expect(harness.getLatestSocket).not.toHaveBeenCalled();
-    expectActiveGuardError(failureLog);
+    expectActiveGuardError(failureLog, operation);
     expectNoPersistenceOrTargetDelivery(harness);
   });
 
@@ -372,6 +408,7 @@ describe("WebRTC negotiation parsing and guard order", () => {
     actorPolicy,
     event,
     failureLog,
+    operation,
     payload,
   }) => {
     const { consumeAll, limiter } = createLimiter();
@@ -383,7 +420,7 @@ describe("WebRTC negotiation parsing and guard order", () => {
     expect(consumeAll).toHaveBeenCalledWith([actorPolicy], [actorId]);
     expect(mocks.assertCallParticipant).toHaveBeenCalledWith(actorId, CALL_ID);
     expect(harness.getLatestSocket).not.toHaveBeenCalled();
-    expectParticipantMismatchError(failureLog);
+    expectParticipantMismatchError(failureLog, operation);
     expectNoPersistenceOrTargetDelivery(harness);
   });
 });
@@ -641,7 +678,8 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     {
       actorId: CALLER_ID,
       event: Events.ICE_CANDIDATE,
-      failureLog: "ICE_CANDIDATE event failed.",
+      failureLog: "socket.ice_candidate.failed",
+      operation: "ice_candidate",
       payload: icePayload,
       targetId: CALLEE_ID,
       transport: "io" as const,
@@ -649,7 +687,8 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     {
       actorId: CALLER_ID,
       event: Events.NEGO_NEEDED,
-      failureLog: "NEGO_NEEDED event failed.",
+      failureLog: "socket.negotiation_needed.failed",
+      operation: "negotiation_needed",
       payload: negotiationNeededPayload,
       targetId: CALLEE_ID,
       transport: "socket" as const,
@@ -657,7 +696,8 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     {
       actorId: CALLEE_ID,
       event: Events.NEGO_DONE,
-      failureLog: "NEGO_DONE event failed.",
+      failureLog: "socket.negotiation_done.failed",
+      operation: "negotiation_done",
       payload: negotiationDonePayload,
       targetId: CALLER_ID,
       transport: "socket" as const,
@@ -666,6 +706,7 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     actorId,
     event,
     failureLog,
+    operation,
     payload,
     targetId,
     transport,
@@ -689,23 +730,28 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     await harness.trigger(event, payload());
 
     expect(mocks.logServerError).toHaveBeenCalledOnce();
-    expect(mocks.logServerError).toHaveBeenCalledWith(failureLog, deliveryError);
+    expect(mocks.logServerError).toHaveBeenCalledWith(failureLog, {
+      operation, result: "failed", errorType: "Error",
+    });
     expect(mocks.callHistoryUpdate).not.toHaveBeenCalled();
     expect(harness.socketEmit).not.toHaveBeenCalled();
+    expect(harness.metrics.socketOperationFailures).toEqual([operation]);
   });
 
   it.each([
     {
       actorId: CALLER_ID,
       event: Events.NEGO_NEEDED,
-      failureLog: "NEGO_NEEDED event failed.",
+      failureLog: "socket.negotiation_needed.failed",
+      operation: "negotiation_needed",
       firstOfflineEvent: Events.CALLEE_OFFLINE,
       payload: negotiationNeededPayload,
     },
     {
       actorId: CALLEE_ID,
       event: Events.NEGO_DONE,
-      failureLog: "NEGO_DONE event failed.",
+      failureLog: "socket.negotiation_done.failed",
+      operation: "negotiation_done",
       firstOfflineEvent: Events.CALLER_OFFLINE,
       payload: negotiationDonePayload,
     },
@@ -714,6 +760,7 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     event,
     failureLog,
     firstOfflineEvent,
+    operation,
     payload,
   }) => {
     const deliveryError = new Error(`${event} offline delivery failed`);
@@ -738,6 +785,8 @@ describe("WebRTC negotiation delivery failure boundaries", () => {
     expect(mocks.callHistoryUpdate.mock.invocationCallOrder[0]).toBeLessThan(
       socketEmit.mock.invocationCallOrder[0],
     );
-    expect(mocks.logServerError).toHaveBeenCalledWith(failureLog, deliveryError);
+    expect(mocks.logServerError).toHaveBeenCalledWith(failureLog, {
+      operation, result: "failed", errorType: "Error",
+    });
   });
 });

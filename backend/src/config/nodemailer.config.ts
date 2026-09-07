@@ -1,11 +1,16 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { ApplicationError } from "../errors/application-error.js";
 import type { EmailConfig } from "../interfaces/config/config.interface.js";
-import { logServerError } from "../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../observability/logger.port.js";
+import { noopLogger } from "../observability/noop-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 
 let transporter: Transporter | undefined;
 
-export const configureNodemailer = (configuration: EmailConfig): Transporter => {
+export const configureNodemailer = (
+  configuration: EmailConfig,
+  logger: LoggerPort = noopLogger.forComponent("provider"),
+): Transporter => {
   if (transporter) {
     return transporter;
   }
@@ -20,7 +25,7 @@ export const configureNodemailer = (configuration: EmailConfig): Transporter => 
     });
     return transporter;
   } catch (error) {
-    logServerError("Email transporter initialization failed.", error);
+    logSafeError(logger, "provider.email_initialization.failed", error);
     throw new ApplicationError({
       code: "EMAIL_PROVIDER_INITIALIZATION_FAILED",
       message: "Email provider initialization failed.",

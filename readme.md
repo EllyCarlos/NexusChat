@@ -68,7 +68,7 @@ Built with a **Next.js 15 + React 19** frontend and a **Node.js + Express + Sock
 | **Firebase Admin SDK** | Server-side push notifications |
 | **CORS** | Cross-origin configuration |
 | **Multer** | File upload handling |
-| **Morgan** | HTTP request logging |
+| **Pino + Prometheus** | Privacy-safe structured logging and process-local metrics; see [backend observability operations](backend/docs/observability.md) |
 
 ---
 

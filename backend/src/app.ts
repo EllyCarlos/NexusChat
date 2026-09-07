@@ -3,8 +3,21 @@ import cors from "cors";
 import express, { type Request, type Response, type Router } from "express";
 import helmet from "helmet";
 import passport from "passport";
+import type { MetricsConfig } from "./interfaces/config/config.interface.js";
+import type { LoggerPort } from "./observability/logger.port.js";
+import type { MetricsPort } from "./observability/metrics.port.js";
+import { noopLogger } from "./observability/noop-logger.js";
+import { noopMetrics } from "./observability/noop-metrics.js";
 import { errorMiddleware, notFoundMiddleware } from "./middlewares/error.middleware.js";
-import { createRequestLogger } from "./middlewares/request-logger.middleware.js";
+import {
+  createHttpObservabilityMiddleware,
+  createRouteTemplateBaseMiddleware,
+} from "./middlewares/http-observability.middleware.js";
+import {
+  createMetricsEndpointHandler,
+  markMetricsRequest,
+} from "./middlewares/metrics-endpoint.middleware.js";
+import { REQUEST_ID_HEADER } from "./observability/request-id.js";
 import {
   createCorsOriginDelegate,
   createMutationOriginMiddleware,
@@ -20,18 +33,32 @@ type CreateAppOptions = {
   originPolicy: OriginPolicy;
   environment: string;
   routes?: AppRoute[];
-  requestLogger?: ReturnType<typeof createRequestLogger>;
   readiness?: () => boolean;
+  logger?: LoggerPort;
+  metrics?: MetricsPort;
+  metricsConfiguration?: MetricsConfig;
 };
 
 export const createApp = ({
   originPolicy,
   environment,
   routes = [],
-  requestLogger = createRequestLogger(),
   readiness = () => true,
+  logger = noopLogger,
+  metrics = noopMetrics,
+  metricsConfiguration = { enabled: false },
 }: CreateAppOptions) => {
+  const metricsBearerToken = metricsConfiguration.bearerToken;
+  if (metricsConfiguration.enabled && !metricsBearerToken) {
+    throw new TypeError("Metrics bearer credential is required when metrics are enabled.");
+  }
   const app = express();
+
+  app.set("logger", logger);
+  if (metricsConfiguration.enabled) {
+    app.get("/metrics", markMetricsRequest);
+  }
+  app.use(createHttpObservabilityMiddleware({ logger, metrics }));
 
   app.disable("x-powered-by");
   app.use(helmet({
@@ -54,6 +81,7 @@ export const createApp = ({
 
   app.use(cors({
     credentials: true,
+    exposedHeaders: [REQUEST_ID_HEADER],
     origin: createCorsOriginDelegate(originPolicy),
   }));
   app.use(createMutationOriginMiddleware(originPolicy));
@@ -61,14 +89,19 @@ export const createApp = ({
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
   app.use(cookieParser());
-  app.use(requestLogger);
+  if (metricsConfiguration.enabled && metricsBearerToken) {
+    app.get("/metrics", createMetricsEndpointHandler({
+      metrics,
+      bearerToken: metricsBearerToken,
+    }));
+  }
   app.use("/api/v1/auth", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     next();
   });
 
   for (const route of routes) {
-    app.use(route.path, route.router);
+    app.use(route.path, createRouteTemplateBaseMiddleware(route.path), route.router);
   }
 
   app.get("/", (_req: Request, res: Response) => {

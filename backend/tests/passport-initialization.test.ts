@@ -1,5 +1,7 @@
 import type { RuntimeConfig } from "../src/interfaces/config/config.interface.js";
+import type { LoggerPort } from "../src/observability/logger.port.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const mocks = vi.hoisted(() => ({
   createUser: vi.fn(),
@@ -39,9 +41,9 @@ describe("Google strategy initialization", () => {
     mocks.hash.mockResolvedValue("obvious-fake-password-hash");
   });
 
-  const registerAndGetVerifier = async () => {
+  const registerAndGetVerifier = async (logger = createCapturingLogger("auth")) => {
     const { registerGoogleStrategy } = await import("../src/passport/google.strategy.js");
-    registerGoogleStrategy(configuration);
+    registerGoogleStrategy(configuration, logger);
     return mocks.strategy.mock.calls[0]?.[1] as (
       accessToken: string,
       refreshToken: string,
@@ -207,8 +209,8 @@ describe("Google strategy initialization", () => {
     }],
   ])("normalizes %s failures to the existing Passport callback", async (_label, arrange) => {
     arrange();
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const verify = await registerAndGetVerifier();
+    const logger = createCapturingLogger("auth");
+    const verify = await registerAndGetVerifier(logger);
     const done = vi.fn();
 
     await verify("ignored-access", "ignored-refresh", {
@@ -219,9 +221,45 @@ describe("Google strategy initialization", () => {
     }, done);
 
     expect(done).toHaveBeenCalledWith(null, false);
-    expect(JSON.stringify(errorLog.mock.calls)).toBe(
-      JSON.stringify([["Google OAuth profile processing failed."]]),
-    );
-    errorLog.mockRestore();
+    expect(logger.events).toEqual([{
+      level: "error",
+      component: "auth",
+      event: "auth.oauth_profile.failed",
+      fields: {
+        errorType: "ApplicationError",
+        applicationCode: "GOOGLE_ACCOUNT_PROVISIONING_FAILED",
+        provider: "google_oauth",
+        operation: "profile_provision",
+        errorCategory: "provider",
+        result: "failed",
+        durationMs: expect.any(Number),
+      },
+    }]);
+  });
+
+  it("preserves the Passport failure callback when the provider logger throws", async () => {
+    mocks.findUser.mockRejectedValueOnce(new Error("private lookup detail"));
+    const throwFromLogger = () => {
+      throw new Error("logger unavailable");
+    };
+    const throwingLogger: LoggerPort = {
+      component: "auth",
+      forComponent: () => throwingLogger,
+      debug: throwFromLogger,
+      info: throwFromLogger,
+      warn: throwFromLogger,
+      error: throwFromLogger,
+    };
+    const verify = await registerAndGetVerifier(throwingLogger);
+    const done = vi.fn();
+
+    await expect(verify("ignored-access", "ignored-refresh", {
+      id: "google-failure",
+      displayName: "Failure User",
+      name: { givenName: "Failure" },
+      emails: [{ value: "failure@example.test" }],
+    }, done)).resolves.toBeUndefined();
+
+    expect(done).toHaveBeenCalledWith(null, false);
   });
 });

@@ -16,14 +16,16 @@ vi.mock("../src/lib/prisma.lib.js", () => ({
 
 import { createApp } from "../src/app.js";
 import { ApplicationError } from "../src/errors/application-error.js";
-import { createRequestLogger } from "../src/middlewares/request-logger.middleware.js";
 import { verifyToken } from "../src/middlewares/verify-token.middleware.js";
 import { createOriginPolicy } from "../src/security/origin-policy.js";
 import { CustomError } from "../src/utils/error.utils.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const INTERNAL_MESSAGE = "Prisma connection failed with password=database-secret";
 
-const createTestApplication = (writeLog: (line: string) => void = () => undefined) => {
+const createTestApplication = (
+  logger = createCapturingLogger("application"),
+) => {
   const router = express.Router();
   const testUpload = multer({ limits: { fileSize: 1, files: 1 } });
 
@@ -52,7 +54,7 @@ const createTestApplication = (writeLog: (line: string) => void = () => undefine
     }),
     environment: "test",
     routes: [{ path: "/test", router }],
-    requestLogger: createRequestLogger({ stream: { write: writeLog } }),
+    logger,
   });
 };
 
@@ -131,14 +133,29 @@ describe("HTTP application boundary", () => {
 
   it("does not expose jsonwebtoken verifier details", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("application");
 
-    const response = await request(createTestApplication())
+    const response = await request(createTestApplication(logger))
       .get("/test/jwt")
-      .set("Authorization", "Bearer malformed-session-jwt");
+      .set("Authorization", "Bearer malformed-session-jwt")
+      .set("X-Request-Id", "request-auth-rejection");
 
     expect(response.status).toBe(401);
     expect(response.body).toEqual({ success: false, message: "Invalid or expired token" });
     expect(JSON.stringify(response.body)).not.toMatch(/jwt malformed|signature|audience|issuer/i);
+    expect(response.headers["x-request-id"]).toBe("request-auth-rejection");
+    expect(logger.events).toContainEqual({
+      level: "info",
+      component: "http",
+      event: "http.request.completed",
+      fields: expect.objectContaining({
+        requestId: "request-auth-rejection",
+        route: "/test/jwt",
+        statusCode: 401,
+        result: "client_error",
+      }),
+    });
+    expect(logger.events.filter(({ level }) => level === "error")).toEqual([]);
   });
 
   it("normalizes Multer file-size errors to 413", async () => {
@@ -162,17 +179,17 @@ describe("HTTP application boundary", () => {
     });
   });
 
-  it("keeps request logging pathname-only", async () => {
-    const lines: string[] = [];
-    await request(createTestApplication((line) => lines.push(line)))
+  it("keeps structured request logging route-template-only", async () => {
+    const logger = createCapturingLogger("application");
+    await request(createTestApplication(logger))
       .get("/definitely-not-a-route?token=session-secret&code=google-code&state=oauth-state");
 
-    const output = lines.join("\n");
-    expect(output).toContain("/definitely-not-a-route");
+    const output = JSON.stringify(logger.events);
+    expect(output).toContain("unmatched");
+    expect(output).not.toContain("/definitely-not-a-route");
     expect(output).not.toContain("session-secret");
     expect(output).not.toContain("google-code");
     expect(output).not.toContain("oauth-state");
-    expect(output).not.toContain("?");
   });
 
   it("keeps the public status routes minimal", async () => {

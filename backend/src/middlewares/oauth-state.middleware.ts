@@ -6,6 +6,8 @@ import {
   OAUTH_STATE_TTL_MS,
   verifyOAuthStateBinding,
 } from "../modules/auth/oauth/oauth-state.service.js";
+import { getRequestLogger } from "../observability/request-logger.js";
+import { logSafeError } from "../observability/safe-error.js";
 
 export const OAUTH_STATE_COOKIE_NAME = "nexuschat_oauth_state";
 
@@ -36,8 +38,12 @@ export const beginGoogleOAuth = (
       scope: ["email", "profile"],
       state: binding.state,
     })(req, res, next);
-  } catch {
-    console.error("OAuth initiation failed.");
+  } catch (error) {
+    logSafeError(
+      getRequestLogger(req, "auth"),
+      "auth.oauth_initiation.failed",
+      error,
+    );
     return res.redirect(303, getOAuthFailureUrl("oauth_start_failed"));
   }
 };
@@ -70,7 +76,18 @@ export const authenticateGoogleOAuthCallback = (
   { session: false },
   (error: unknown, user: Express.User | false | null) => {
     if (error || !user) {
-      console.error("Google OAuth provider authentication failed.");
+      if (error) {
+        logSafeError(
+          getRequestLogger(req, "auth"),
+          "auth.oauth_provider.failed",
+          error,
+        );
+      } else {
+        getRequestLogger(req, "auth").warn(
+          "auth.oauth_provider.rejected",
+          { result: "rejected" },
+        );
+      }
       return res.redirect(303, getOAuthFailureUrl("oauth_provider_failed"));
     }
 

@@ -53,6 +53,9 @@ vi.mock("../src/socket/webrtc/socket.js", () => ({
 
 import { Events } from "../src/enums/event/event.enum.js";
 import { prisma } from "../src/lib/prisma.lib.js";
+import type { LoggerPort } from "../src/observability/logger.port.js";
+import type { MetricsPort } from "../src/observability/metrics.port.js";
+import { noopMetrics } from "../src/observability/noop-metrics.js";
 import type {
   DirectoryConnectionRegistration,
   DirectoryConnectionRemoval,
@@ -62,6 +65,8 @@ import type {
 import { SocketConnectionRegistry } from "../src/socket/connection-registry.js";
 import registerSocketHandlers from "../src/socket/socket.js";
 import type { SocketPresenceCoordinator } from "../src/socket/socket-presence.coordinator.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const USER_ID = "cm2d300000000000000000001";
 const REMOTE_USER_ID = "cm2d300000000000000000002";
@@ -145,11 +150,19 @@ const createHarness = ({
   directory = createDirectory(),
   presence = createPresence(),
   registry,
+  providedLogger,
+  providedMetrics,
+  runtimeMode = "distributed",
 }: {
   directory?: SocketConnectionDirectory;
   presence?: SocketPresenceCoordinator;
   registry?: SocketConnectionRegistry;
+  providedLogger?: LoggerPort;
+  providedMetrics?: MetricsPort;
+  runtimeMode?: "local" | "distributed";
 } = {}) => {
+  const logger = createCapturingLogger("socket");
+  const metrics = providedMetrics ?? createCapturingMetrics();
   let connectionHandler: ((socket: Socket) => Promise<unknown>) | undefined;
   const localRoomDisconnect = vi.fn();
   const globalRoomDisconnect = vi.fn();
@@ -173,6 +186,9 @@ const createHarness = ({
   const lifecycle = registerSocketHandlers(io as unknown as Server, {
     directory,
     presence,
+    logger: providedLogger ?? logger,
+    metrics,
+    runtimeMode,
     ...(registry ? { registry } : {}),
   });
 
@@ -200,6 +216,8 @@ const createHarness = ({
     handlers,
     io,
     lifecycle,
+    logger,
+    metrics,
     localRoomDisconnect,
     presence,
     runConnection: () => {
@@ -237,6 +255,40 @@ beforeEach(() => {
 });
 
 describe("Phase 2D-3 Socket root directory admission", () => {
+  it("records accepted admission, process-local active lifecycle, and one disconnect completion", async () => {
+    const harness = createHarness();
+
+    await harness.runConnection();
+
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "accepted",
+      reason: "none",
+    }]);
+    expect(harness.metrics.socketConnectionStarts).toEqual(["distributed"]);
+    expect(harness.metrics.activeSocketConnections.get("distributed")).toBe(1);
+
+    await harness.handlers.get("disconnect")!();
+    await harness.handlers.get("disconnect")!();
+
+    expect(harness.metrics.activeSocketConnections.get("distributed")).toBe(0);
+    expect(harness.metrics.socketConnectionCompletions).toEqual(["distributed"]);
+  });
+
+  it("keeps independent accepted connections in the same process-local active gauge", async () => {
+    const metrics = createCapturingMetrics();
+    const first = createHarness({ providedMetrics: metrics, runtimeMode: "local" });
+    const second = createHarness({ providedMetrics: metrics, runtimeMode: "local" });
+
+    await first.runConnection();
+    await second.runConnection();
+    expect(metrics.activeSocketConnections.get("local")).toBe(2);
+
+    await first.handlers.get("disconnect")!();
+    expect(metrics.activeSocketConnections.get("local")).toBe(1);
+    await second.handlers.get("disconnect")!();
+    expect(metrics.activeSocketConnections.get("local")).toBe(0);
+  });
+
   it("awaits admission and the global online list before rooms and ordinary handlers", async () => {
     const addResult = deferred<DirectoryConnectionRegistration>();
     const onlineResult = deferred<string[]>();
@@ -300,15 +352,31 @@ describe("Phase 2D-3 Socket root directory admission", () => {
       event: "connection",
     });
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
+    expect(harness.logger.events).toContainEqual({
+      level: "debug",
+      component: "socket",
+      event: "socket.connection.rejected",
+      fields: {
+        operation: "connection_registration",
+        result: "rejected",
+        rejectionReason: "connection_cap",
+      },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(USER_ID);
+    expect(JSON.stringify(harness.logger.events)).not.toContain(SOCKET_ID);
     expect(directory.onlineUserIds).not.toHaveBeenCalled();
     expect(directory.remove).not.toHaveBeenCalled();
     expect(harness.presence.reconcileTransition).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "rejected",
+      reason: "connection_cap",
+    }]);
+    expect(harness.metrics.socketConnectionStarts).toEqual([]);
   });
 
   it("safe-logs directory admission failure and fails closed", async () => {
     const privateFailure = new Error("redis://user:private-admission-secret@example.test");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const directory = createDirectory({
       add: vi.fn(async () => Promise.reject(privateFailure)),
     });
@@ -316,14 +384,54 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
     await harness.runConnection();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket connection registration failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: "socket.connection_registration.failed",
+      fields: {
+        operation: "connection_registration",
+        result: "failed",
+        errorType: "Error",
+      },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
     expect(directory.onlineUserIds).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "failed",
+      reason: "registration_failure",
+    }]);
+    expect(harness.metrics.socketConnectionStarts).toEqual([]);
+  });
+
+  it("preserves failed-admission behavior when the logger throws", async () => {
+    const directory = createDirectory({
+      add: vi.fn(async () => Promise.reject(new Error("private admission failure"))),
+    });
+    const throwFromLogger = () => {
+      throw new Error("logger unavailable");
+    };
+    const throwingLogger: LoggerPort = {
+      component: "socket",
+      forComponent: () => throwingLogger,
+      debug: throwFromLogger,
+      info: throwFromLogger,
+      warn: throwFromLogger,
+      error: throwFromLogger,
+    };
+    const harness = createHarness({ directory, providedLogger: throwingLogger });
+
+    await expect(harness.runConnection()).resolves.toBeUndefined();
+
+    expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
+    expect(directory.onlineUserIds).not.toHaveBeenCalled();
+    expectNoOrdinaryInitialization(harness);
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "failed",
+      reason: "registration_failure",
+    }]);
+    expect(harness.metrics.socketConnectionStarts).toEqual([]);
   });
 
   it("removes an accepted registration when disconnect arrives while add is pending", async () => {
@@ -363,6 +471,27 @@ describe("Phase 2D-3 Socket root directory admission", () => {
     expect(harness.directory.add).not.toHaveBeenCalled();
     expect(harness.socket.on).not.toHaveBeenCalled();
     expectNoOrdinaryInitialization(harness);
+    expect(harness.metrics.socketAdmissions).toEqual([{
+      result: "rejected",
+      reason: "runtime_unavailable",
+    }]);
+  });
+
+  it("isolates throwing metrics from accepted admission and disconnect cleanup", async () => {
+    const throwMetric = () => {
+      throw new Error("metrics unavailable");
+    };
+    const throwingMetrics: MetricsPort = {
+      ...noopMetrics,
+      recordSocketConnectionAdmission: throwMetric,
+      startSocketConnection: throwMetric,
+    };
+    const harness = createHarness({ providedMetrics: throwingMetrics });
+
+    await expect(harness.runConnection()).resolves.toBeUndefined();
+    await expect(harness.handlers.get("disconnect")!()).resolves.toBeUndefined();
+
+    expect(harness.directory.remove).toHaveBeenCalledWith(USER_ID, SOCKET_ID);
   });
 
   it.each([
@@ -399,7 +528,6 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
   it("safe-logs removal failure without falling back to the process-local registry", async () => {
     const privateFailure = new Error("private distributed removal detail");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const localRegistry = new SocketConnectionRegistry();
     const localRemove = vi.spyOn(localRegistry, "remove");
     const directory = createDirectory({
@@ -411,11 +539,13 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
     await harness.handlers.get("disconnect")!();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket connection removal failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: "socket.connection_removal.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(directory.remove).toHaveBeenCalledOnce();
     expect(localRemove).not.toHaveBeenCalled();
     expect(presence.reconcileTransition).not.toHaveBeenCalled();
@@ -423,7 +553,6 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
   it("removes and disconnects when the global online-user lookup fails", async () => {
     const privateFailure = new Error("private global-list detail");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const directory = createDirectory({
       onlineUserIds: vi.fn(async () => Promise.reject(privateFailure)),
       remove: vi.fn(async () => removal(true, false)),
@@ -432,11 +561,13 @@ describe("Phase 2D-3 Socket root directory admission", () => {
 
     await harness.runConnection();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Socket online users lookup failed.",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateFailure.message);
+    expect(harness.logger.events).toContainEqual({
+      level: "error",
+      component: "socket",
+      event: "socket.online_users_lookup.failed",
+      fields: { errorType: "Error" },
+    });
+    expect(JSON.stringify(harness.logger.events)).not.toContain(privateFailure.message);
     expect(directory.remove).toHaveBeenCalledWith(USER_ID, SOCKET_ID);
     expect(harness.socket.disconnect).toHaveBeenCalledWith(true);
     expect(harness.socket.emit).not.toHaveBeenCalledWith(

@@ -59,7 +59,7 @@ export const createOriginPolicy = ({
   environment,
   frontendOrigin,
   vercelUrl,
-  onInvalidConfiguredOrigin = () => console.warn("Configured browser origin was ignored."),
+  onInvalidConfiguredOrigin = () => undefined,
 }: OriginPolicyOptions): OriginPolicy => {
   const origins = new Set<string>();
   const addConfiguredOrigin = (value: string | undefined, normalize = normalizeHttpOrigin) => {

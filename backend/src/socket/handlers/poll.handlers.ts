@@ -3,7 +3,12 @@ import { Events } from "../../enums/event/event.enum.js";
 import { prisma } from "../../lib/prisma.lib.js";
 import { voteEventSchema } from "../../schemas/socket.schema.js";
 import { assertMessageAccessible } from "../../services/authorization.service.js";
-import { logServerError } from "../../utils/safe-logger.utils.js";
+import type { LoggerPort } from "../../observability/logger.port.js";
+import type { MetricsPort } from "../../observability/metrics.port.js";
+import { noopLogger } from "../../observability/noop-logger.js";
+import { noopMetrics } from "../../observability/noop-metrics.js";
+import { recordUnexpectedSocketOperationFailure } from "../../observability/realtime-metrics.js";
+import { logSafeError } from "../../observability/safe-error.js";
 import type { SocketEventRateLimitPort } from "../socket-event-rate-limit.port.js";
 import {
   enforceSocketEventLimits,
@@ -21,6 +26,8 @@ type PollHandlerDependencies = {
   userId: string;
   limiter: SocketEventRateLimitPort;
   realtime: ChatInteractionRealtimePort;
+  logger?: LoggerPort;
+  metrics?: MetricsPort;
 };
 
 export const registerPollHandlers = ({
@@ -28,6 +35,8 @@ export const registerPollHandlers = ({
   userId,
   limiter,
   realtime,
+  logger = noopLogger.forComponent("socket"),
+  metrics = noopMetrics,
 }: PollHandlerDependencies): void => {
   socket.on(Events.VOTE_IN, async (rawPayload: unknown) => {
     const parsedPayload = parseSocketPayload(socket, Events.VOTE_IN, voteEventSchema, rawPayload);
@@ -37,6 +46,8 @@ export const registerPollHandlers = ({
       socket,
       event: Events.VOTE_IN,
       limiter,
+      logger,
+      metrics,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -47,6 +58,8 @@ export const registerPollHandlers = ({
         socket,
         event: Events.VOTE_IN,
         limiter,
+        logger,
+        metrics,
         policies: [SOCKET_EVENT_LIMITS.voteMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -73,7 +86,11 @@ export const registerPollHandlers = ({
       };
       realtime.emitVoteIn(chatId, payload);
     } catch (error) {
-      logServerError("Socket poll vote failed.", error);
+      recordUnexpectedSocketOperationFailure(metrics, "poll_vote", error);
+      logSafeError(logger, "socket.poll_vote.failed", error, {
+        operation: "poll_vote",
+        result: "failed",
+      });
     }
   });
 
@@ -85,6 +102,8 @@ export const registerPollHandlers = ({
       socket,
       event: Events.VOTE_OUT,
       limiter,
+      logger,
+      metrics,
       policies: [SOCKET_EVENT_LIMITS.mutationActor],
       keyParts: [userId],
     }))) return;
@@ -95,6 +114,8 @@ export const registerPollHandlers = ({
         socket,
         event: Events.VOTE_OUT,
         limiter,
+        logger,
+        metrics,
         policies: [SOCKET_EVENT_LIMITS.voteMessage],
         keyParts: [userId, authorizedMessage.id],
       }))) return;
@@ -126,7 +147,11 @@ export const registerPollHandlers = ({
       };
       realtime.emitVoteOut(chatId, payload);
     } catch (error) {
-      logServerError("Socket poll vote removal failed.", error);
+      recordUnexpectedSocketOperationFailure(metrics, "poll_vote_remove", error);
+      logSafeError(logger, "socket.poll_vote_removal.failed", error, {
+        operation: "poll_vote_remove",
+        result: "failed",
+      });
     }
   });
 };

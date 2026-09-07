@@ -21,6 +21,7 @@ import {
   createVerifyTokenMiddleware,
   extractRestSessionToken,
 } from "../src/middlewares/verify-token.middleware.js";
+import { createCapturingMetrics } from "./support/capturing-metrics.js";
 
 const IDENTITY = {
   id: "adapter-user",
@@ -122,7 +123,12 @@ describe("Socket authentication adapter", () => {
 
   it("rejects missing and malformed credentials before application work", async () => {
     const authenticate = vi.fn();
-    const middleware = createSocketAuthenticatorMiddleware(authenticate);
+    const metrics = createCapturingMetrics();
+    const middleware = createSocketAuthenticatorMiddleware(
+      authenticate,
+      undefined,
+      metrics,
+    );
     const missingNext = vi.fn();
     const malformedNext = vi.fn();
 
@@ -142,6 +148,10 @@ describe("Socket authentication adapter", () => {
       message: "Invalid token format",
     }));
     expect(authenticate).not.toHaveBeenCalled();
+    expect(metrics.socketAdmissions).toEqual([
+      { result: "rejected", reason: "authentication" },
+      { result: "rejected", reason: "authentication" },
+    ]);
   });
 
   it.each([

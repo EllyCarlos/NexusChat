@@ -36,10 +36,19 @@ describe("provider composition", () => {
     expect(mocks.configureCloudinary).toHaveBeenCalledOnce();
     expect(mocks.configureCloudinary).toHaveBeenCalledWith(configuration.cloudinary);
     expect(mocks.initializeFirebaseAdmin).toHaveBeenCalledOnce();
-    expect(mocks.initializeFirebaseAdmin).toHaveBeenCalledWith(configuration);
+    expect(mocks.initializeFirebaseAdmin).toHaveBeenCalledWith(
+      configuration,
+      expect.objectContaining({ component: "provider" }),
+    );
     expect(mocks.configureNodemailer).toHaveBeenCalledOnce();
-    expect(mocks.configureNodemailer).toHaveBeenCalledWith(configuration.email);
+    expect(mocks.configureNodemailer).toHaveBeenCalledWith(
+      configuration.email,
+      expect.objectContaining({ component: "provider" }),
+    );
     expect(mocks.registerGoogleStrategy).toHaveBeenCalledOnce();
-    expect(mocks.registerGoogleStrategy).toHaveBeenCalledWith(configuration);
+    expect(mocks.registerGoogleStrategy).toHaveBeenCalledWith(
+      configuration,
+      expect.objectContaining({ component: "auth" }),
+    );
   });
 });

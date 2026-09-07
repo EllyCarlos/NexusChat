@@ -43,11 +43,12 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   validateGoogleOAuthState,
 } from "../src/middlewares/oauth-state.middleware.js";
-import { createRequestLogger } from "../src/middlewares/request-logger.middleware.js";
+import { createHttpObservabilityMiddleware } from "../src/middlewares/http-observability.middleware.js";
 import {
   createOAuthStateBinding,
   OAUTH_STATE_TTL_MS,
 } from "../src/modules/auth/oauth/oauth-state.service.js";
+import { createCapturingLogger } from "./support/capturing-logger.js";
 
 const RAW_EXCHANGE_TOKEN = "raw.oauth.exchange.jwt";
 
@@ -61,16 +62,10 @@ const createResponse = () => {
   return response;
 };
 
-const captureMorganOutput = async (requestPath: string) => {
-  let output = "";
+const captureStructuredHttpOutput = async (requestPath: string) => {
+  const logger = createCapturingLogger("application");
   const app = express();
-  app.use(createRequestLogger({
-    stream: {
-      write: (line: string) => {
-        output += line;
-      },
-    },
-  }));
+  app.use(createHttpObservabilityMiddleware({ logger }));
   app.use((_req, res) => res.status(204).end());
 
   const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
@@ -80,7 +75,7 @@ const captureMorganOutput = async (requestPath: string) => {
   try {
     const address = server.address() as AddressInfo;
     await fetch(`http://127.0.0.1:${address.port}${requestPath}`);
-    return output;
+    return JSON.stringify(logger.events);
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
@@ -276,11 +271,11 @@ describe("OAuth state boundary", () => {
     );
     const response = createResponse();
     const next = vi.fn();
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("auth");
 
     try {
       authenticateGoogleOAuthCallback(
-        {} as Request,
+        { app: { get: () => logger } } as unknown as Request,
         response as unknown as Response,
         next,
       );
@@ -290,9 +285,13 @@ describe("OAuth state boundary", () => {
         303,
         "https://web.example/auth/oauth-redirect?error=oauth_provider_failed",
       );
-      expect(log.mock.calls.flat().join(" ")).not.toContain(rawProviderError);
+      expect(JSON.stringify(logger.events)).not.toContain(rawProviderError);
+      expect(logger.events.at(-1)).toMatchObject({
+        event: "auth.oauth_provider.failed",
+        fields: { errorType: "Error" },
+      });
     } finally {
-      log.mockRestore();
+      logger.reset();
     }
   });
 
@@ -351,7 +350,7 @@ describe("OAuth-sensitive logging", () => {
   it("does not write the raw exchange JWT to backend operational logs", async () => {
     const response = createResponse();
     const next = vi.fn();
-    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const logger = createCapturingLogger("auth");
 
     try {
       await redirectHandler(
@@ -361,49 +360,50 @@ describe("OAuth-sensitive logging", () => {
             email: "oauth@example.com",
             newUser: false,
           },
+          app: { get: () => logger },
         } as unknown as Request,
         response as unknown as Response,
         next,
       );
 
-      const loggedOutput = log.mock.calls.flat().join(" ");
-      expect(loggedOutput).toContain("OAuth redirect issued.");
+      const loggedOutput = JSON.stringify(logger.events);
+      expect(loggedOutput).toContain("auth.oauth_redirect.completed");
       expect(loggedOutput).not.toContain(RAW_EXCHANGE_TOKEN);
       expect(response.redirect).toHaveBeenCalledWith(
         307,
         `https://web.example/auth/oauth-redirect#token=${encodeURIComponent(RAW_EXCHANGE_TOKEN)}`,
       );
     } finally {
-      log.mockRestore();
+      logger.reset();
     }
   });
 
-  it("omits the Google authorization code from Morgan output", async () => {
-    const output = await captureMorganOutput(
+  it("omits the Google authorization code from structured HTTP output", async () => {
+    const output = await captureStructuredHttpOutput(
       "/api/v1/auth/google/callback?code=google-secret-code",
     );
 
-    expect(output).toContain("GET /api/v1/auth/google/callback 204");
+    expect(output).toContain("http.request.completed");
     expect(output).not.toContain("google-secret-code");
     expect(output).not.toContain("code=");
   });
 
-  it("omits OAuth state from Morgan output", async () => {
-    const output = await captureMorganOutput(
+  it("omits OAuth state from structured HTTP output", async () => {
+    const output = await captureStructuredHttpOutput(
       "/api/v1/auth/google/callback?state=raw-oauth-state",
     );
 
-    expect(output).toContain("GET /api/v1/auth/google/callback 204");
+    expect(output).toContain("http.request.completed");
     expect(output).not.toContain("raw-oauth-state");
     expect(output).not.toContain("state=");
   });
 
-  it("automatically omits other sensitive query tokens from Morgan output", async () => {
-    const output = await captureMorganOutput(
+  it("automatically omits other sensitive query tokens from structured HTTP output", async () => {
+    const output = await captureStructuredHttpOutput(
       "/api/v1/auth/recovery?token=raw-recovery-token",
     );
 
-    expect(output).toContain("GET /api/v1/auth/recovery 204");
+    expect(output).toContain("http.request.completed");
     expect(output).not.toContain("raw-recovery-token");
     expect(output).not.toContain("token=");
   });

@@ -23,7 +23,6 @@ describe("push notification application boundary", () => {
   });
 
   it("forwards a supplied title and returns before provider delivery settles", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     let resolveDelivery!: () => void;
     const pendingDelivery = new Promise<void>((resolve) => {
       resolveDelivery = resolve;
@@ -38,7 +37,6 @@ describe("push notification application boundary", () => {
     });
 
     expect(result).toBeUndefined();
-    expect(logSpy).toHaveBeenCalledWith("Push notification requested.");
     expect(mocks.selectFallbackTitle).not.toHaveBeenCalled();
     expect(mocks.deliver).toHaveBeenCalledOnce();
     expect(mocks.deliver).toHaveBeenCalledWith({
@@ -52,7 +50,6 @@ describe("push notification application boundary", () => {
   });
 
   it("uses the injected fallback selector for omitted and empty titles", () => {
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
     mocks.selectFallbackTitle
       .mockReturnValueOnce("First fallback")
       .mockReturnValueOnce("Second fallback");
@@ -82,7 +79,6 @@ describe("push notification application boundary", () => {
   });
 
   it("swallows synchronous provider failures and logs only safe metadata", () => {
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const sensitiveToken = "sensitive-sync-token";
     const sensitiveBody = "Sensitive synchronous body";
@@ -107,7 +103,6 @@ describe("push notification application boundary", () => {
   });
 
   it("consumes asynchronous provider rejection without exposing sensitive details", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const sensitiveToken = "sensitive-async-token";
     const sensitiveBody = "Sensitive asynchronous body";

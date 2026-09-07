@@ -44,6 +44,10 @@ export const createRuntimeConfig = (environment: Environment): RuntimeConfig => 
     redis: Object.freeze({
       url: environment.REDIS_URL,
     }),
+    metrics: Object.freeze({
+      enabled: environment.METRICS_ENABLED,
+      bearerToken: environment.METRICS_BEARER_TOKEN,
+    }),
     firebase: Object.freeze({
       projectId: environment.FIREBASE_PROJECT_ID || undefined,
       clientEmail: environment.FIREBASE_CLIENT_EMAIL || undefined,

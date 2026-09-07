@@ -32,6 +32,11 @@ export interface RedisConfig {
   readonly url?: string;
 }
 
+export interface MetricsConfig {
+  readonly enabled: boolean;
+  readonly bearerToken?: string;
+}
+
 export interface FirebaseConfig {
   readonly projectId?: string;
   readonly clientEmail?: string;
@@ -60,6 +65,7 @@ export interface RuntimeConfig {
   readonly oauth: OAuthConfig;
   readonly database: DatabaseConfig;
   readonly redis: RedisConfig;
+  readonly metrics: MetricsConfig;
   readonly firebase: FirebaseConfig;
   readonly cloudinary: CloudinaryConfig;
   readonly email: EmailConfig;
