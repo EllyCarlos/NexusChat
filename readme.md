@@ -80,7 +80,7 @@ NexusChat/
 │   ├── src/app/                    # App Router pages, layouts, and API routes
 │   ├── src/components/             # Reusable UI components
 │   ├── src/lib/                    # Client and server utilities
-│   ├── prisma/                     # Prisma schema and checked-in migrations
+│   ├── prisma/                     # Canonical Prisma schema and checked-in migrations
 │   ├── .env.example                # Sanitized frontend environment template
 │   ├── package.json
 │   └── package-lock.json
@@ -88,7 +88,7 @@ NexusChat/
 │   ├── src/routes/                 # Express routers
 │   ├── src/controllers/            # Request handlers and business logic
 │   ├── src/middlewares/            # Authentication, upload, and error middleware
-│   ├── prisma/                     # Prisma schema (no migrations)
+│   ├── prisma/                     # Runtime Prisma schema mirror (no migrations)
 │   ├── .env.development.example    # Development environment template
 │   ├── .env.production.example     # Production environment template
 │   ├── package.json
@@ -171,7 +171,11 @@ The frontend template contains both browser-exposed `NEXT_PUBLIC_` configuration
 
 ### 4. Database Setup
 
-Both packages contain PostgreSQL Prisma schemas and generate their own Prisma clients. Configure their database URLs for the PostgreSQL database used by the application. Only `frontend/prisma/migrations` contains checked-in migration history; the backend has no migration directory.
+`frontend/prisma/schema.prisma` is the canonical application schema, and `frontend/prisma/migrations` is the only migration history. `backend/prisma/schema.prisma` is a runtime and client-generation mirror of the same application data model; it does not own migrations. The frontend may retain generator and datasource settings used only by its migration tooling, including its preview feature, shadow database URL, and PostgreSQL extension declaration.
+
+For every application schema change, update the canonical frontend schema, create migration history only under `frontend/prisma/migrations`, update the backend mirror in the same change, regenerate both packages' Prisma clients, and pass the semantic parity guard.
+
+The frontend test suite enforces semantic parity between the two schemas. It compares Prisma's generated client data model and Prisma Migrate's database model, catching changes to models, enums, fields, defaults, relations, identifiers, uniqueness, indexes, referential actions, and mapped database names while ignoring comments, formatting, declaration order, and the approved frontend-only settings. Run it with `npm test` from `frontend`.
 
 Apply the checked-in development migration from the frontend package:
 
@@ -225,7 +229,7 @@ Run each command from the relevant package directory.
 | Backend | `npm run build:production` | Build, then prune development and unused optional dependencies for the production runtime |
 | Backend | `npm run start` | Run `backend/dist/index.js` after a build |
 
-The repository currently has no root npm scripts and no automated test script.
+The repository has no root npm scripts. Each package provides its own `npm test` command; the frontend suite includes the Prisma schema-parity guard.
 
 ---
 
