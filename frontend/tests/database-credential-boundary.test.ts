@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 type FrontendPackage = {
@@ -9,6 +9,21 @@ async function readFrontendPackage(): Promise<FrontendPackage> {
   return JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
   ) as FrontendPackage;
+}
+
+async function listEntries(directory: URL): Promise<string[]> {
+  try {
+    const entries = await readdir(directory, {
+      recursive: true,
+      withFileTypes: true,
+    });
+    return entries.map((entry) => entry.name).sort();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
 }
 
 describe("database credential and migration boundary", () => {
@@ -39,5 +54,17 @@ describe("database credential and migration boundary", () => {
     expect(prismaSource).toContain("from '@prisma/client'");
     expect(prismaSource).toContain("new PrismaClient(");
     expect(prismaSource).not.toMatch(/DIRECT_URL|SHADOW_DATABASE_URL/);
+  });
+
+  it("keeps migration history under the canonical frontend owner", async () => {
+    const frontendEntries = await listEntries(
+      new URL("../prisma/migrations/", import.meta.url),
+    );
+    const backendEntries = await listEntries(
+      new URL("../../backend/prisma/migrations/", import.meta.url),
+    );
+
+    expect(frontendEntries.some((entry) => entry.endsWith(".sql"))).toBe(true);
+    expect(backendEntries).toEqual([]);
   });
 });
