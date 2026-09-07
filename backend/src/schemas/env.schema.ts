@@ -56,7 +56,6 @@ const environmentSchema = z.object({
     required_error: "GOOGLE_APPLICATION_CREDENTIALS is required",
   }),
   DATABASE_URL: z.string({ required_error: "DATABASE_URL is required" }),
-  DIRECT_URL: z.string({ required_error: "DIRECT_URL is required" }),
   REDIS_URL: optionalRedisUrlSchema,
   METRICS_ENABLED: metricsEnabledSchema,
   METRICS_BEARER_TOKEN: metricsBearerTokenSchema,

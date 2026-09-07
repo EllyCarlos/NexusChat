@@ -167,7 +167,7 @@ Copy the sanitized frontend template to the development filename and replace eve
 cp .env.example .env.development
 ```
 
-The frontend template contains both browser-exposed `NEXT_PUBLIC_` configuration and server-only values used by Next.js server code. `JWT_SECRET` is validated when session signing or verification executes at runtime; importing route modules during a production build does not require it.
+The frontend template contains both browser-exposed `NEXT_PUBLIC_` configuration and server-only values used by Next.js server code. Its database section distinguishes the application `DATABASE_URL` from migration-tooling values. `JWT_SECRET` is validated when session signing or verification executes at runtime; importing route modules during a production build does not require it.
 
 ### 4. Database Setup
 
@@ -177,6 +177,10 @@ For every application schema change, update the canonical frontend schema, creat
 
 The frontend test suite enforces semantic parity between the two schemas. It compares Prisma's generated client data model and Prisma Migrate's database model, catching changes to models, enums, fields, defaults, relations, identifiers, uniqueness, indexes, referential actions, and mapped database names while ignoring comments, formatting, declaration order, and the approved frontend-only settings. Run it with `npm test` from `frontend`.
 
+For normal application access, both the Next.js server and Express require `DATABASE_URL`. This runtime credential should have the ordinary data privileges the applications need. `DIRECT_URL` belongs to controlled migration tooling, and `SHADOW_DATABASE_URL` belongs only to migration-authoring workflows that use a shadow database. Keep those migration values out of normal application deployments where the platform permits. This is the intended operational boundary; the repository does not prove that existing database users already have separate privilege grants.
+
+Migration deployment is a deliberate operation from the canonical frontend package. Application startup, development, build, and postinstall scripts do not apply migrations or push schemas. Both migration scripts run `prisma migrate deploy` against checked-in history, using the corresponding environment file:
+
 Apply the checked-in development migration from the frontend package:
 
 ```bash
@@ -184,6 +188,8 @@ npm run migrate:dev
 ```
 
 Despite its name, this script runs `prisma migrate deploy` with `.env.development`. Do not run `prisma migrate dev --name init` in the backend: there is no checked-in backend migration history to extend.
+
+For a controlled production migration, run `npm run migrate:prod` from the frontend package with migration credentials in an untracked `.env.production`. Production `prisma db push` is not supported. `npm run db:push:dev` remains a development-only convenience for disposable local databases; because it bypasses migration history, it does not replace creating and checking in migrations for application schema changes.
 
 ### 5. Start the Development Servers
 
@@ -221,6 +227,7 @@ Run each command from the relevant package directory.
 | Frontend | `npm run dev` | Start the Next.js development server |
 | Frontend | `npm run build` | Generate the Prisma client and create a production build |
 | Frontend | `npm run start` | Start a previously built Next.js application |
+| Frontend | `npm run db:push:dev` | Push the schema to a disposable development database without creating migration history |
 | Frontend | `npm run migrate:dev` | Deploy checked-in migrations using `.env.development` |
 | Frontend | `npm run migrate:prod` | Deploy checked-in migrations using `.env.production` |
 | Backend | `npm run dev` | Start the TypeScript development server |
@@ -244,14 +251,14 @@ The current source configuration targets **Vercel** for the frontend and **Rende
    - **Root Directory:** `backend`
    - **Build Command:** `npm ci && npm run build:production`
    - **Start Command:** `npm start`
-3. Configure platform environment variables from `backend/.env.production.example`, including `NODE_ENV=production`, database credentials, and the production Firebase Admin values. Do not copy placeholder values unchanged.
+3. Configure platform environment variables from `backend/.env.production.example`, including `NODE_ENV=production`, the application `DATABASE_URL`, and the production Firebase Admin values. Do not copy placeholder values unchanged. Migration credentials are not part of the backend runtime contract.
 
 The Render build uses a full `npm ci` first so the backend postinstall can generate Prisma Client and the TypeScript build has its development tooling. `npm run build:production` then compiles the backend and prunes development dependencies plus optional dependencies without re-running lifecycle scripts. The final runtime keeps generated `@prisma/client` and Firebase Admin App/Messaging, while omitting the unused Firebase Admin Storage and Firestore dependency graphs. Continue using plain `npm ci` for local development and validation; optional-dependency omission is intentionally limited to the final production runtime tree.
 
 ### Frontend → Vercel
 
 1. Import the repo on Vercel and set **Root Directory** to `frontend`.
-2. Configure all required values from `frontend/.env.example`, including its server-only database, email, recovery, and `JWT_SECRET` values—not only the `NEXT_PUBLIC_` variables.
+2. Configure the application values from `frontend/.env.example`, including the runtime `DATABASE_URL`, email, recovery, and `JWT_SECRET` values—not only the `NEXT_PUBLIC_` variables. Do not add `DIRECT_URL` or `SHADOW_DATABASE_URL` to the normal Vercel runtime; provide them only in the controlled migration environment when needed.
 3. Point the public API and Socket.IO URL values at the deployed backend and set the public client URL to the deployed frontend.
 4. Use `npm ci` for installation and `npm run build` for the build. The build script already runs `prisma generate`.
 

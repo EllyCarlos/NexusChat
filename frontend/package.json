@@ -12,7 +12,6 @@
     "start": "next start",
     "lint": "eslint .",
     "db:push:dev": "dotenv -e .env.development -- prisma db push",
-    "db:push:prod": "dotenv -e .env.production -- prisma db push",
     "migrate:dev": "dotenv -e .env.development -- prisma migrate deploy",
     "migrate:prod": "dotenv -e .env.production -- prisma migrate deploy",
     "postinstall": "prisma generate",
