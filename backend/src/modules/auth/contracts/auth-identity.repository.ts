@@ -1,6 +1,5 @@
 import type {
   AuthenticatedIdentity,
-  OAuthAccountIdentity,
   PersistedGoogleAccountIdentity,
 } from "./auth-identity.js";
 
@@ -17,6 +16,11 @@ export interface CreateGoogleAccountInput {
 
 export interface AuthIdentityRepository {
   findSessionIdentityById(userId: string): Promise<AuthenticatedIdentity | null>;
-  findOAuthIdentityByEmail(email: string): Promise<OAuthAccountIdentity | null>;
+  findGoogleIdentityByProviderId(providerId: string): Promise<PersistedGoogleAccountIdentity | null>;
+  findGoogleIdentityByEmail(email: string): Promise<PersistedGoogleAccountIdentity | null>;
+  linkGoogleIdentity(input: {
+    userId: string;
+    googleId: string;
+  }): Promise<PersistedGoogleAccountIdentity | null>;
   createGoogleIdentity(input: CreateGoogleAccountInput): Promise<PersistedGoogleAccountIdentity>;
 }

@@ -6,6 +6,8 @@ import { createCapturingLogger } from "./support/capturing-logger.js";
 const mocks = vi.hoisted(() => ({
   createUser: vi.fn(),
   findUser: vi.fn(),
+  queryRaw: vi.fn(),
+  updateManyUsers: vi.fn(),
   hash: vi.fn(),
   strategy: vi.fn(function StrategyMock(this: object) {
     return this;
@@ -23,7 +25,14 @@ vi.mock("bcryptjs", () => ({
   default: { hash: mocks.hash },
 }));
 vi.mock("../src/lib/prisma.lib.js", () => ({
-  prisma: { user: { findUnique: mocks.findUser, create: mocks.createUser } },
+  prisma: {
+    $queryRaw: mocks.queryRaw,
+    user: {
+      findUnique: mocks.findUser,
+      create: mocks.createUser,
+      updateMany: mocks.updateManyUsers,
+    },
+  },
 }));
 
 const configuration = {
@@ -39,6 +48,7 @@ describe("Google strategy initialization", () => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.hash.mockResolvedValue("obvious-fake-password-hash");
+    mocks.queryRaw.mockResolvedValue([]);
   });
 
   const registerAndGetVerifier = async (logger = createCapturingLogger("auth")) => {
@@ -76,7 +86,7 @@ describe("Google strategy initialization", () => {
     expect(mocks.use).toHaveBeenCalledOnce();
   });
 
-  it("returns the existing account through the current safe OAuth projection", async () => {
+  it("returns an already-linked account through the safe Google projection", async () => {
     const existingUser = {
       id: "existing-user",
       username: "existing",
@@ -84,19 +94,23 @@ describe("Google strategy initialization", () => {
       avatar: "https://example.test/existing.png",
       email: "existing@example.test",
       emailVerified: true,
+      googleId: "google-existing",
     };
-    mocks.findUser.mockResolvedValueOnce(existingUser);
+    mocks.findUser
+      .mockResolvedValueOnce(existingUser)
+      .mockResolvedValueOnce(existingUser);
+    mocks.queryRaw.mockResolvedValueOnce([{ id: existingUser.id }]);
     const verify = await registerAndGetVerifier();
     const done = vi.fn();
 
     await verify("ignored-access", "ignored-refresh", {
       id: "google-existing",
       displayName: "Provider Name",
-      emails: [{ value: existingUser.email }],
+      emails: [{ value: existingUser.email, verified: true }],
     }, done);
 
     expect(mocks.findUser).toHaveBeenCalledWith({
-      where: { email: existingUser.email },
+      where: { googleId: "google-existing" },
       select: {
         id: true,
         username: true,
@@ -104,6 +118,7 @@ describe("Google strategy initialization", () => {
         avatar: true,
         email: true,
         emailVerified: true,
+        googleId: true,
       },
     });
     expect(mocks.hash).not.toHaveBeenCalled();
@@ -116,7 +131,7 @@ describe("Google strategy initialization", () => {
       email: existingUser.email,
       emailVerified: existingUser.emailVerified,
       newUser: false,
-      googleId: "google-existing",
+      googleId: existingUser.googleId,
     });
     expect(done.mock.calls[0]?.[1]).not.toHaveProperty("hashedPassword");
     expect(done.mock.calls[0]?.[1]).not.toHaveProperty("privateKey");
@@ -141,7 +156,7 @@ describe("Google strategy initialization", () => {
       id: "google-new",
       displayName: "New User",
       name: { givenName: "New" },
-      emails: [{ value: "new@example.test" }],
+      emails: [{ value: " NEW@EXAMPLE.TEST ", verified: true }],
       photos: [{ value: "https://example.test/provider.png" }],
     }, done);
 
@@ -170,6 +185,31 @@ describe("Google strategy initialization", () => {
     expect(done).toHaveBeenCalledWith(null, { ...createdUser, newUser: true });
   });
 
+  it("does not link a matching-email account when Google does not verify the email", async () => {
+    const manualUser = {
+      id: "manual-user",
+      username: "manual",
+      name: "Manual User",
+      avatar: "manual-avatar",
+      email: "manual@example.test",
+      emailVerified: true,
+      googleId: null,
+    };
+    mocks.findUser.mockResolvedValueOnce(null);
+    const verify = await registerAndGetVerifier();
+    const done = vi.fn();
+
+    await verify("ignored-access", "ignored-refresh", {
+      id: "unverified-google-id",
+      displayName: "Manual User",
+      emails: [{ value: manualUser.email, verified: false }],
+    }, done);
+
+    expect(mocks.updateManyUsers).not.toHaveBeenCalled();
+    expect(mocks.queryRaw).not.toHaveBeenCalled();
+    expect(done).toHaveBeenCalledWith(null, false);
+  });
+
   it("uses the existing default avatar when Google has no profile photo", async () => {
     mocks.findUser.mockResolvedValueOnce(null);
     mocks.createUser.mockResolvedValueOnce({
@@ -187,7 +227,7 @@ describe("Google strategy initialization", () => {
       id: "google-no-photo",
       displayName: "No Photo",
       name: { givenName: "No" },
-      emails: [{ value: "no-photo@example.test" }],
+      emails: [{ value: "no-photo@example.test", verified: true }],
     }, vi.fn());
 
     expect(mocks.createUser).toHaveBeenCalledWith(expect.objectContaining({
@@ -217,7 +257,7 @@ describe("Google strategy initialization", () => {
       id: "google-failure",
       displayName: "Failure User",
       name: { givenName: "Failure" },
-      emails: [{ value: "failure@example.test" }],
+      emails: [{ value: "failure@example.test", verified: true }],
     }, done);
 
     expect(done).toHaveBeenCalledWith(null, false);
@@ -257,7 +297,7 @@ describe("Google strategy initialization", () => {
       id: "google-failure",
       displayName: "Failure User",
       name: { givenName: "Failure" },
-      emails: [{ value: "failure@example.test" }],
+      emails: [{ value: "failure@example.test", verified: true }],
     }, done)).resolves.toBeUndefined();
 
     expect(done).toHaveBeenCalledWith(null, false);

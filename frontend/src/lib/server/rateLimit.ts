@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { canonicalizeAccountEmail } from "@/lib/shared/accountEmail";
 
 export const RATE_LIMIT_MESSAGE = "Too many requests. Please try again later.";
 
@@ -110,4 +111,4 @@ export const resetServerActionRateLimit = (policy: Pick<RateLimitPolicy, "namesp
 
 export const clearServerActionRateLimitsForTests = () => serverActionRateLimiter.clear();
 
-export const normalizeAccountIdentifier = (value: string): string => value.trim().toLowerCase();
+export const normalizeAccountIdentifier = canonicalizeAccountEmail;

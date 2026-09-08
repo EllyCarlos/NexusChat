@@ -73,4 +73,27 @@ describe("database credential and migration boundary", () => {
     expect(migrationLock).toMatch(/^provider\s*=\s*"postgresql"\s*$/m);
     expect(backendEntries).toEqual([]);
   });
+
+  it("validates the migration-owned Google and canonical-email indexes", async () => {
+    const migration = await readFile(
+      new URL(
+        "../prisma/migrations/20260908090000_add_unique_google_id/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(migration).toContain("pg_catalog.pg_index");
+    expect(migration).toContain("RAISE EXCEPTION");
+    expect(migration).toContain('public."User_googleId_key"');
+    expect(migration).toContain("index_definition.indisunique");
+    expect(migration).toContain("key_column.attname = 'googleId'");
+    expect(migration).toContain('CREATE INDEX "User_canonical_email_idx"');
+    expect(migration).toContain('LOWER(TRIM("email"))');
+    expect(migration).toContain("NOT index_definition.indisunique");
+    expect(migration).toContain("'lower(btrim(email))'");
+    expect(migration).not.toContain(
+      'CREATE UNIQUE INDEX "User_canonical_email_idx"',
+    );
+  });
 });

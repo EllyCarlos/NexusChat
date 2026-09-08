@@ -18,10 +18,12 @@ import {
 } from "@/lib/server/privateKeyRecoveryKeyWrap";
 import { prisma } from "@/lib/server/prisma";
 import { getAuthenticatedSession } from "@/lib/server/authenticatedSession";
+import { derivePrivateKeyRecoveryMode } from "@/lib/server/privateKeyRecoveryMode";
+import { findUniqueUserIdByCanonicalEmail } from "@/lib/server/canonicalAccountEmailLookup";
+import { canonicalizeAccountEmail } from "@/lib/shared/accountEmail";
 import {
   checkServerActionRateLimit,
   consumeServerActionRateLimit,
-  normalizeAccountIdentifier,
   RATE_LIMIT_MESSAGE,
   resetServerActionRateLimit,
   type RateLimitDecision,
@@ -164,17 +166,24 @@ export async function login(prevState: any, formData: FormData) {
       };
     }
 
-    const normalizedEmail = normalizeAccountIdentifier(email);
-    if (!consumeServerActionRateLimit(RATE_LIMITS.login, normalizedEmail).allowed) {
+    const canonicalEmail = canonicalizeAccountEmail(email);
+    if (!canonicalEmail) {
+      return {
+        errors: { message: "Email and password are required." },
+        redirect: false,
+      };
+    }
+    if (!consumeServerActionRateLimit(RATE_LIMITS.login, canonicalEmail).allowed) {
       return {
         errors: { message: RATE_LIMIT_MESSAGE },
         redirect: false,
       };
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    const userId = await findUniqueUserIdByCanonicalEmail(canonicalEmail);
+    const user = userId
+      ? await prisma.user.findUnique({ where: { id: userId } })
+      : null;
 
     if (!user) {
       // Generic error message for security (don't reveal if user exists)
@@ -228,17 +237,18 @@ export async function signup(prevState: any, formData: FormData) {
     };
   }
 
-  const normalizedEmail = normalizeAccountIdentifier(email);
-  if (!consumeServerActionRateLimit(RATE_LIMITS.signup, normalizedEmail).allowed) {
+  const canonicalEmail = canonicalizeAccountEmail(email);
+  if (!canonicalEmail) {
+    return { errors: { message: "All fields are required." } };
+  }
+  if (!consumeServerActionRateLimit(RATE_LIMITS.signup, canonicalEmail).allowed) {
     return { errors: { message: RATE_LIMIT_MESSAGE } };
   }
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    const existingUserId = await findUniqueUserIdByCanonicalEmail(canonicalEmail);
 
-    if (user) {
+    if (existingUserId) {
       return {
         errors: {
           message: "User with this email already exists.",
@@ -262,7 +272,7 @@ export async function signup(prevState: any, formData: FormData) {
 
     const newUser = await prisma.user.create({
       data: {
-        email,
+        email: canonicalEmail,
         hashedPassword,
         username,
         avatar: DEFAULT_AVATAR,
@@ -306,6 +316,43 @@ export async function logout() {
   await deleteSession();
 }
 
+export async function getPrivateKeyRecoveryOptions() {
+  try {
+    const session = await getAuthenticatedSession();
+    if (!session) {
+      return {
+        errors: { message: "Authentication is required." },
+        data: null,
+      };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { privateKey: true, oAuthSignup: true, googleId: true },
+    });
+    if (!user) {
+      return {
+        errors: { message: "Private-key recovery is unavailable." },
+        data: null,
+      };
+    }
+
+    return {
+      errors: { message: null },
+      data: {
+        recoveryMode: derivePrivateKeyRecoveryMode(user),
+        googleLinked: Boolean(user.googleId),
+      },
+    };
+  } catch {
+    console.error("Failed to determine the private-key recovery mode.");
+    return {
+      errors: { message: "Private-key recovery is unavailable." },
+      data: null,
+    };
+  }
+}
+
 // --- SEND PRIVATE KEY RECOVERY EMAIL ---
 export async function sendPrivateKeyRecoveryEmail(_prevState: unknown) {
   void _prevState;
@@ -333,13 +380,27 @@ export async function sendPrivateKeyRecoveryEmail(_prevState: unknown) {
 
     const recoveryUser = await prisma.user.findUnique({
       where: { id: session.userId },
-      select: { id: true, email: true, username: true, oAuthSignup: true }
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        privateKey: true,
+        oAuthSignup: true,
+      }
     });
 
-    if (!recoveryUser?.oAuthSignup || !recoveryUser.email || !recoveryUser.username) {
+    if (!recoveryUser || !recoveryUser.email || !recoveryUser.username) {
       return {
         errors: { message: "User information is incomplete." },
         success: { message: null }
+      };
+    }
+
+    const recoveryMode = derivePrivateKeyRecoveryMode(recoveryUser);
+    if (recoveryMode === "manual-v1") {
+      return {
+        errors: { message: "Password verification is required for this backup." },
+        success: { message: null },
       };
     }
 
@@ -462,22 +523,17 @@ export async function verifyPrivateKeyRecoveryToken(_prevState: unknown, data: {
       };
     }
 
+    const recoveryMode = derivePrivateKeyRecoveryMode(user);
     const parsedBackup = parsePrivateKeyBackup(user.privateKey);
     let payload: PrivateKeyRecoveryData;
 
-    if (!user.oAuthSignup) {
-      if (parsedBackup.format !== "legacy-v1") {
-        return {
-          errors: { message: "Private-key recovery failed." },
-          data: null
-        };
-      }
+    if (recoveryMode === "manual-v1") {
       payload = {
         userId: user.id,
         privateKey: user.privateKey,
         recoveryMode: "manual-v1"
       };
-    } else if (parsedBackup.format === "legacy-v1") {
+    } else if (recoveryMode === "oauth-v1" && parsedBackup.format === "legacy-v1") {
       if (!user.googleId || !process.env.PRIVATE_KEY_RECOVERY_SECRET) {
         return {
           errors: { message: "Private-key recovery failed." },
@@ -490,7 +546,7 @@ export async function verifyPrivateKeyRecoveryToken(_prevState: unknown, data: {
         recoveryMode: "oauth-v1",
         combinedSecret: user.googleId + process.env.PRIVATE_KEY_RECOVERY_SECRET
       };
-    } else {
+    } else if (recoveryMode === "oauth-v2" && parsedBackup.format === "v2") {
       const recoverySecret = unwrapRecoverySecret({
         userId: tokenUserId,
         recoveryKeyWrap: parsedBackup.envelope.recoveryKeyWrap
@@ -500,6 +556,11 @@ export async function verifyPrivateKeyRecoveryToken(_prevState: unknown, data: {
         privateKey: user.privateKey,
         recoveryMode: "oauth-v2",
         recoverySecret
+      };
+    } else {
+      return {
+        errors: { message: "Private-key recovery failed." },
+        data: null,
       };
     }
 
@@ -565,7 +626,16 @@ export async function verifyPassword(_prevState: unknown, data: { password: stri
       };
     }
 
-    const user = await prisma.user.findUnique({ where: { id: session.userId } });
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        email: true,
+        username: true,
+        hashedPassword: true,
+        privateKey: true,
+        oAuthSignup: true,
+      },
+    });
 
     if (!user) {
       return {
@@ -578,9 +648,7 @@ export async function verifyPassword(_prevState: unknown, data: { password: stri
       };
     }
 
-    // If user is OAuth signed up, they don't have a hashed password.
-    // Instead, rely on the private key recovery email flow.
-    if (user.oAuthSignup) {
+    if (derivePrivateKeyRecoveryMode(user) !== "manual-v1") {
         return {
             errors: {
                 message: 'This account uses OAuth. Please use the "Forgot Private Key" link on the recovery page to send a recovery email.'
@@ -655,22 +723,31 @@ export async function forgotPassword(prevState: any, email: string) {
       };
     }
 
-    const normalizedEmail = normalizeAccountIdentifier(email);
-    if (!consumeServerActionRateLimit(RATE_LIMITS.forgotPassword, normalizedEmail).allowed) {
+    const canonicalEmail = canonicalizeAccountEmail(email);
+    if (!canonicalEmail) {
+      return {
+        errors: { message: "Email is required." },
+        success: { message: null },
+      };
+    }
+    if (!consumeServerActionRateLimit(RATE_LIMITS.forgotPassword, canonicalEmail).allowed) {
       return {
         errors: { message: RATE_LIMIT_MESSAGE },
         success: { message: null }
       };
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        username: true
-      }
-    });
+    const userId = await findUniqueUserIdByCanonicalEmail(canonicalEmail);
+    const user = userId
+      ? await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+          },
+        })
+      : null;
 
     // Always return a success message for security, regardless if user exists
     if (!user) {

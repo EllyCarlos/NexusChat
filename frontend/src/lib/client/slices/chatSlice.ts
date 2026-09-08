@@ -18,6 +18,8 @@ const chatSlice = createSlice({
   initialState,
   reducers: {
 
+    resetChatState: () => initialState,
+
     updateSelectedChatDetails: (state,action: PayloadAction<fetchUserChatsResponse | null>) => {
       state.selectedChatDetails = action.payload;
     },
@@ -294,6 +296,7 @@ export const selectChats = (state: RootState) => state.chatSlice.chats;
 
 // exporting actions
 export const {
+  resetChatState,
   updateSelectedChatDetails,
   updateUserTyping,
   removeUserTyping,

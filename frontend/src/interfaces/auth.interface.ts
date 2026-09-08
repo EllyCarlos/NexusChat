@@ -22,3 +22,10 @@ export interface ResetPassword {
 export interface Otp {
   otp: string;
 }
+
+export type PrivateKeyRecoveryMode = "manual-v1" | "oauth-v1" | "oauth-v2";
+
+export interface PrivateKeyRecoveryOptions {
+  recoveryMode: PrivateKeyRecoveryMode;
+  googleLinked: boolean;
+}

@@ -23,6 +23,8 @@ const callSlice = createSlice({
   initialState,
   reducers: {
 
+    resetCallState: () => initialState,
+
     setIsInCall:(state,action:PayloadAction<boolean>)=>{
         state.isInCall = action.payload
     },
@@ -49,6 +51,7 @@ export const selectCallHistory = (state: RootState) => state.callSlice.callHisto
 export const selectCalleeIdPopulatedFromRecentCalls = (state: RootState) => state.callSlice.calleeIdPopulatedFromRecentCalls;
 
 export const {
+    resetCallState,
     setIsInCall,
     setCallHistoryId,
     setMyGlobalStream,

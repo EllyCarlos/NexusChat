@@ -1,10 +1,12 @@
 import { ApplicationError } from "../../../errors/application-error.js";
+import { canonicalizeAccountEmail } from "../account-email.js";
 import type { AuthIdentityRepository } from "../contracts/auth-identity.repository.js";
 import type { OAuthCallbackIdentity } from "../contracts/auth-identity.js";
 
 export interface GoogleProfileIdentity {
   providerId: string;
   email: string;
+  emailVerified: boolean;
   displayName: string;
   givenName?: string;
   avatarUrl?: string;
@@ -13,7 +15,10 @@ export interface GoogleProfileIdentity {
 type GoogleAccountDependencies = {
   identityRepository: Pick<
     AuthIdentityRepository,
-    "findOAuthIdentityByEmail" | "createGoogleIdentity"
+    | "findGoogleIdentityByProviderId"
+    | "findGoogleIdentityByEmail"
+    | "linkGoogleIdentity"
+    | "createGoogleIdentity"
   >;
   hashProviderId: (providerId: string, rounds: number) => Promise<string>;
   defaultAvatar: string;
@@ -32,17 +37,52 @@ export const createGoogleAccountProvisioner = ({
 }: GoogleAccountDependencies) => async (
   profile: GoogleProfileIdentity,
 ): Promise<OAuthCallbackIdentity> => {
-  if (!profile.email || !profile.displayName) {
+  const canonicalEmail = canonicalizeAccountEmail(profile.email);
+  if (!profile.providerId || !canonicalEmail || !profile.displayName) {
     throw provisioningError();
   }
 
   try {
-    const existingIdentity = await identityRepository.findOAuthIdentityByEmail(profile.email);
-    if (existingIdentity) {
+    const providerIdentity = await identityRepository.findGoogleIdentityByProviderId(
+      profile.providerId,
+    );
+    if (providerIdentity) {
+      if (providerIdentity.googleId !== profile.providerId) {
+        throw provisioningError();
+      }
+
+      const emailIdentity = await identityRepository.findGoogleIdentityByEmail(canonicalEmail);
+      if (emailIdentity && emailIdentity.id !== providerIdentity.id) {
+        throw provisioningError();
+      }
+
       return {
-        ...existingIdentity,
+        ...providerIdentity,
         newUser: false,
+      };
+    }
+
+    if (!profile.emailVerified) {
+      throw provisioningError();
+    }
+
+    const emailIdentity = await identityRepository.findGoogleIdentityByEmail(canonicalEmail);
+    if (emailIdentity) {
+      if (emailIdentity.googleId) {
+        throw provisioningError();
+      }
+
+      const linkedIdentity = await identityRepository.linkGoogleIdentity({
+        userId: emailIdentity.id,
         googleId: profile.providerId,
+      });
+      if (!linkedIdentity || linkedIdentity.googleId !== profile.providerId) {
+        throw provisioningError();
+      }
+
+      return {
+        ...linkedIdentity,
+        newUser: false,
       };
     }
 
@@ -51,9 +91,9 @@ export const createGoogleAccountProvisioner = ({
       username: profile.displayName,
       name: profile.givenName!,
       avatar: profile.avatarUrl || defaultAvatar,
-      email: profile.email,
+      email: canonicalEmail,
       hashedPassword,
-      emailVerified: true,
+      emailVerified: profile.emailVerified,
       oAuthSignup: true,
       googleId: profile.providerId,
     });

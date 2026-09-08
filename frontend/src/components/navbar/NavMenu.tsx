@@ -1,4 +1,4 @@
-import { logout } from "@/actions/auth.actions";
+import { useLogout } from "@/hooks/useAuth/useLogout";
 import { useCloseNavMenu } from "@/hooks/useUI/useCloseNavMenu";
 import { useOpenAddFriendForm } from "@/hooks/useUI/useOpenAddFriendForm";
 import { useOpenGroupChatForm } from "@/hooks/useUI/useOpenGroupChatForm";
@@ -6,7 +6,6 @@ import { useOpenProfileForm } from "@/hooks/useUI/useOpenProfileForm";
 import { useOpenSettingsForm } from "@/hooks/useUI/useOpenSettingsForm";
 import { useHandleOutsideClick } from "@/hooks/useUtils/useHandleOutsideClick";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
 import { useRef } from "react";
 import { AddFriendIcon } from "../ui/icons/AddFriendIcon";
 import { LogoutIcon } from "../ui/icons/LogoutIcon";
@@ -26,12 +25,7 @@ export const NavMenu = () => {
   const navMenuRef = useRef<HTMLDivElement>(null);
   useHandleOutsideClick(navMenuRef, closeNavMenu);
 
-  const router = useRouter();
-
-  const handleLogoutClick = async()=>{
-    await logout();
-    router.push("/auth/login");
-  }
+  const handleLogoutClick = useLogout();
 
   const {openSettingsForm} = useOpenSettingsForm();
 
