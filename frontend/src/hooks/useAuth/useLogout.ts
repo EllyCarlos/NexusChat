@@ -42,7 +42,11 @@ type ClientStorageDependencies = {
 };
 
 export type ClientLogoutResult = {
-  status: "complete" | "server-logout-failed";
+  status:
+    | "complete"
+    | "storage-cleanup-failed"
+    | "server-logout-failed"
+    | "server-and-storage-cleanup-failed";
   serverSessionMayRemain: boolean;
   storageCleared: boolean;
 };
@@ -73,11 +77,32 @@ const stopActiveMedia = (state: RootState) => {
 
 const authStorageKeys = ["loggedInUser", "authToken", "tempPassword"] as const;
 
-const readBrowserStorage = (name: "localStorage" | "sessionStorage") => {
+type ClientStorageAccess = {
+  storage?: ClientStorage;
+  accessFailed: boolean;
+};
+
+const readBrowserStorage = (
+  name: "localStorage" | "sessionStorage",
+): ClientStorageAccess => {
   try {
-    return globalThis[name];
+    return { storage: globalThis[name], accessFailed: false };
   } catch {
-    return undefined;
+    return { accessFailed: true };
+  }
+};
+
+const resolveClientStorage = (
+  storage: ClientStorageDependencies,
+  name: "localStorage" | "sessionStorage",
+): ClientStorageAccess => {
+  try {
+    const providedStorage = storage[name];
+    return providedStorage
+      ? { storage: providedStorage, accessFailed: false }
+      : readBrowserStorage(name);
+  } catch {
+    return { accessFailed: true };
   }
 };
 
@@ -85,12 +110,12 @@ export const clearClientSessionStorage = (
   storage: ClientStorageDependencies = {},
 ) => {
   const storages = [
-    storage.localStorage ?? readBrowserStorage("localStorage"),
-    storage.sessionStorage ?? readBrowserStorage("sessionStorage"),
+    resolveClientStorage(storage, "localStorage"),
+    resolveClientStorage(storage, "sessionStorage"),
   ];
-  let storageCleared = true;
+  let storageCleared = storages.every(({ accessFailed }) => !accessFailed);
 
-  for (const clientStorage of storages) {
+  for (const { storage: clientStorage } of storages) {
     if (!clientStorage) continue;
 
     for (const key of authStorageKeys) {
@@ -103,6 +128,30 @@ export const clearClientSessionStorage = (
   }
 
   return storageCleared;
+};
+
+const getClientLogoutStatus = (
+  serverLogoutSucceeded: boolean,
+  storageCleared: boolean,
+): ClientLogoutResult["status"] => {
+  if (serverLogoutSucceeded && storageCleared) return "complete";
+  if (serverLogoutSucceeded) return "storage-cleanup-failed";
+  return storageCleared
+    ? "server-logout-failed"
+    : "server-and-storage-cleanup-failed";
+};
+
+export const getClientLogoutFailureMessage = (result: ClientLogoutResult) => {
+  if (result.status === "complete") {
+    return "Logout completed.";
+  }
+  if (result.status === "storage-cleanup-failed") {
+    return "Server logout succeeded, but browser storage could not be fully cleared. Clear this site's data before signing in again.";
+  }
+  if (result.status === "server-and-storage-cleanup-failed") {
+    return "Server logout failed and browser storage could not be fully cleared. Please retry logout and clear this site's data.";
+  }
+  return "Client session state was cleared, but the server logout failed. Please try signing out again.";
 };
 
 export const performClientLogout = async ({
@@ -136,7 +185,7 @@ export const performClientLogout = async ({
   }
 
   return {
-    status: serverLogoutSucceeded ? "complete" : "server-logout-failed",
+    status: getClientLogoutStatus(serverLogoutSucceeded, storageCleared),
     serverSessionMayRemain: !serverLogoutSucceeded,
     storageCleared,
   };
@@ -144,7 +193,7 @@ export const performClientLogout = async ({
 
 export const createClientLogoutCommand = (
   dependencies: ClientLogoutDependencies,
-  onServerLogoutFailure?: () => void,
+  onIncompleteLogout?: (result: ClientLogoutResult) => void,
 ) => {
   let inFlight: Promise<ClientLogoutResult> | null = null;
 
@@ -152,8 +201,8 @@ export const createClientLogoutCommand = (
     if (inFlight) return inFlight;
 
     const attempt = performClientLogout(dependencies).then((result) => {
-      if (result.status === "server-logout-failed") {
-        onServerLogoutFailure?.();
+      if (result.status !== "complete") {
+        onIncompleteLogout?.(result);
       }
       return result;
     });
@@ -180,9 +229,7 @@ export const useLogout = () => {
         getState: store.getState,
         router,
       },
-      () => toast.error(
-        "Local session data was cleared, but the server logout failed. Please try signing out again.",
-      ),
+      (result) => toast.error(getClientLogoutFailureMessage(result)),
     ),
     [dispatch, router, store],
   );

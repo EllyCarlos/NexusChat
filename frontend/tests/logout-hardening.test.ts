@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createClientLogoutCommand,
+  getClientLogoutFailureMessage,
   performClientLogout,
 } from "../src/hooks/useAuth/useLogout";
 import { attachmentApi } from "../src/lib/client/rtk-query/attachment.api";
@@ -171,7 +172,7 @@ describe("centralized client logout", () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 
-  it("continues Redux, cache, media, and navigation cleanup when storage throws", async () => {
+  it("reports removeItem failures while continuing all other cleanup", async () => {
     const store = makeStore();
     const stop = populateSensitiveState(store);
     const dispatch = vi.spyOn(store, "dispatch");
@@ -191,7 +192,17 @@ describe("centralized client logout", () => {
       storage: { localStorage: throwingStorage, sessionStorage: availableStorage },
     });
 
-    expect(result.storageCleared).toBe(false);
+    expect(result).toEqual({
+      status: "storage-cleanup-failed",
+      serverSessionMayRemain: false,
+      storageCleared: false,
+    });
+    expect(getClientLogoutFailureMessage(result)).toContain(
+      "browser storage could not be fully cleared",
+    );
+    expect(getClientLogoutFailureMessage(result)).not.toContain(
+      "Local session data was cleared",
+    );
     expect(throwingStorage.removeItem).toHaveBeenCalledTimes(3);
     expect(availableStorage.removeItem).toHaveBeenCalledTimes(3);
     expect(stop).toHaveBeenCalledOnce();
@@ -201,6 +212,95 @@ describe("centralized client logout", () => {
       userApi.util.resetApiState().type,
     );
     expect(router.replace).toHaveBeenCalledWith("/auth/login");
+    expect(router.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("reports a storage access failure and still clears Redux, media, and navigation", async () => {
+    const store = makeStore();
+    const stop = populateSensitiveState(store);
+    const router = { replace: vi.fn(), refresh: vi.fn() };
+    const availableStorage = createStorage();
+    const storage = {
+      get localStorage(): never {
+        throw new DOMException("Storage access is blocked", "SecurityError");
+      },
+      sessionStorage: availableStorage,
+    };
+
+    const result = await performClientLogout({
+      logoutOnServer: vi.fn().mockResolvedValue(undefined),
+      dispatch: store.dispatch,
+      getState: store.getState,
+      router,
+      storage,
+    });
+
+    expect(result).toEqual({
+      status: "storage-cleanup-failed",
+      serverSessionMayRemain: false,
+      storageCleared: false,
+    });
+    expect(availableStorage.removeItem).toHaveBeenCalledTimes(3);
+    expect(stop).toHaveBeenCalledOnce();
+    expect(store.getState().authSlice.loggedInUser).toBeNull();
+    expect(store.getState().uiSlice.recoverPrivateKeyForm).toBe(false);
+    expect(store.getState().chatSlice.chats).toEqual([]);
+    expect(store.getState().callSlice.isInCall).toBe(false);
+    expect(router.replace).toHaveBeenCalledWith("/auth/login");
+    expect(router.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("distinguishes combined server and storage cleanup failures", async () => {
+    const store = makeStore();
+    const result = await performClientLogout({
+      logoutOnServer: vi.fn().mockRejectedValue(new Error("server unavailable")),
+      dispatch: store.dispatch,
+      getState: store.getState,
+      router: { replace: vi.fn(), refresh: vi.fn() },
+      storage: {
+        localStorage: {
+          removeItem: vi.fn(() => {
+            throw new DOMException("Storage is blocked", "SecurityError");
+          }),
+        },
+        sessionStorage: createStorage(),
+      },
+    });
+
+    expect(result).toEqual({
+      status: "server-and-storage-cleanup-failed",
+      serverSessionMayRemain: true,
+      storageCleared: false,
+    });
+    expect(getClientLogoutFailureMessage(result)).toContain("Server logout failed");
+    expect(getClientLogoutFailureMessage(result)).toContain(
+      "browser storage could not be fully cleared",
+    );
+  });
+
+  it("surfaces a truthful notification result for storage-only cleanup failure", async () => {
+    const store = makeStore();
+    const onIncompleteLogout = vi.fn();
+    const command = createClientLogoutCommand({
+      logoutOnServer: vi.fn().mockResolvedValue(undefined),
+      dispatch: store.dispatch,
+      getState: store.getState,
+      router: { replace: vi.fn(), refresh: vi.fn() },
+      storage: {
+        localStorage: {
+          removeItem: vi.fn(() => {
+            throw new DOMException("Storage is blocked", "SecurityError");
+          }),
+        },
+        sessionStorage: createStorage(),
+      },
+    }, onIncompleteLogout);
+
+    const result = await command();
+
+    expect(result.status).toBe("storage-cleanup-failed");
+    expect(onIncompleteLogout).toHaveBeenCalledWith(result);
+    expect(getClientLogoutFailureMessage(result)).toContain("Server logout succeeded");
   });
 
   it("deduplicates an in-flight click and permits a safe retry afterward", async () => {
@@ -212,14 +312,14 @@ describe("centralized client logout", () => {
     const logoutOnServer = vi.fn()
       .mockReturnValueOnce(firstAttempt)
       .mockResolvedValueOnce(undefined);
-    const onServerLogoutFailure = vi.fn();
+    const onIncompleteLogout = vi.fn();
     const command = createClientLogoutCommand({
       logoutOnServer,
       dispatch: store.dispatch,
       getState: store.getState,
       router: { replace: vi.fn(), refresh: vi.fn() },
       storage: { localStorage: createStorage(), sessionStorage: createStorage() },
-    }, onServerLogoutFailure);
+    }, onIncompleteLogout);
 
     const firstClick = command();
     const duplicateClick = command();
@@ -228,11 +328,11 @@ describe("centralized client logout", () => {
 
     rejectFirstAttempt?.(new Error("temporary server failure"));
     await expect(firstClick).resolves.toMatchObject({ status: "server-logout-failed" });
-    expect(onServerLogoutFailure).toHaveBeenCalledOnce();
+    expect(onIncompleteLogout).toHaveBeenCalledOnce();
 
     await expect(command()).resolves.toMatchObject({ status: "complete" });
     expect(logoutOnServer).toHaveBeenCalledTimes(2);
-    expect(onServerLogoutFailure).toHaveBeenCalledOnce();
+    expect(onIncompleteLogout).toHaveBeenCalledOnce();
   });
 
   it("keeps auth reducers pure even when browser storage is unavailable", () => {
