@@ -6,6 +6,7 @@ import { useAppSelector } from "../../lib/client/store/hooks";
 import { encryptMessage } from "../../lib/client/encryption";
 import { useGetSharedKey } from "../useAuth/useGetSharedKey";
 import { getOtherMemberOfPrivateChat } from "@/lib/shared/helpers";
+import toast from "react-hot-toast";
 
 type MessageEditEventSendPayload = {
   chatId:string
@@ -25,30 +26,45 @@ export const useEditMessage = () => {
 
     if (selectedChatDetails && loggedInUserId) {
 
-      let encryptedMessage;
+      let textContentToEmit = updatedContent;
 
       if (!selectedChatDetails.isGroupChat) {
+        try {
+          const otherMember =  getOtherMemberOfPrivateChat(selectedChatDetails,loggedInUserId).user;
+          const sharedKey = await getSharedKey({ loggedInUserId, otherMember });
 
-        const otherMember =  getOtherMemberOfPrivateChat(selectedChatDetails,loggedInUserId).user;
+          if (!sharedKey) {
+            toast.error("Unable to securely update this message. Please try again.");
+            return false;
+          }
 
-        const sharedKey = await getSharedKey({ loggedInUserId, otherMember });
-
-        if (sharedKey) {
-          encryptedMessage = await encryptMessage({
+          const encryptedMessage = await encryptMessage({
             message: updatedContent,
             sharedKey,
           });
+
+          if (!encryptedMessage?.trim() || encryptedMessage === updatedContent) {
+            toast.error("Unable to securely update this message. Please try again.");
+            return false;
+          }
+          textContentToEmit = encryptedMessage;
+        } catch {
+          toast.error("Unable to securely update this message. Please try again.");
+          return false;
         }
       }
 
       const payload:MessageEditEventSendPayload = {
         chatId: selectedChatDetails.id,
         messageId: messageId,
-        updatedTextContent: encryptedMessage ? encryptedMessage : updatedContent,
+        updatedTextContent: textContentToEmit,
       };
 
       socket?.emit(Event.MESSAGE_EDIT, payload);
+      return true;
     }
+
+    return false;
   };
 
   return { editMessage };

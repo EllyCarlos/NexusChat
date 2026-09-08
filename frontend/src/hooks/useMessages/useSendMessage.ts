@@ -7,6 +7,7 @@ import { selectSelectedChatDetails } from "../../lib/client/slices/chatSlice";
 import { useAppSelector } from "../../lib/client/store/hooks";
 import { useGetSharedKey } from "../useAuth/useGetSharedKey";
 import { selectReplyingToMessageId } from "@/lib/client/slices/uiSlice";
+import toast from "react-hot-toast";
 
 type MessageEventSendPayload = {
   chatId:string
@@ -54,7 +55,7 @@ export const useSendMessage = () => {
         replyToMessageId:replyToMessageId ? replyToMessageId : undefined
       };
       socket?.emit(Event.MESSAGE, newMessage);
-      return;
+      return true;
     }
 
     if(encryptedAudio && selectedChatDetails){
@@ -73,34 +74,54 @@ export const useSendMessage = () => {
         replyToMessageId:replyToMessageId ? replyToMessageId : undefined
       };
       socket?.emit(Event.MESSAGE, newMessage);
-      return;
+      return true;
     }
 
-    if (messageVal && loggedInUserId && selectedChatDetails && !selectedChatDetails?.isGroupChat) {
+    if (messageVal && selectedChatDetails && !selectedChatDetails.isGroupChat) {
+
+      if (!loggedInUserId) {
+        toast.error("Unable to securely send this message. Please try again.");
+        return false;
+      }
 
       // if we are trying to send a message in a private chat, we need to encrypt it
-      const otherMember = getOtherMemberOfPrivateChat(
-        selectedChatDetails,
-        loggedInUserId
-      ).user;
+      try {
+        const otherMember = getOtherMemberOfPrivateChat(
+          selectedChatDetails,
+          loggedInUserId
+        ).user;
 
-      const sharedSecretKey = await getSharedKey({
-        loggedInUserId,
-        otherMember,
-      });
-      
-      if(sharedSecretKey){
+        const sharedSecretKey = await getSharedKey({
+          loggedInUserId,
+          otherMember,
+        });
+
+        if (!sharedSecretKey) {
+          toast.error("Unable to securely send this message. Please try again.");
+          return false;
+        }
+
         encryptedMessage = await encryptMessage({message: messageVal,sharedKey: sharedSecretKey});
+        if (!encryptedMessage?.trim() || encryptedMessage === messageVal) {
+          toast.error("Unable to securely send this message. Please try again.");
+          return false;
+        }
+      } catch {
+        toast.error("Unable to securely send this message. Please try again.");
+        return false;
       }
     }
 
     if(selectedChatDetails && (messageVal || url || pollOptions || pollQuestion || isMultipleAnswers)) {
       // if we are trying to send a message in a group chat, we need to send the message as it is
       // because group chat messages are not encrypted
+      const textMessageContent = selectedChatDetails.isGroupChat
+        ? messageVal
+        : encryptedMessage;
       const newMessage: MessageEventSendPayload = {
         chatId:selectedChatDetails.id,
         isPollMessage: pollOptions?.length && pollQuestion?.length ? true : false,
-        textMessageContent: encryptedMessage ? encryptedMessage : messageVal? messageVal : undefined,
+        textMessageContent: textMessageContent || undefined,
         url: url ? url : undefined,
         pollData:{
           isMultipleAnswers,
@@ -111,7 +132,10 @@ export const useSendMessage = () => {
         replyToMessageId:replyToMessageId ? replyToMessageId : undefined
       };
       socket?.emit(Event.MESSAGE, newMessage);
+      return true;
     }
+
+    return false;
   };
 
   return { sendMessage };

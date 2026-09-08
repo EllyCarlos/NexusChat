@@ -18,11 +18,12 @@ export const useHandleEditMessageSubmit = ({
   
   const { editMessage } = useEditMessage();
 
-  const handleEditMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleEditMessageSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
-    editMessage(messageId, updatedContentValue.trim());
+    const updated = await editMessage(messageId, updatedContentValue.trim());
+    if (!updated) return;
 
     setEditMessageId("");
     setOpenContextMenuMessageId("");

@@ -16,17 +16,18 @@ export const useHandleSendMessage = ({
   const data =  useAppSelector(selectReplyingToMessageData);
   const dispatch = useAppDispatch();
 
-  const handleMessageSubmit = (e: React.FormEvent) => {
+  const handleMessageSubmit = async (e: React.FormEvent) => {
     e.stopPropagation();
     e.preventDefault();
     if (messageVal.trim().length) {
-      sendMessage(messageVal);
+      const sent = await sendMessage(messageVal);
+      if (!sent) return;
       if(data){
         dispatch(setReplyingToMessageData(null));
         dispatch(setReplyingToMessageId(null));
       }
+      setMessageVal("");
     }
-    setMessageVal("");
   };
 
   return { handleMessageSubmit };
