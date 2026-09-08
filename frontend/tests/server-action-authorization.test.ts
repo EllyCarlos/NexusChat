@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   verifyPrivateKeyRecoveryToken: vi.fn(),
   findUser: vi.fn(),
   findUsers: vi.fn(),
+  queryRaw: vi.fn(),
   createUser: vi.fn(),
   updateUser: vi.fn(),
   updateManyUsers: vi.fn(),
@@ -32,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   hash: vi.fn(),
   compare: vi.fn(),
   parsePrivateKeyBackup: vi.fn(),
+  unwrapRecoverySecret: vi.fn(),
 }));
 
 vi.mock("@/lib/server/authenticatedSession", () => ({
@@ -50,6 +52,7 @@ vi.mock("@/lib/server/session", () => ({
 
 vi.mock("@/lib/server/prisma", () => ({
   prisma: {
+    $queryRaw: mocks.queryRaw,
     user: {
       findUnique: mocks.findUser,
       findMany: mocks.findUsers,
@@ -96,12 +99,13 @@ vi.mock("@/lib/client/privateKeyEnvelope", () => ({
 vi.mock("@/lib/server/privateKeyRecoveryKeyWrap", () => ({
   generatePerUserRecoverySecret: vi.fn(),
   PrivateKeyRecoveryKeyWrapError: class PrivateKeyRecoveryKeyWrapError extends Error {},
-  unwrapRecoverySecret: vi.fn(),
+  unwrapRecoverySecret: mocks.unwrapRecoverySecret,
   wrapRecoverySecret: vi.fn(),
 }));
 
 import {
   forgotPassword,
+  getPrivateKeyRecoveryOptions,
   login,
   resetPassword,
   sendOtp,
@@ -118,6 +122,7 @@ import {
   storeFcmToken,
   updateUserNotificationStatus,
 } from "../src/actions/user.actions";
+import { findUniqueUserIdByCanonicalEmail } from "../src/lib/server/canonicalAccountEmailLookup";
 import {
   BoundedInMemoryRateLimiter,
   clearServerActionRateLimitsForTests,
@@ -136,11 +141,14 @@ const actor = () => ({
   email: ACTOR_EMAIL,
   username: ACTOR_USERNAME,
   hashedPassword: "stored-password-hash",
+  privateKey: "encrypted-private-key",
+  googleId: null,
   oAuthSignup: false,
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe("Server Action authentication and ownership", () => {
@@ -153,6 +161,7 @@ describe("Server Action authentication and ownership", () => {
     });
     mocks.findUser.mockResolvedValue(actor());
     mocks.findUsers.mockResolvedValue([]);
+    mocks.queryRaw.mockResolvedValue([{ id: ACTOR_ID }]);
     mocks.createUser.mockResolvedValue(actor());
     mocks.updateUser.mockResolvedValue({ publicKey: "stored-public-key" });
     mocks.updateManyUsers.mockResolvedValue({ count: 1 });
@@ -181,6 +190,7 @@ describe("Server Action authentication and ownership", () => {
     mocks.signPasswordResetToken.mockResolvedValue("password-reset-jwt");
     mocks.createSession.mockResolvedValue("new-session-token");
     mocks.parsePrivateKeyBackup.mockReturnValue({ format: "legacy-v1" });
+    mocks.unwrapRecoverySecret.mockReturnValue("per-user-recovery-secret");
   });
 
   it("rejects unauthenticated sendOtp without DB or email side effects", async () => {
@@ -344,8 +354,26 @@ describe("Server Action authentication and ownership", () => {
     expect(mocks.getAuthenticatedSession).not.toHaveBeenCalled();
   });
 
+  it("matches login email through the canonical historical lookup", async () => {
+    const formData = new FormData();
+    formData.set("email", " User-A@Example.com ");
+    formData.set("password", "correct-password");
+
+    const result = await login(undefined, formData);
+
+    const canonicalQuery = mocks.queryRaw.mock.calls[0]?.[0] as {
+      strings: string[];
+      values: unknown[];
+    };
+    expect(result.redirect).toBe(true);
+    expect(canonicalQuery.strings.join(" ")).toContain('LOWER(TRIM("email"))');
+    expect(canonicalQuery.values).toEqual([ACTOR_EMAIL]);
+    expect(mocks.findUser).toHaveBeenCalledWith({ where: { id: ACTOR_ID } });
+  });
+
   it("keeps signup public and creates the new user's session", async () => {
     mocks.getAuthenticatedSession.mockResolvedValue(null);
+    mocks.queryRaw.mockResolvedValueOnce([]);
     mocks.findUser.mockResolvedValue(null);
     mocks.createUser.mockResolvedValue(actor());
     const formData = new FormData();
@@ -361,8 +389,27 @@ describe("Server Action authentication and ownership", () => {
     expect(mocks.getAuthenticatedSession).not.toHaveBeenCalled();
   });
 
+  it("stores newly created manual account emails canonically", async () => {
+    mocks.queryRaw.mockResolvedValueOnce([]);
+    mocks.findUser.mockResolvedValue(null);
+    mocks.createUser.mockResolvedValue(actor());
+    const formData = new FormData();
+    formData.set("name", "User A");
+    formData.set("username", ACTOR_USERNAME);
+    formData.set("email", " User-A@Example.com ");
+    formData.set("password", "new-password");
+
+    const result = await signup(undefined, formData);
+
+    expect(result.errors).toBeNull();
+    expect(mocks.createUser).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ email: ACTOR_EMAIL }),
+    }));
+  });
+
   it("keeps forgot-password public", async () => {
     mocks.getAuthenticatedSession.mockResolvedValue(null);
+    mocks.queryRaw.mockResolvedValueOnce([]);
     mocks.findUser.mockResolvedValue(null);
 
     const result = await forgotPassword(undefined, "unknown@example.com");
@@ -370,6 +417,17 @@ describe("Server Action authentication and ownership", () => {
     expect(result.errors.message).toBeNull();
     expect(result.success.message).toContain("If an account with that email exists");
     expect(mocks.getAuthenticatedSession).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when canonical email lookup finds multiple historical rows", async () => {
+    mocks.queryRaw.mockResolvedValueOnce([
+      { id: ACTOR_ID },
+      { id: OTHER_USER_ID },
+    ]);
+
+    await expect(findUniqueUserIdByCanonicalEmail("USER-A@example.com"))
+      .rejects.toThrow("same canonical email");
+    expect(mocks.findUser).not.toHaveBeenCalled();
   });
 
   it("keeps purpose-token-bound password reset public", async () => {
@@ -406,7 +464,16 @@ describe("Server Action authentication and ownership", () => {
     } as { password: string });
 
     expect(result.errors.message).toBeNull();
-    expect(mocks.findUser).toHaveBeenCalledWith({ where: { id: ACTOR_ID } });
+    expect(mocks.findUser).toHaveBeenCalledWith({
+      where: { id: ACTOR_ID },
+      select: {
+        email: true,
+        username: true,
+        hashedPassword: true,
+        privateKey: true,
+        oAuthSignup: true,
+      },
+    });
     expect(mocks.deletePrivateKeyRecoveryTokens).toHaveBeenCalledWith({
       where: { userId: ACTOR_ID },
     });
@@ -437,6 +504,91 @@ describe("Server Action authentication and ownership", () => {
       to: ACTOR_EMAIL,
       username: ACTOR_USERNAME,
     }));
+  });
+
+  it("returns a safe explicit recovery decision for a Google-linked manual backup", async () => {
+    mocks.findUser.mockResolvedValue({ ...actor(), googleId: "google-provider-id" });
+
+    const result = await getPrivateKeyRecoveryOptions();
+
+    expect(result).toEqual({
+      errors: { message: null },
+      data: { recoveryMode: "manual-v1", googleLinked: true },
+    });
+    expect(mocks.findUser).toHaveBeenCalledWith({
+      where: { id: ACTOR_ID },
+      select: { privateKey: true, oAuthSignup: true, googleId: true },
+    });
+  });
+
+  it("uses the original persisted Google ID for OAuth legacy-v1 recovery", async () => {
+    vi.stubEnv("PRIVATE_KEY_RECOVERY_SECRET", "legacy-server-secret");
+    mocks.verifyPrivateKeyRecoveryToken.mockResolvedValue({
+      userId: ACTOR_ID,
+      expiresAt: FUTURE_DATE.toISOString(),
+    });
+    mocks.findPrivateKeyRecoveryToken.mockResolvedValue({
+      id: "recovery-a",
+      userId: ACTOR_ID,
+      hashedToken: "hashed-token",
+      expiresAt: FUTURE_DATE,
+    });
+    mocks.findUser.mockResolvedValue({
+      id: ACTOR_ID,
+      privateKey: "legacy-oauth-backup",
+      oAuthSignup: true,
+      googleId: "original-google-id",
+    });
+
+    const result = await verifyPrivateKeyRecoveryToken(undefined, {
+      recoveryToken: "valid-token",
+    });
+
+    expect(result.data).toEqual({
+      userId: ACTOR_ID,
+      privateKey: "legacy-oauth-backup",
+      recoveryMode: "oauth-v1",
+      combinedSecret: "original-google-idlegacy-server-secret",
+    });
+  });
+
+  it("preserves OAuth V2 recovery through the stored recovery-key wrap", async () => {
+    const recoveryKeyWrap = { algorithm: "AES-256-GCM", ciphertext: "wrapped" };
+    mocks.verifyPrivateKeyRecoveryToken.mockResolvedValue({
+      userId: ACTOR_ID,
+      expiresAt: FUTURE_DATE.toISOString(),
+    });
+    mocks.findPrivateKeyRecoveryToken.mockResolvedValue({
+      id: "recovery-a",
+      userId: ACTOR_ID,
+      hashedToken: "hashed-token",
+      expiresAt: FUTURE_DATE,
+    });
+    mocks.findUser.mockResolvedValue({
+      id: ACTOR_ID,
+      privateKey: "oauth-v2-envelope",
+      oAuthSignup: true,
+      googleId: "google-provider-id",
+    });
+    mocks.parsePrivateKeyBackup.mockReturnValue({
+      format: "v2",
+      envelope: { recoveryKeyWrap },
+    });
+
+    const result = await verifyPrivateKeyRecoveryToken(undefined, {
+      recoveryToken: "valid-token",
+    });
+
+    expect(mocks.unwrapRecoverySecret).toHaveBeenCalledWith({
+      userId: ACTOR_ID,
+      recoveryKeyWrap,
+    });
+    expect(result.data).toEqual({
+      userId: ACTOR_ID,
+      privateKey: "oauth-v2-envelope",
+      recoveryMode: "oauth-v2",
+      recoverySecret: "per-user-recovery-secret",
+    });
   });
 
   it("stores manual-signup keys only for the session user", async () => {

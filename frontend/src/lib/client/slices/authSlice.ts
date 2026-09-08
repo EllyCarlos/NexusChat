@@ -33,19 +33,6 @@ const authSlice = createSlice({
       state.isLoading = false;
       state.error = null;
 
-      // Crucial: If you are storing `loggedInUser` in localStorage in your components,
-      // it's generally better to let the Redux state be the single source of truth.
-      // However, if localStorage is used for persistence across page reloads (hydration),
-      // ensure you hydrate the Redux store from localStorage on app load.
-      // If `action.payload` is null (logout), consider clearing localStorage here too.
-      if (action.payload === null) {
-        localStorage.removeItem("loggedInUser"); // Ensure consistency
-        localStorage.removeItem("authToken"); // Ensure consistency if authToken also stored there
-      } else {
-        // You might want to save it here if Redux state is not persistent
-        // across full page reloads without re-fetching.
-        // localStorage.setItem("loggedInUser", JSON.stringify(action.payload));
-      }
     },
     // Action to update only the publicKey of the loggedInUser
     updateLoggedInUserPublicKey: (
@@ -75,12 +62,6 @@ const authSlice = createSlice({
     // Action to set the authentication token
     setAuthToken: (state, action: PayloadAction<string | null>) => { // Allow null for logout
       state.authToken = action.payload;
-      // If you're persisting authToken in localStorage, update it here too.
-      if (action.payload === null) {
-        localStorage.removeItem("authToken");
-      } else {
-        // localStorage.setItem("authToken", action.payload);
-      }
     },
     // New: Actions for handling loading and errors from async operations (e.g., login/signup)
     setLoading: (state, action: PayloadAction<boolean>) => {
@@ -96,10 +77,6 @@ const authSlice = createSlice({
         state.authToken = null;
         state.isLoading = false;
         state.error = null;
-        // Ensure localStorage is also cleared on full reset
-        localStorage.removeItem("loggedInUser");
-        localStorage.removeItem("authToken");
-        localStorage.removeItem("tempPassword"); // Remove this if it was still there
     }
   },
 });

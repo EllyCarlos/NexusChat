@@ -31,6 +31,8 @@ import {
   setViewVotes
 } from "@/lib/client/slices/uiSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/client/store/hooks";
+import { selectLoggedInUser } from "@/lib/client/slices/authSlice";
+import { shouldRenderAuthenticatedModals } from "@/lib/client/authenticatedModalVisibility";
 import dynamic from "next/dynamic";
 import { Modal } from "./Modal";
 import { PinMessageDisplay } from "../pin/PinMessageDisplay";
@@ -101,6 +103,11 @@ export const ModalWrapper = () => {
   const isSettingsFormOpen = useAppSelector(
     selectSettingsForm
   );
+  const loggedInUser = useAppSelector(selectLoggedInUser);
+
+  if (!shouldRenderAuthenticatedModals(loggedInUser)) {
+    return null;
+  }
 
   return (
     <>

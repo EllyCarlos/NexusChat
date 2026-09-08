@@ -80,6 +80,10 @@ const uiSlice = createSlice({
   name: "uiSlice",
   initialState,
   reducers: {
+    resetSessionUiState: (state) => ({
+      ...initialState,
+      isDarkMode: state.isDarkMode,
+    }),
     setNavMenu: (state, action: PayloadAction<boolean>) => {
       state.navMenu = action.payload;
     },
@@ -232,6 +236,7 @@ export const selectPinnedMessageData = (state:RootState) => state.uiSlice.pinned
 
 // exporting actions
 export const {
+  resetSessionUiState,
   setNavMenu,
   setNewgroupChatForm,
   setAddMemberForm,

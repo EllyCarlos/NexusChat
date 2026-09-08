@@ -1,12 +1,12 @@
 "use client";
 
-import { logout, sendOtp } from "@/actions/auth.actions";
+import { sendOtp } from "@/actions/auth.actions";
+import { useLogout } from "@/hooks/useAuth/useLogout";
 import { FormEvent, startTransition, useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 import toast from "react-hot-toast";
 import { CircleLoading } from "../shared/CircleLoading";
 import { OtpVerificationForm } from "./OtpVerificationForm";
-import { useRouter } from "next/navigation";
 
 export const OtpVerification = () => {
 
@@ -24,12 +24,7 @@ export const OtpVerification = () => {
     })
   }
 
-  const router = useRouter();
-
-  const handleLogoutClick = async()=>{
-    await logout();
-    router.push("/auth/login");
-  }
+  const handleLogoutClick = useLogout();
 
   return (
     state?.success.message?.length ? (

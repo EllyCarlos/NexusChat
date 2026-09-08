@@ -4,6 +4,7 @@ import type {
   AuthIdentityRepository,
   CreateGoogleAccountInput,
 } from "../contracts/auth-identity.repository.js";
+import { canonicalizeAccountEmail } from "../account-email.js";
 
 export const SESSION_IDENTITY_SELECT = {
   id: true,
@@ -23,17 +24,13 @@ export const SESSION_IDENTITY_SELECT = {
   oAuthSignup: true,
 } as const satisfies Prisma.UserSelect;
 
-export const OAUTH_ACCOUNT_SELECT = {
+export const GOOGLE_ACCOUNT_SELECT = {
   id: true,
   username: true,
   name: true,
   avatar: true,
   email: true,
   emailVerified: true,
-} as const satisfies Prisma.UserSelect;
-
-export const GOOGLE_ACCOUNT_SELECT = {
-  ...OAUTH_ACCOUNT_SELECT,
   googleId: true,
 } as const satisfies Prisma.UserSelect;
 
@@ -43,10 +40,51 @@ export const prismaAuthIdentityRepository: AuthIdentityRepository = {
     select: SESSION_IDENTITY_SELECT,
   }),
 
-  findOAuthIdentityByEmail: (email) => prisma.user.findUnique({
-    where: { email },
-    select: OAUTH_ACCOUNT_SELECT,
+  findGoogleIdentityByProviderId: (googleId) => prisma.user.findUnique({
+    where: { googleId },
+    select: GOOGLE_ACCOUNT_SELECT,
   }),
+
+  findGoogleIdentityByEmail: async (email) => {
+    const canonicalEmail = canonicalizeAccountEmail(email);
+    if (!canonicalEmail) return null;
+
+    const matches = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "User"
+      WHERE LOWER(TRIM("email")) = ${canonicalEmail}
+      LIMIT 2
+    `);
+    if (matches.length > 1) {
+      throw new Error("More than one account has the same canonical email.");
+    }
+
+    const userId = matches[0]?.id;
+    return userId
+      ? prisma.user.findUnique({
+          where: { id: userId },
+          select: GOOGLE_ACCOUNT_SELECT,
+        })
+      : null;
+  },
+
+  linkGoogleIdentity: async ({ userId, googleId }) => {
+    const linked = await prisma.user.updateMany({
+      where: { id: userId, googleId: null },
+      data: { googleId },
+    });
+
+    const identity = await prisma.user.findUnique({
+      where: { id: userId },
+      select: GOOGLE_ACCOUNT_SELECT,
+    });
+
+    if (linked.count === 1 || identity?.googleId === googleId) {
+      return identity;
+    }
+
+    return null;
+  },
 
   createGoogleIdentity: (input: CreateGoogleAccountInput) => prisma.user.create({
     data: input,

@@ -1,22 +1,44 @@
 "use client";
-import { logout } from "@/actions/auth.actions";
-import { useRouter } from "next/navigation";
-import { selectLoggedInUser } from "../../lib/client/slices/authSlice";
-import { useAppSelector } from "../../lib/client/store/hooks";
+import { getPrivateKeyRecoveryOptions } from "@/actions/auth.actions";
+import { useLogout } from "@/hooks/useAuth/useLogout";
+import type { PrivateKeyRecoveryOptions } from "@/interfaces/auth.interface";
+import { getPrivateKeyRecoveryPresentation } from "@/lib/client/privateKeyRecoveryPresentation";
+import { useEffect, useState } from "react";
 import { LogoutIcon } from "../ui/icons/LogoutIcon";
 import { RecoveryOptionsForManualSignedUpUser } from "./RecoveryOptionsForManualSignedUpUser";
 import { RecoveryOptionsForOAuthSignedUpUser } from "./RecoveryOptionsForOAuthSignedUpUser";
 
 const RecoverPrivateKeyForm = () => {
-  const loggedInUser = useAppSelector(selectLoggedInUser);
-  const hasUserSignedUpViaOAuth = loggedInUser?.oAuthSignup;
+  const handleLogoutClick = useLogout();
+  const [recoveryOptions, setRecoveryOptions] =
+    useState<PrivateKeyRecoveryOptions | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
-  const router = useRouter();
+  useEffect(() => {
+    let active = true;
+    void getPrivateKeyRecoveryOptions()
+      .then((result) => {
+        if (!active) return;
+        if (result.data) {
+          setRecoveryOptions(result.data);
+          return;
+        }
+        setRecoveryError(result.errors.message);
+      })
+      .catch(() => {
+        if (active) {
+          setRecoveryError("Private-key recovery is unavailable.");
+        }
+      });
 
-  const handleLogoutClick = async() => {
-    await logout();
-    router.push("/auth/login")
-  };
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const presentation = recoveryOptions
+    ? getPrivateKeyRecoveryPresentation(recoveryOptions)
+    : null;
 
   return (
     <div className="flex flex-col gap-y-6">
@@ -32,31 +54,15 @@ const RecoverPrivateKeyForm = () => {
             <LogoutIcon />
           </button>
         </div>
-        {loggedInUser?.oAuthSignup ? (
-          <p>
-            It looks like we&apos;ve detected that your private key is missing.
-            Don&apos;t worry, you can easily recover it by verifying your email.
-            Simply click the button below to initiate the recovery process. You
-            will receive a verification email shortly. Please click on the
-            verify button in that email. Once verified, we will restore your
-            private key, and you&apos;ll be back to normal in no time.
-          </p>
-        ) : (
-          <p>
-            It looks like we&apos;ve detected that your private key is missing.
-            Don&apos;t worry, you can easily recover it by entering your account
-            password. After entering your correct password, you will receive a
-            verification email. Please click on the verify button in that email.
-            Once verified, we will restore your private key, and you&apos;ll be
-            back to normal in no time.
-          </p>
-        )}
+        {presentation && <p>{presentation.copy}</p>}
+        {!presentation && !recoveryError && <p>Loading recovery options…</p>}
+        {recoveryError && <p>{recoveryError}</p>}
       </div>
-      {hasUserSignedUpViaOAuth ? (
+      {presentation?.recoveryKind === "oauth" ? (
         <RecoveryOptionsForOAuthSignedUpUser />
-      ) : (
+      ) : presentation?.recoveryKind === "manual" ? (
         <RecoveryOptionsForManualSignedUpUser />
-      )}
+      ) : null}
     </div>
   );
 };
