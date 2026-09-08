@@ -60,11 +60,17 @@ describe("database credential and migration boundary", () => {
     const frontendEntries = await listEntries(
       new URL("../prisma/migrations/", import.meta.url),
     );
+    const migrationLock = await readFile(
+      new URL("../prisma/migrations/migration_lock.toml", import.meta.url),
+      "utf8",
+    );
     const backendEntries = await listEntries(
       new URL("../../backend/prisma/migrations/", import.meta.url),
     );
 
     expect(frontendEntries.some((entry) => entry.endsWith(".sql"))).toBe(true);
+    expect(frontendEntries).toContain("migration_lock.toml");
+    expect(migrationLock).toMatch(/^provider\s*=\s*"postgresql"\s*$/m);
     expect(backendEntries).toEqual([]);
   });
 });
