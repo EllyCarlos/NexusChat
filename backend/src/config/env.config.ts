@@ -39,7 +39,6 @@ export const createRuntimeConfig = (environment: Environment): RuntimeConfig => 
     }),
     database: Object.freeze({
       url: environment.DATABASE_URL,
-      directUrl: environment.DIRECT_URL,
     }),
     redis: Object.freeze({
       url: environment.REDIS_URL,

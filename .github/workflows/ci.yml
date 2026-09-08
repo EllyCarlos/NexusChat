@@ -54,7 +54,16 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Run frontend tests
+      - name: Validate canonical Prisma schema and client generation
+        env:
+          DATABASE_URL: postgresql://ci_runtime:ci_placeholder@127.0.0.1:5432/nexuschat_ci
+          DIRECT_URL: postgresql://ci_migration:ci_placeholder@127.0.0.1:5432/nexuschat_ci
+          SHADOW_DATABASE_URL: postgresql://ci_migration:ci_placeholder@127.0.0.1:5432/nexuschat_ci_shadow
+        run: |
+          ./node_modules/.bin/prisma validate --schema prisma/schema.prisma
+          ./node_modules/.bin/prisma generate --schema prisma/schema.prisma
+
+      - name: Run frontend tests, Prisma parity, and migration ownership checks
         env:
           NODE_ENV: test
         run: npm test
@@ -124,6 +133,14 @@ jobs:
 
       - name: Install backend dependencies
         run: npm ci
+
+      - name: Validate backend Prisma mirror and client generation
+        env:
+          DATABASE_URL: postgresql://ci_runtime:ci_placeholder@127.0.0.1:5432/nexuschat_ci
+          DIRECT_URL: postgresql://ci_tooling:ci_placeholder@127.0.0.1:5432/nexuschat_ci
+        run: |
+          ./node_modules/.bin/prisma validate --schema prisma/schema.prisma
+          ./node_modules/.bin/prisma generate --schema prisma/schema.prisma
 
       # The full development-tree audit is reviewed, while the pruned runtime audit is the gate.
       - name: Reviewed development dependency audit

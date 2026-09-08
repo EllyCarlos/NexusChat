@@ -25,7 +25,6 @@ export interface OAuthConfig {
 
 export interface DatabaseConfig {
   readonly url: string;
-  readonly directUrl: string;
 }
 
 export interface RedisConfig {

@@ -16,7 +16,6 @@ const runtimeEnvironment = vi.hoisted(() => ({
   GOOGLE_CLIENT_SECRET: "obvious-fake-google-secret",
   GOOGLE_APPLICATION_CREDENTIALS: "obvious-fake-credentials.json",
   DATABASE_URL: "postgresql://example.test/runtime",
-  DIRECT_URL: "postgresql://example.test/direct",
 }));
 
 vi.mock("../src/schemas/env.schema.js", async (importOriginal) => {
@@ -105,6 +104,22 @@ describe("runtime configuration boundary", () => {
       ...runtimeEnvironment,
       REDIS_URL: "   \t  ",
     }).REDIS_URL).toBeUndefined();
+  });
+
+  it("requires DATABASE_URL for normal application runtime", () => {
+    const source: Record<string, string | undefined> = { ...runtimeEnvironment };
+    delete source.DATABASE_URL;
+
+    expect(() => parseEnvironment(source)).toThrow("DATABASE_URL");
+  });
+
+  it("does not require or expose migration-only DIRECT_URL", () => {
+    const parsed = parseEnvironment(runtimeEnvironment);
+    const created = createRuntimeConfig(parsed);
+
+    expect(parsed).not.toHaveProperty("DIRECT_URL");
+    expect(created.database).toEqual({ url: runtimeEnvironment.DATABASE_URL });
+    expect(created.database).not.toHaveProperty("directUrl");
   });
 
   it("defaults metrics to disabled with no credential", () => {
