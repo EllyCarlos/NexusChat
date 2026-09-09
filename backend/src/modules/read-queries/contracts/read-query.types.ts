@@ -123,6 +123,13 @@ export interface MessagePageView {
   totalPages: number;
 }
 
+export interface MessageContextView {
+  anchorMessageId: string;
+  messages: MessageReadView[];
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+}
+
 export interface AttachmentPageView {
   attachments: SecureAttachmentView[];
   totalAttachmentsCount: number;
@@ -138,5 +145,24 @@ export interface ReadPageInput {
 export interface ReadRepositoryPageInput {
   chatId: string;
   skip: number;
+  take: number;
+}
+
+export interface ReadMessageContextInput {
+  actorUserId: string;
+  chatId: string;
+  messageId: string;
+  before: number;
+  after: number;
+}
+
+export interface ReadMessageByIdInput {
+  actorUserId: string;
+  chatId: string;
+  messageId: string;
+}
+
+export interface ReadMessageContextSideInput extends ReadMessageByIdInput {
+  anchorCreatedAt: Date;
   take: number;
 }
