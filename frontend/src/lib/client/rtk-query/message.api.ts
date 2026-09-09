@@ -2,10 +2,16 @@ import { Message } from "@/interfaces/message.interface";
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { RootState } from "../store/store";
 
-
-type fetchMessagesResponse = {
+export type FetchMessagesResponse = {
     messages:Message[],
     totalPages:number
+}
+
+export type MessageContextResponse = {
+    anchorMessageId:string,
+    messages:Message[],
+    hasMoreBefore:boolean,
+    hasMoreAfter:boolean
 }
 
 export const messageApi = createApi({
@@ -26,7 +32,7 @@ export const messageApi = createApi({
 
     endpoints:(builder)=>({
 
-        getMessagesByChatId:builder.query<fetchMessagesResponse,{chatId:string,page:number}>({
+        getMessagesByChatId:builder.query<FetchMessagesResponse,{chatId:string,page:number}>({
             query:({chatId,page})=>`/${chatId}?page=${page}`,
             serializeQueryArgs: ({ endpointName ,queryArgs:{chatId}}) => {
               return  `${endpointName}_${chatId}`
@@ -34,6 +40,25 @@ export const messageApi = createApi({
             merge: (currentCache, newItems) => {
                 currentCache.messages.unshift(...newItems.messages)
             },
+        }),
+
+        getPrivateSearchBootstrap:builder.query<FetchMessagesResponse,{chatId:string,limit?:number}>({
+            query:({chatId,limit = 20})=>({
+              url:`/${chatId}`,
+              params:{page:1,limit},
+            }),
+        }),
+
+        getMessageContext:builder.query<MessageContextResponse,{
+          chatId:string,
+          messageId:string,
+          before?:number,
+          after?:number
+        }>({
+            query:({chatId,messageId,before = 20,after = 0})=>({
+              url:`/${chatId}/${messageId}/context`,
+              params:{before,after},
+            }),
         })
 
     })
@@ -41,5 +66,7 @@ export const messageApi = createApi({
 
 export const {
     useLazyGetMessagesByChatIdQuery,
-    useGetMessagesByChatIdQuery
+    useGetMessagesByChatIdQuery,
+    useLazyGetPrivateSearchBootstrapQuery,
+    useLazyGetMessageContextQuery,
 } = messageApi
