@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "../../../lib/prisma.lib.js";
 import type { MessageReadRepository } from "../contracts/message-read.repository.js";
 import type {
+  ReadGroupMessageSearchRepositoryInput,
   ReadMessageByIdInput,
   ReadMessageContextSideInput,
   ReadRepositoryPageInput,
@@ -84,6 +85,21 @@ export const messageReadOmit = {
   senderId: true,
   pollId: true,
 } as const satisfies Prisma.MessageOmit;
+
+export const messageSearchSelect = {
+  id: true,
+  chatId: true,
+  textMessageContent: true,
+  isEdited: true,
+  createdAt: true,
+  sender: {
+    select: {
+      id: true,
+      username: true,
+      avatar: true,
+    },
+  },
+} as const satisfies Prisma.MessageSelect;
 
 export const messageListArguments = ({
   chatId,
@@ -188,6 +204,45 @@ export const messagesAfterArguments = ({
   take,
 } as const satisfies Prisma.MessageFindManyArgs);
 
+export const groupMessageSearchArguments = ({
+  actorUserId,
+  chatId,
+  escapedQuery,
+  cursor,
+  take,
+}: ReadGroupMessageSearchRepositoryInput) => ({
+  where: {
+    chatId,
+    chat: {
+      isGroupChat: true,
+      ChatMembers: {
+        some: {
+          userId: actorUserId,
+        },
+      },
+    },
+    isTextMessage: true,
+    isPollMessage: false,
+    textMessageContent: {
+      not: null,
+      contains: escapedQuery,
+      mode: "insensitive",
+    },
+    ...(cursor ? {
+      OR: [
+        { createdAt: { lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+      ],
+    } : {}),
+  },
+  select: messageSearchSelect,
+  orderBy: [
+    { createdAt: "desc" },
+    { id: "desc" },
+  ],
+  take,
+} as const satisfies Prisma.MessageFindManyArgs);
+
 export const createPrismaMessageReadRepository = (
   client: MessageReadPrismaClient,
 ): MessageReadRepository => ({
@@ -196,6 +251,7 @@ export const createPrismaMessageReadRepository = (
   findMessage: (input) => client.message.findFirst(messageByIdArguments(input)),
   listMessagesBefore: (input) => client.message.findMany(messagesBeforeArguments(input)),
   listMessagesAfter: (input) => client.message.findMany(messagesAfterArguments(input)),
+  searchGroupMessages: (input) => client.message.findMany(groupMessageSearchArguments(input)),
 });
 
 export const prismaMessageReadRepository = createPrismaMessageReadRepository(prisma);

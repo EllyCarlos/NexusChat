@@ -1,5 +1,7 @@
 import type {
   MessageReadView,
+  MessageSearchRecord,
+  ReadGroupMessageSearchRepositoryInput,
   ReadMessageByIdInput,
   ReadMessageContextSideInput,
   ReadRepositoryPageInput,
@@ -11,4 +13,5 @@ export interface MessageReadRepository {
   findMessage(input: ReadMessageByIdInput): Promise<MessageReadView | null>;
   listMessagesBefore(input: ReadMessageContextSideInput): Promise<MessageReadView[]>;
   listMessagesAfter(input: ReadMessageContextSideInput): Promise<MessageReadView[]>;
+  searchGroupMessages(input: ReadGroupMessageSearchRepositoryInput): Promise<MessageSearchRecord[]>;
 }

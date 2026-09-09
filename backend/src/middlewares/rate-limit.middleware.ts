@@ -10,6 +10,7 @@ import { CustomError } from "../utils/error.utils.js";
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
+const SECOND_MS = 1000;
 
 export const BACKEND_RATE_LIMITS = {
   fcmToken: { namespace: "api-fcm-token", limit: 20, windowMs: HOUR_MS },
@@ -20,6 +21,8 @@ export const BACKEND_RATE_LIMITS = {
   friendCreateCooldown: { namespace: "friend-create-cooldown", limit: 1, windowMs: 30 * 1000 },
   friendCreateWindow: { namespace: "friend-create-window", limit: 10, windowMs: HOUR_MS },
   friendHandle: { namespace: "friend-handle", limit: 10, windowMs: 5 * MINUTE_MS },
+  messageSearchBurst: { namespace: "message-search-burst", limit: 10, windowMs: 10 * SECOND_MS },
+  messageSearchWindow: { namespace: "message-search-window", limit: 30, windowMs: MINUTE_MS },
 } satisfies Record<string, RateLimitPolicy>;
 
 const rejectLimitedRequest = (response: Response, next: NextFunction, retryAfterSeconds: number) => {
@@ -63,6 +66,10 @@ export const avatarUploadRateLimit: RequestHandler = (request, response, next) =
   authenticatedAvatarUploadRateLimit(request, response, next);
 };
 export const attachmentUploadRateLimit = createAuthenticatedUserRateLimit(BACKEND_RATE_LIMITS.attachmentUpload);
+export const messageSearchRateLimit = createAuthenticatedUserRateLimit(
+  BACKEND_RATE_LIMITS.messageSearchBurst,
+  BACKEND_RATE_LIMITS.messageSearchWindow,
+);
 
 export const enforcePairRateLimit = ({
   response,

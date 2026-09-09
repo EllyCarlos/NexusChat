@@ -56,6 +56,7 @@ import {
   BACKEND_RATE_LIMITS,
   enforcePairRateLimit,
   fcmTokenRateLimit,
+  messageSearchRateLimit,
 } from "../src/middlewares/rate-limit.middleware.js";
 import userRouter from "../src/routes/user.router.js";
 import attachmentRouter from "../src/routes/attachment.router.js";
@@ -63,6 +64,7 @@ import {
   BoundedInMemoryRateLimiter,
   clearBackendRateLimitsForTests,
   RATE_LIMIT_MESSAGE,
+  resetBackendRateLimit,
 } from "../src/security/rate-limit.js";
 import {
   createOriginPolicy,
@@ -257,5 +259,60 @@ describe("upload and FCM request controls", () => {
     expect((await request(app).patch("/api/fcm").set("Authorization", "Bearer user-b")).status)
       .toBe(204);
     expect(writeWork).toHaveBeenCalledTimes(21);
+  });
+});
+
+describe("message search request controls", () => {
+  const createSearchRateApp = (searchWork: ReturnType<typeof vi.fn>) => {
+    const router = express.Router();
+    router.get("/search", mocks.verifyToken, messageSearchRateLimit, searchWork);
+    return createApp({
+      environment: "test",
+      originPolicy: createOriginPolicy({
+        environment: "production",
+        frontendOrigin: PRODUCTION_FRONTEND_ORIGIN,
+      }),
+      routes: [{ path: "/api", router }],
+    });
+  };
+
+  it("enforces the 10-per-10-second burst per authenticated user before search work", async () => {
+    const searchWork = vi.fn((_req: Request, res: Response) => res.status(200).json({}));
+    const app = createSearchRateApp(searchWork);
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      expect((await request(app).get("/api/search").set("Authorization", "Bearer user-a")).status)
+        .toBe(200);
+    }
+    const limited = await request(app).get("/api/search").set("Authorization", "Bearer user-a");
+
+    expect(limited.status).toBe(429);
+    expect(limited.body).toEqual({ success: false, message: RATE_LIMIT_MESSAGE });
+    expect(limited.headers["retry-after"]).toBe("10");
+    expect(searchWork).toHaveBeenCalledTimes(10);
+    expect((await request(app).get("/api/search").set("Authorization", "Bearer user-b")).status)
+      .toBe(200);
+  });
+
+  it("enforces the independent 30-per-minute sustained policy", async () => {
+    const searchWork = vi.fn((_req: Request, res: Response) => res.status(200).json({}));
+    const app = createSearchRateApp(searchWork);
+
+    for (let batch = 0; batch < 3; batch += 1) {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        expect((await request(app).get("/api/search").set("Authorization", "Bearer user-a")).status)
+          .toBe(200);
+      }
+      resetBackendRateLimit(BACKEND_RATE_LIMITS.messageSearchBurst, "user-a");
+    }
+
+    const limited = await request(app).get("/api/search").set("Authorization", "Bearer user-a");
+    expect(limited.status).toBe(429);
+    expect(limited.headers["retry-after"]).toBe("60");
+    expect(searchWork).toHaveBeenCalledTimes(30);
+    expect(BACKEND_RATE_LIMITS.messageSearchBurst.namespace)
+      .not.toBe(BACKEND_RATE_LIMITS.messageSearchWindow.namespace);
+    expect(BACKEND_RATE_LIMITS.messageSearchWindow.namespace)
+      .not.toBe(BACKEND_RATE_LIMITS.fcmToken.namespace);
   });
 });

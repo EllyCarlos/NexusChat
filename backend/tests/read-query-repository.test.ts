@@ -256,6 +256,43 @@ describe("Prisma read-query repositories", () => {
     });
   });
 
+  it("forwards a bounded group message search through the dedicated minimal query", async () => {
+    const messages = [{
+      id: "message-1",
+      chatId: CHAT_ID,
+      textMessageContent: "Search result",
+      isEdited: false,
+      createdAt: new Date("2026-09-09T12:00:00.000Z"),
+      sender: { id: USER_ID, username: "user", avatar: "avatar.png" },
+    }];
+    mocks.messageFindMany.mockResolvedValue(messages);
+
+    await expect(messageRepository.searchGroupMessages({
+      actorUserId: USER_ID,
+      chatId: CHAT_ID,
+      escapedQuery: "search",
+      take: 21,
+    })).resolves.toBe(messages);
+
+    expect(mocks.messageFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        chatId: CHAT_ID,
+        chat: {
+          isGroupChat: true,
+          ChatMembers: { some: { userId: USER_ID } },
+        },
+        isTextMessage: true,
+        isPollMessage: false,
+        textMessageContent: {
+          not: null,
+          contains: "search",
+          mode: "insensitive",
+        },
+      }),
+      take: 21,
+    }));
+  });
+
   it("owns the exact public attachment list and count queries", async () => {
     const attachments = [{ secureUrl: "https://media.example/attachment-1" }];
     mocks.attachmentFindMany.mockResolvedValue(attachments);

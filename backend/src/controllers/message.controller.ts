@@ -2,9 +2,12 @@ import { NextFunction, Response } from "express";
 import type { AuthenticatedRequest } from "../interfaces/auth/auth.interface.js";
 import { getMessageContextQuery } from "../modules/read-queries/message-context-query.service.js";
 import { getChatMessagesQuery } from "../modules/read-queries/read-query.service.js";
+import { searchGroupMessagesQuery } from "../modules/read-queries/message-search-query.service.js";
 import type {
   MessageContextParams,
   MessageContextQuery,
+  MessageSearchParams,
+  MessageSearchQuery,
 } from "../schemas/message.schema.js";
 import { assertChatMember } from "../services/authorization.service.js";
 import { asyncErrorHandler } from "../utils/error.utils.js";
@@ -39,5 +42,22 @@ export const getMessageContext = asyncErrorHandler(async (
   });
 
   return res.status(200).json(context);
+});
+
+export const searchGroupMessages = asyncErrorHandler(async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
+  const { chatId } = req.params as MessageSearchParams;
+  const { q, limit, cursor } = req.query as unknown as MessageSearchQuery;
+  const result = await searchGroupMessagesQuery({
+    actorUserId: req.user.id,
+    chatId,
+    q,
+    limit,
+    ...(cursor ? { cursor } : {}),
+  });
+
+  return res.status(200).json(result);
 });
 

@@ -130,6 +130,30 @@ export interface MessageContextView {
   hasMoreAfter: boolean;
 }
 
+export interface MessageSearchResultView {
+  id: string;
+  chatId: string;
+  textMessageContent: string;
+  isEdited: boolean;
+  createdAt: Date;
+  sender: BasicReadUser;
+}
+
+export interface MessageSearchRecord extends Omit<MessageSearchResultView, "textMessageContent"> {
+  textMessageContent: string | null;
+}
+
+export interface MessageSearchView {
+  messages: MessageSearchResultView[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface MessageSearchCursor {
+  createdAt: Date;
+  id: string;
+}
+
 export interface AttachmentPageView {
   attachments: SecureAttachmentView[];
   totalAttachmentsCount: number;
@@ -164,5 +188,21 @@ export interface ReadMessageByIdInput {
 
 export interface ReadMessageContextSideInput extends ReadMessageByIdInput {
   anchorCreatedAt: Date;
+  take: number;
+}
+
+export interface ReadGroupMessageSearchInput {
+  actorUserId: string;
+  chatId: string;
+  q: string;
+  limit: number;
+  cursor?: string;
+}
+
+export interface ReadGroupMessageSearchRepositoryInput {
+  actorUserId: string;
+  chatId: string;
+  escapedQuery: string;
+  cursor?: MessageSearchCursor;
   take: number;
 }
