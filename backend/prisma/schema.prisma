@@ -136,6 +136,8 @@ model Message {
   Message Message[]  @relation("replyOf")
 
   PinnedMessages PinnedMessages[]
+
+  @@index([chatId, createdAt, id])
 }
 
 model Otp {

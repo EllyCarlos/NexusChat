@@ -115,6 +115,8 @@ model Message {
   PinnedMessages     PinnedMessages[]
   reactions          Reactions[]
   UnreadMessages     UnreadMessages[]
+
+  @@index([chatId, createdAt, id])
 }
 
 model Otp {

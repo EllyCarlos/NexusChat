@@ -96,4 +96,18 @@ describe("database credential and migration boundary", () => {
       'CREATE UNIQUE INDEX "User_canonical_email_idx"',
     );
   });
+
+  it("keeps the message-context index in canonical migration history", async () => {
+    const migration = await readFile(
+      new URL(
+        "../prisma/migrations/20260909103000_add_message_context_index/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /CREATE INDEX "Message_chatId_createdAt_id_idx"\s+ON "Message"\("chatId", "createdAt", "id"\);/,
+    );
+  });
 });
